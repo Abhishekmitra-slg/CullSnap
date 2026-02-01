@@ -1,6 +1,6 @@
 # Binaries
 bin/
-CullSnap
+/CullSnap
 *.exe
 *.dll
 *.so
