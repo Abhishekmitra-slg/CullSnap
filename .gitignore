@@ -15,7 +15,6 @@ cullsnap.log
 *.db-journal
 
 # Go
-go.sum
 vendor/
 
 # OS
