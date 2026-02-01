@@ -1,0 +1,23 @@
+# Binaries
+bin/
+CullSnap
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+cullsnap.log
+
+# Database
+*.db
+*.db-journal
+
+# Go
+go.sum
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
