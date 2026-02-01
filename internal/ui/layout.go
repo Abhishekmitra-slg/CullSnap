@@ -33,6 +33,19 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 	loadingBar := widget.NewProgressBarInfinite()
 	loadingBar.Hide()
 	pathLabel := widget.NewLabelWithStyle("No Folder Opened", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	statusLabel := widget.NewLabel("Session: None | Photos: 0 | Selected: 0")
+	statusLabel.TextStyle.Monospace = true
+
+	// Helper to update status bar
+	updateStatus := func() {
+		sessionName := "None"
+		if currentPath != "" {
+			sessionName = filepath.Base(currentPath)
+		}
+		selCount := len(grid.SelectedPhotos)
+		totalCount := len(currentPhotos)
+		statusLabel.SetText(fmt.Sprintf("Session: %s | Photos: %d | Selected: %d", sessionName, totalCount, selCount))
+	}
 
 	// Right: Viewer
 	viewerRect := canvas.NewRectangle(theme.InputBackgroundColor())
@@ -122,6 +135,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 
 				activePhotoIndex = -1
 				grid.List.Refresh()
+				updateStatus() // Update Status
 				logger.Log.Info("Directory loaded", "path", path, "count", len(photos))
 			}, false)
 		}()
@@ -138,12 +152,11 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 
 				if isSelected {
 					grid.SelectedPhotos[path] = true
-					dialog.ShowInformation("Selected", "Selected: "+filepath.Base(path), w)
 				} else {
 					delete(grid.SelectedPhotos, path)
-					dialog.ShowInformation("Deselected", "Deselected: "+filepath.Base(path), w)
 				}
 				grid.List.Refresh()
+				updateStatus() // Update Status
 
 				// Persist
 				go func(p, dir string, sel bool) {
@@ -196,21 +209,9 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 							path := recents[id]
 							btn := obj.(*widget.Button)
 							btn.SetText(path)
-							btn.OnTapped = func() {
-								// dialog (custom) needs close?
-								// Since we can't easily close ShowCustom dialogs programmatically without handle,
-								// we'll use a modal logic or just let user close it?
-								// Better: clicking loadDirectory will launch separate process, existing dialog persists?
-								// Fyne dialogs block? No.
-								// We'll rely on user manually closing the Recents dialog, or...
-								// Actually, `ShowCustom` has no return handle.
-								// `d := dialog.NewCustom(...) d.Show()` gives handle.
-								// But here we are inside the list callback.
-								// Ref: we need `d` to call `d.Hide()`.
-								// We can't access `d` before it's created if we use `dialog.ShowCustom`.
-							}
 						},
 					)
+
 					// Fix: Use `dialog.NewCustom` to get handle.
 					var d dialog.Dialog
 
@@ -225,7 +226,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 						}
 					}
 
-					// Limit height?
+					// Limit height
 					scroll := container.NewVScroll(list)
 					scroll.SetMinSize(fyne.NewSize(400, 300))
 
@@ -275,6 +276,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 								grid.ExportedPhotos[p.Path] = true
 							}
 							grid.List.Refresh()
+							updateStatus() // Update status
 
 							dialog.ShowInformation("Export Complete", fmt.Sprintf("Exported %d photos to %s", count, finalDest), w)
 							logger.Log.Info("Export success", "count", count, "dest", finalDest)
@@ -324,7 +326,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 - **Folder Icon**: Open directory to cull.
 - **Computer Icon**: Enter directory path manually.
 - **History Icon**: Open list of recent folders.
-- **Left Panel**: Thumbnails (Blue = Selected, Green Check = Exported).
+- **Left Panel**: Thumbnails (Blue = Selected, Green Badge = Selected).
 - **Right Panel**: High-res viewer.
 
 ## Shortcuts
@@ -344,9 +346,11 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 
 	// Main Layout: BorderLayout
 	topContainer := container.NewVBox(toolbar, pathLabel)
-	content := container.New(layout.NewBorderLayout(topContainer, loadingBar, nil, nil),
+	bottomContainer := container.NewVBox(loadingBar, statusLabel) // Status bar at bottom
+
+	content := container.New(layout.NewBorderLayout(topContainer, bottomContainer, nil, nil),
 		topContainer,
-		loadingBar,
+		bottomContainer,
 		split,
 	)
 

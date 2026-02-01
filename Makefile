@@ -17,4 +17,4 @@ build: lint
 	go build -ldflags "-s -w" -o bin/$(APP_NAME) $(SRC)
 
 package:
-	fyne package -os darwin -icon Icon.png
+	fyne package -os darwin -icon internal/assets/icon.png
