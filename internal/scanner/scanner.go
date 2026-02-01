@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"cullsnap/internal/model"
 )
@@ -22,7 +21,6 @@ var allowedExtensions = map[string]bool{
 // So this scanner just finds files quickly.
 func ScanDirectory(root string) ([]model.Photo, error) {
 	var photos []model.Photo
-	var mu sync.Mutex
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -45,9 +43,7 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 				TakenAt: info.ModTime(), // Fallback to ModTime, ideally parse EXIF later
 			}
 
-			mu.Lock()
 			photos = append(photos, p)
-			mu.Unlock()
 		}
 		return nil
 	})

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"cullsnap/internal/assets"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/ui"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/widget"
 )
 
 func main() {
@@ -17,6 +20,8 @@ func main() {
 	logger.Log.Info("Application starting")
 
 	a := app.NewWithID("com.cullsnap.app")
+	a.SetIcon(assets.AppIcon)
+	a.Settings().SetTheme(&ui.CullSnapTheme{})
 	w := a.NewWindow("CullSnap - Photo Culling")
 
 	w.Resize(fyne.NewSize(1200, 800))
@@ -24,10 +29,13 @@ func main() {
 	// Init Storage
 	store, err := storage.NewSQLiteStore("cullsnap.db")
 	if err != nil {
-		logger.Log.Error("Failed to init storage", "error", err)
-	} else {
-		defer store.Close()
+		logger.Log.Error("CRITICAL: Failed to init storage", "error", err)
+		dialog.ShowError(err, w)
+		w.SetContent(widget.NewLabel("Critical Error: Failed to initialize database.\nCheck logs for details."))
+		w.ShowAndRun()
+		return
 	}
+	defer store.Close()
 
 	// Pass store to layout
 	content := ui.SetupMainLayout(w, store)

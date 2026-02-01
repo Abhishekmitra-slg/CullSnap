@@ -47,36 +47,52 @@ func NewThumbnailGrid() *ThumbnailGrid {
 		func() fyne.CanvasObject {
 			row := container.NewGridWithColumns(g.Columns)
 			for i := 0; i < g.Columns; i++ {
-				// Each cell: Stack(Rectangle(Border), Image, TappableOverlay)
-				bg := canvas.NewRectangle(theme.BackgroundColor())
+				// Each cell: Stack(Bg, Image, SelectionBorder, SelectionBadge, ExportedBadge, NoPreview, TappableOverlay)
 
-				// Image (CanvasObject)
+				// 1. Background (Card-like)
+				bg := canvas.NewRectangle(theme.InputBackgroundColor())
+
+				// 2. Image (Centered with Padding)
 				img := canvas.NewImageFromResource(nil)
 				img.FillMode = canvas.ImageFillContain
-				img.SetMinSize(fyne.NewSize(100, 100))
+				img.SetMinSize(fyne.NewSize(120, 120))
 
-				// Border
+				// 3. Selection Border (Thick Blue)
 				border := canvas.NewRectangle(color.Transparent)
 				border.StrokeColor = theme.PrimaryColor()
-				border.StrokeWidth = 3
+				border.StrokeWidth = 4
 				border.Hide()
 
-				// Exported Indicator (Top-Right Checkmark)
-				exportedIcon := widget.NewIcon(theme.ConfirmIcon())
-				// Green visual? Icon color defaults to text color.
-				// We can't easily change icon color in Fyne v2 without custom theme or resource modification.
-				// But ConfirmIcon is usually distinctive.
-				// Wrapper for alignment
-				exportedLayer := container.NewVBox(
-					container.NewHBox(layout.NewSpacer(), exportedIcon),
+				// 4. Selection Badge (Green Checkmark Overlay Top-Right)
+				selectIcon := widget.NewIcon(theme.ConfirmIcon())
+				selectBadge := container.NewVBox(
+					container.NewHBox(layout.NewSpacer(), selectIcon),
 					layout.NewSpacer(),
 				)
-				exportedLayer.Hide()
+				selectBadge.Hide()
 
-				// Tappable Overlay - Handler set in UpdateItem
+				// 5. Exported Indicator (Text Badge Top-Left)
+				exportedLabel := canvas.NewText("EXPORTED", color.RGBA{0, 200, 0, 255})
+				exportedLabel.TextStyle.Bold = true
+				exportedLabel.TextSize = 10
+				exportedBadge := container.NewVBox(
+					container.NewHBox(exportedLabel, layout.NewSpacer()),
+					layout.NewSpacer(),
+				)
+				exportedBadge.Hide()
+
+				// 6. No Preview Placeholder (Hidden by default)
+				npText := canvas.NewText("No Preview", color.RGBA{150, 150, 150, 255})
+				npText.Alignment = fyne.TextAlignCenter
+				noPreview := container.NewCenter(npText)
+				noPreview.Hide()
+
+				// 7. Tappable Overlay
 				overlay := newTappableContent(nil)
 
-				cell := container.NewStack(bg, img, border, exportedLayer, overlay)
+				// Stack em up
+				// Note: Use container.NewPadded(img) to give image some breathing room from edges
+				cell := container.NewStack(bg, container.NewPadded(img), border, selectBadge, exportedBadge, noPreview, overlay)
 				row.Add(cell)
 			}
 			return row
@@ -92,11 +108,15 @@ func NewThumbnailGrid() *ThumbnailGrid {
 				if idx < len(g.Photos) {
 					photo := g.Photos[idx]
 
-					// Get widgets
-					imgWidget := cell.Objects[1].(*canvas.Image)
+					// Get widgets: [bg, padded, border, selectBadge, exportedBadge, noPreview, overlay]
+					paddedCont := cell.Objects[1].(*fyne.Container)
+					imgWidget := paddedCont.Objects[0].(*canvas.Image)
+
 					border := cell.Objects[2].(*canvas.Rectangle)
-					exportedLayer := cell.Objects[3].(*fyne.Container)
-					overlay := cell.Objects[4].(*tappableContent)
+					selectBadge := cell.Objects[3].(*fyne.Container)
+					exportedBadge := cell.Objects[4].(*fyne.Container)
+					noPreview := cell.Objects[5].(*fyne.Container)
+					overlay := cell.Objects[6].(*tappableContent)
 
 					cell.Show()
 
@@ -111,29 +131,37 @@ func NewThumbnailGrid() *ThumbnailGrid {
 					imgWidget.File = ""
 					imgWidget.Image = nil
 					imgWidget.Refresh()
+					noPreview.Hide()
 
-					go func(p string, w *canvas.Image) {
+					go func(p string, w *canvas.Image, np *fyne.Container) {
 						thumb, err := imageUtils.GetThumbnail(p)
-						if err == nil {
-							fyne.CurrentApp().Driver().DoFromGoroutine(func() {
+						fyne.CurrentApp().Driver().DoFromGoroutine(func() {
+							if err == nil {
 								w.Image = thumb
 								w.Refresh()
-							}, false)
-						}
-					}(photo.Path, imgWidget)
+								w.Show()
+								np.Hide()
+							} else {
+								w.Hide()
+								np.Show()
+							}
+						}, false)
+					}(photo.Path, imgWidget, noPreview)
 
-					// Selection
+					// Selection State
 					if g.SelectedPhotos[photo.Path] {
 						border.Show()
+						selectBadge.Show()
 					} else {
 						border.Hide()
+						selectBadge.Hide()
 					}
 
-					// Exported
+					// Exported State
 					if g.ExportedPhotos[photo.Path] {
-						exportedLayer.Show()
+						exportedBadge.Show()
 					} else {
-						exportedLayer.Hide()
+						exportedBadge.Hide()
 					}
 
 				} else {
