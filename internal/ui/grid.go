@@ -25,6 +25,7 @@ type ThumbnailGrid struct {
 	// Data
 	Photos         []model.Photo
 	SelectedPhotos map[string]bool
+	RejectedPhotos map[string]bool
 	ExportedPhotos map[string]bool
 
 	// Events
@@ -36,6 +37,7 @@ func NewThumbnailGrid() *ThumbnailGrid {
 		Columns:        4,
 		Photos:         []model.Photo{},
 		SelectedPhotos: make(map[string]bool),
+		RejectedPhotos: make(map[string]bool),
 		ExportedPhotos: make(map[string]bool),
 	}
 
@@ -57,13 +59,19 @@ func NewThumbnailGrid() *ThumbnailGrid {
 				img.FillMode = canvas.ImageFillContain
 				img.SetMinSize(fyne.NewSize(120, 120))
 
-				// 3. Selection Border (Thick Blue)
+				// 3. Selection Border (Thick Green)
 				border := canvas.NewRectangle(color.Transparent)
-				border.StrokeColor = theme.PrimaryColor()
+				border.StrokeColor = color.RGBA{76, 175, 80, 255} // Green #4CAF50
 				border.StrokeWidth = 4
 				border.Hide()
 
 				// 4. Selection Badge (Green Checkmark Overlay Top-Right)
+				// Use color icon via themed resource manipulation or just custom tint?
+				// Simple approach: Green Icon
+				// Fyne icons are white/black by default. Let's assume theme is dark, so white icon is fine.
+				// But we want Green circle context.
+				// Let's stick to Checkmark for now, maybe tint background.
+				// Simplification: Just the Icon, we rely on the Border for "Green".
 				selectIcon := widget.NewIcon(theme.ConfirmIcon())
 				selectBadge := container.NewVBox(
 					container.NewHBox(layout.NewSpacer(), selectIcon),
@@ -87,12 +95,16 @@ func NewThumbnailGrid() *ThumbnailGrid {
 				noPreview := container.NewCenter(npText)
 				noPreview.Hide()
 
-				// 7. Tappable Overlay
+				// 7. Reject Overlay (Red Tint)
+				rejectOverlay := canvas.NewRectangle(color.RGBA{255, 0, 0, 50})
+				rejectOverlay.Hide()
+
+				// 8. Tappable Overlay
 				overlay := newTappableContent(nil)
 
 				// Stack em up
 				// Note: Use container.NewPadded(img) to give image some breathing room from edges
-				cell := container.NewStack(bg, container.NewPadded(img), border, selectBadge, exportedBadge, noPreview, overlay)
+				cell := container.NewStack(bg, container.NewPadded(img), rejectOverlay, border, selectBadge, exportedBadge, noPreview, overlay)
 				row.Add(cell)
 			}
 			return row
@@ -108,15 +120,16 @@ func NewThumbnailGrid() *ThumbnailGrid {
 				if idx < len(g.Photos) {
 					photo := g.Photos[idx]
 
-					// Get widgets: [bg, padded, border, selectBadge, exportedBadge, noPreview, overlay]
+					// Get widgets: [bg, padded, rejectOverlay, border, selectBadge, exportedBadge, noPreview, overlay]
 					paddedCont := cell.Objects[1].(*fyne.Container)
 					imgWidget := paddedCont.Objects[0].(*canvas.Image)
 
-					border := cell.Objects[2].(*canvas.Rectangle)
-					selectBadge := cell.Objects[3].(*fyne.Container)
-					exportedBadge := cell.Objects[4].(*fyne.Container)
-					noPreview := cell.Objects[5].(*fyne.Container)
-					overlay := cell.Objects[6].(*tappableContent)
+					rejectOverlay := cell.Objects[2].(*canvas.Rectangle)
+					border := cell.Objects[3].(*canvas.Rectangle)
+					selectBadge := cell.Objects[4].(*fyne.Container)
+					exportedBadge := cell.Objects[5].(*fyne.Container)
+					noPreview := cell.Objects[6].(*fyne.Container)
+					overlay := cell.Objects[7].(*tappableContent)
 
 					cell.Show()
 
@@ -148,13 +161,25 @@ func NewThumbnailGrid() *ThumbnailGrid {
 						}, false)
 					}(photo.Path, imgWidget, noPreview)
 
-					// Selection State
+					// Selection State (KEEP)
 					if g.SelectedPhotos[photo.Path] {
 						border.Show()
 						selectBadge.Show()
-					} else {
+						// Reset Reject visual just in case
+						rejectOverlay.Hide()
+						imgWidget.Translucency = 0
+					} else if g.RejectedPhotos[photo.Path] {
+						// REJECT State
 						border.Hide()
 						selectBadge.Hide()
+						rejectOverlay.Show()
+						imgWidget.Translucency = 0.5 // Dim it
+					} else {
+						// NEUTRAL
+						border.Hide()
+						selectBadge.Hide()
+						rejectOverlay.Hide()
+						imgWidget.Translucency = 0
 					}
 
 					// Exported State

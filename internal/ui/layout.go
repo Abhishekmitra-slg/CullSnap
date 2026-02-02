@@ -23,6 +23,15 @@ import (
 
 // SetupMainLayout constructs the primary UI structure.
 func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObject {
+	// 1. Definition (Forward Declaration for Closure)
+	var welcome fyne.CanvasObject
+	var mainView *fyne.Container
+	var loadingView fyne.CanvasObject
+
+	// Helper to switch views (updated later)
+	var showMain func()
+	var showLoading func()
+
 	// State
 	var currentPhotos []model.Photo
 	// Track current directory for session/storage context
@@ -44,8 +53,9 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 			sessionName = filepath.Base(currentPath)
 		}
 		selCount := len(grid.SelectedPhotos)
+		rejCount := len(grid.RejectedPhotos)
 		totalCount := len(currentPhotos)
-		statusLabel.SetText(fmt.Sprintf("Session: %s | Photos: %d | Selected: %d", sessionName, totalCount, selCount))
+		statusLabel.SetText(fmt.Sprintf("Session: %s | Photos: %d | Selected: %d | Rejected: %d", sessionName, totalCount, selCount, rejCount))
 	}
 
 	// Right: Viewer
@@ -90,7 +100,9 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 
 	// Helper to load directory
 	loadDirectory := func(path string) {
-		loadingBar.Show()
+		if showLoading != nil {
+			showLoading()
+		}
 		go func() {
 			// Add to recents
 			if err := store.AddRecent(path); err != nil {
@@ -110,6 +122,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 				if selections == nil {
 					selections = make(map[string]bool)
 				}
+				// Rejected not persisted yet
 
 				exported, _ = store.GetExportedInDirectory(path)
 				if exported == nil {
@@ -118,10 +131,16 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 			}
 
 			fyne.CurrentApp().Driver().DoFromGoroutine(func() {
-				loadingBar.Hide()
+				// loadingBar.Hide() // Handled by view switch
 				if err != nil {
 					dialog.ShowError(err, w)
 					logger.Log.Error("Scan failed", "path", path, "error", err)
+					// Revert to welcome if failed?
+					if len(currentPhotos) == 0 {
+						welcome.Show()
+						loadingView.Hide()
+						mainView.Hide()
+					}
 					return
 				}
 
@@ -132,39 +151,68 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 
 				// Restore state
 				grid.SelectedPhotos = selections
+				grid.RejectedPhotos = make(map[string]bool) // Reset rejections
 				grid.ExportedPhotos = exported
 
 				activePhotoIndex = -1
 				grid.List.Refresh()
 				updateStatus() // Update Status
 				logger.Log.Info("Directory loaded", "path", path, "count", len(photos))
+
+				// TRIGGER VISIBILITY TOGGLE
+				if showMain != nil {
+					showMain()
+				}
 			}, false)
 		}()
 	}
 
-	// Keyboard Shortcuts: Shift+S
+	// Keyboard Shortcuts
 	w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
-		if ev.Name == fyne.KeyS {
-			if activePhotoIndex != -1 && activePhotoIndex < len(currentPhotos) {
-				path := currentPhotos[activePhotoIndex].Path
+		if activePhotoIndex != -1 && activePhotoIndex < len(currentPhotos) {
+			path := currentPhotos[activePhotoIndex].Path
 
-				// Toggle selection using Grid's map
+			if ev.Name == fyne.KeyS || ev.Name == fyne.KeyP {
+				// KEEP (Select) logic
+				// If currently Rejected, un-reject first
+				if grid.RejectedPhotos[path] {
+					delete(grid.RejectedPhotos, path)
+				}
+
+				// Toggle Selection
 				isSelected := !grid.SelectedPhotos[path]
-
 				if isSelected {
 					grid.SelectedPhotos[path] = true
 				} else {
 					delete(grid.SelectedPhotos, path)
 				}
-				grid.List.Refresh()
-				updateStatus() // Update Status
 
-				// Persist
+				grid.List.Refresh()
+				updateStatus()
+				// Persist Selection
 				go func(p, dir string, sel bool) {
 					if err := store.SaveSelection(p, dir, sel); err != nil {
 						logger.Log.Error("Failed to save selection", "path", p, "error", err)
 					}
 				}(path, currentPath, isSelected)
+			} else if ev.Name == fyne.KeyX {
+				// REJECT Logic
+				// If currently Selected, un-select first
+				if grid.SelectedPhotos[path] {
+					delete(grid.SelectedPhotos, path)
+					// Persist Un-selection
+					go func(p, dir string) { store.SaveSelection(p, dir, false) }(path, currentPath)
+				}
+
+				// Toggle Rejection
+				isRejected := !grid.RejectedPhotos[path]
+				if isRejected {
+					grid.RejectedPhotos[path] = true
+				} else {
+					delete(grid.RejectedPhotos, path)
+				}
+				grid.List.Refresh()
+				updateStatus()
 			}
 		}
 	})
@@ -237,7 +285,9 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 		}),
 		widget.NewToolbarSpacer(),
 
-		widget.NewToolbarAction(theme.DocumentPrintIcon(), func() {
+		widget.NewToolbarSpacer(),
+		// Export Button
+		widget.NewToolbarAction(theme.DocumentSaveIcon(), func() {
 			// Export Action
 			var photosToExport []model.Photo
 			for _, photo := range currentPhotos {
@@ -247,7 +297,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 			}
 
 			if len(photosToExport) == 0 {
-				dialog.ShowInformation("Export", "No photos selected for export.", w)
+				dialog.ShowInformation("Export Selection", "No photos selected for export.", w)
 				return
 			}
 
@@ -278,7 +328,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 							grid.List.Refresh()
 							updateStatus() // Update status
 
-							dialog.ShowInformation("Export Complete", fmt.Sprintf("Exported %d photos to %s", count, finalDest), w)
+							dialog.ShowInformation("Export Complete", fmt.Sprintf("Successfully exported %d photos to %s", count, finalDest), w)
 							logger.Log.Info("Export success", "count", count, "dest", finalDest)
 						}
 					}, false)
@@ -286,7 +336,7 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 			}
 
 			// Export Dialog - Use Custom Finder for unified UX
-			picker.ShowFinder(w, "Select Export Folder", func(path string) {
+			picker.ShowFinder(w, "Export Selection to...", func(path string) {
 				if path != "" {
 					doExport(path)
 				}
@@ -307,10 +357,11 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 - **Right Panel**: High-res viewer.
 
 ## Shortcuts
-- **S** or **Shift+S**: Toggle Selection of current photo.
+- **S**, **P** or **Shift+S**: Keep/Select photo (Green).
+- **X**: Reject photo (Red/Dimmed).
 
 ## Export
-- Click **Print Icon** to export selected photos.
+- Click **Save Icon** (Export Selection) to export selected photos.
 - App adds a date-stamped folder automatically.
 			`
 			dialog.ShowCustom("Help", "Close", widget.NewRichTextFromMarkdown(helpText), w)
@@ -325,11 +376,43 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 	topContainer := container.NewVBox(toolbar, pathLabel)
 	bottomContainer := container.NewVBox(loadingBar, statusLabel) // Status bar at bottom
 
-	content := container.New(layout.NewBorderLayout(topContainer, bottomContainer, nil, nil),
+	mainView = container.New(layout.NewBorderLayout(topContainer, bottomContainer, nil, nil),
 		topContainer,
 		bottomContainer,
 		split,
 	)
 
-	return content
+	// Welcome Screen Wrapper
+	welcome = NewWelcomeScreen(func() {
+		picker.ShowFinder(w, "Open Folder", func(path string) {
+			if path != "" {
+				loadDirectory(path)
+			}
+		})
+	})
+
+	loadingView = NewLoadingScreen()
+
+	// Master Stack
+	masterStack := container.NewStack(welcome, mainView, loadingView)
+
+	// Initial State
+	mainView.Hide()
+	loadingView.Hide()
+	welcome.Show()
+
+	// Link Logic
+	showMain = func() {
+		welcome.Hide()
+		loadingView.Hide()
+		mainView.Show()
+	}
+
+	showLoading = func() {
+		welcome.Hide()
+		mainView.Hide()
+		loadingView.Show()
+	}
+
+	return masterStack
 }
