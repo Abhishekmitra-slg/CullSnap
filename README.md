@@ -1,68 +1,61 @@
-# CullSnap
+# CullSnap 📸
 
-**CullSnap** is a high-performance, native macOS photo culling application built with [Go](https://go.dev/) and [Fyne](https://fyne.io/). It is designed for photographers who need to rapidly review, select, and export thousands of photos with speed and keyboard efficiency.
+![Go Version](https://img.shields.io/github/go-mod/go-version/abhishekmitra/CullSnap)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 
-## 🚀 Features
+**CullSnap** is a high-performance, native photo culling application built for speed. Designed for photographers who need to quickly sift through thousands of RAW/JPG images, CullSnap eliminates the "loading time" friction of traditional editors.
 
-- **Blazing Fast**: Handles directories with 10,000+ images using virtualized scrolling and async loading.
-- **Efficient Culling**:
-    - **Split View**: Thumbnails on the left, full-resolution viewer on the right.
-    - **Keyboard Shortcuts**: Press `S` to toggle selection instanty.
-- **Persistence**:
-    - Selections are saved automatically (backed by SQLite).
-    - Remembers which photos you've already exported (visual green checkmark).
-    - "Recent Folders" menu for quick access (Last 30 folders).
-- **Export Engine**:
-    - "Send to Print" feature copies selected photos to a timestamped `Session_...` folder.
-    - Prevents accidental duplicates.
+## 🚀 Why CullSnap?
 
-## 🛠️ Technology Stack
+Processing a shoot with 2,000+ photos shouldn't mean waiting for previews to render. CullSnap focuses on one thing: **Velocity**.
 
-- **Go 1.23+**
-- **Fyne v2** (GUI Framework)
-- **SQLite** (`modernc.org/sqlite` - CGO-free embedded DB)
-- **Imaging** (`disintegration/imaging` - High-quality resizing)
+-   **Zero-Latency Grid**: Customized virtualized table architecture for instant scrolling.
+-   **Lighting Fast Preview**: Optimized caching pipeline for high-res images.
+-   **"Traffic Light" Workflow**: Intuitive Green (Keep) / Red (Reject) selection system.
+-   **Export Ready**: One-click export of selected photos to a separate directory.
 
-## 📦 Installation & Build
+## ✨ Features
+
+-   **Virtual Infinite Grid**: Handle directories with 10k+ photos without lag.
+-   **Instant Shortcuts**: `S` (Select), `X` (Reject), `Space` (Preview).
+-   **RAW Support**: Native handling of standard image formats (JPG, PNG) and RAW previews (via embedded thumbs).
+-   **Session Memory**: Remembers your selections and progress even after restarting.
+-   **Export Workflow**: Automatically copies "Key" shots to a `Session_YYYYMMDD` folder.
+
+## 🛠️ Installation
 
 ### Prerequisites
-- **Go**: Version 1.23 or higher.
-- **C Compiler**: Required by Fyne for OS interaction (e.g., Xcode Command Line Tools on macOS).
+-   **Go 1.22+**: [Download Go](https://go.dev/dl/)
+-   **Fyne Dependencies**: [Fyne Prerequisites](https://developer.fyne.io/started/) (GCC usually required).
 
-### Build from Source
+### Quick Start
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/CullSnap.git
+git clone https://github.com/abhishekmitra/CullSnap.git
 cd CullSnap
 
-# Install dependencies and build
-make build
+# Run directly
+go run cmd/cullsnap/main.go
+
+# Build binary
+go build -o cullsnap cmd/cullsnap/main.go
 ```
 
-The binary will be created in `bin/CullSnap`.
+## 🎮 Usage Guide
 
-## 🖥️ Usage
+1.  **Open Folder**: Click the Folder icon to load a directory.
+2.  **Cull**:
+    -   Use `Arrow Keys` to navigate.
+    -   Press `S` or `Shift+S` to **Keep** (Green Border).
+    -   Press `X` to **Reject** (Red Dim).
+3.  **Review**: Grid provides instant visual feedback on your selections.
+4.  **Export**: Click the **Save Icon** in the toolbar to copy all "Kept" photos to a new folder.
 
-1.  **Run the App**:
-    ```bash
-    make run
-    ```
-2.  **Open a Folder**: Click the 📂 Folder icon or use the History menu.
-3.  **Select Photos**:
-    - Click a thumbnail to view it in high resolution.
-    - Press **`S`** (or `Shift+S`) to toggle selection (Blue Border).
-4.  **Export**:
-    - Click the 🖨️ Print icon.
-    - Choose a destination folder.
-    - Selected photos are copied to a new subfolder, and marked as exported (Green Checkmark).
+## 🤝 Contributing
 
-## 🗂️ Project Structure
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and layout the codebase.
 
-- `cmd/cullsnap`: Application entry point.
-- `internal/ui`: Fyne UI layout and components.
-- `internal/scanner`: High-performance directory crawler.
-- `internal/storage`: SQLite database logic.
-- `internal/image`: Thumbnail generation and EXIF handling.
+## 📄 License
 
-## 📝 License
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
