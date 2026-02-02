@@ -16,5 +16,6 @@ lint:
 build: lint
 	go build -ldflags "-s -w" -o bin/$(APP_NAME) $(SRC)
 
-package:
-	fyne package -os darwin -icon internal/assets/icon.png
+package-mac:
+	fyne package -os darwin -icon $(PWD)/internal/assets/icon.png -name CullSnap -release -src ./cmd/cullsnap
+	zip -r CullSnap.app.zip CullSnap.app
