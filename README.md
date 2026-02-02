@@ -1,45 +1,25 @@
 # CullSnap 📸
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/abhishekmitra/CullSnap)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Abhishekmitra-slg/cullsnap)](https://go.dev/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Abhishekmitra-slg/cullsnap)](https://goreportcard.com/report/github.com/Abhishekmitra-slg/cullsnap)
+[![License](https://img.shields.io/github/license/Abhishekmitra-slg/cullsnap)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/Abhishekmitra-slg/cullsnap)](https://github.com/Abhishekmitra-slg/cullsnap/releases)
 
-**CullSnap** is a high-performance, native photo culling application built for speed. Designed for photographers who need to quickly sift through thousands of RAW/JPG images, CullSnap eliminates the "loading time" friction of traditional editors.
-
-## 🚀 Why CullSnap?
-
-Processing a shoot with 2,000+ photos shouldn't mean waiting for previews to render. CullSnap focuses on one thing: **Velocity**.
-
--   **Zero-Latency Grid**: Customized virtualized table architecture for instant scrolling.
--   **Lighting Fast Preview**: Optimized caching pipeline for high-res images.
--   **"Traffic Light" Workflow**: Intuitive Green (Keep) / Red (Reject) selection system.
--   **Export Ready**: One-click export of selected photos to a separate directory.
+CullSnap is a blazing fast photo culling tool built with Go and Fyne. Designed for photographers who need to quickly sift through thousands of RAW/JPG images, CullSnap eliminates the "loading time" friction of traditional editors.
 
 ## ✨ Features
 
--   **Virtual Infinite Grid**: Handle directories with 10k+ photos without lag.
--   **Instant Shortcuts**: `S` (Select), `X` (Reject), `Space` (Preview).
--   **RAW Support**: Native handling of standard image formats (JPG, PNG) and RAW previews (via embedded thumbs).
--   **Session Memory**: Remembers your selections and progress even after restarting.
--   **Export Workflow**: Automatically copies "Key" shots to a `Session_YYYYMMDD` folder.
+-   **Table Grid**: Customized virtualized table architecture for instant scrolling through thousands of photos.
+-   **Raw Preview**: High-performance embedded thumbnail extraction for RAW files.
+-   **Traffic Light Culling**: Intuitive Green (Keep/Select) and Red (Reject) workflow with instant visual feedback.
+-   **Export Ready**: One-click export of selected photos to a separate directory.
 
 ## 🛠️ Installation
 
-### Prerequisites
--   **Go 1.22+**: [Download Go](https://go.dev/dl/)
--   **Fyne Dependencies**: [Fyne Prerequisites](https://developer.fyne.io/started/) (GCC usually required).
+You can install CullSnap directly using the Go toolchain:
 
-### Quick Start
 ```bash
-# Clone the repository
-git clone https://github.com/abhishekmitra/CullSnap.git
-cd CullSnap
-
-# Run directly
-go run cmd/cullsnap/main.go
-
-# Build binary
-go build -o cullsnap cmd/cullsnap/main.go
+go install github.com/Abhishekmitra-slg/cullsnap/cmd/cullsnap@latest
 ```
 
 ## 🎮 Usage Guide
@@ -54,7 +34,7 @@ go build -o cullsnap cmd/cullsnap/main.go
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and layout the codebase.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## 📄 License
 
