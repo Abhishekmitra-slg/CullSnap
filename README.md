@@ -1,9 +1,8 @@
 # CullSnap 📸
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/Abhishekmitra-slg/CullSnap)](https://github.com/Abhishekmitra-slg/CullSnap)
+[![Go Version](https://img.shields.io/badge/Go-1.23-00ADD8?style=flat&logo=go)](go.mod)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Abhishekmitra-slg/CullSnap)](https://goreportcard.com/report/github.com/Abhishekmitra-slg/CullSnap)
-[![License](https://img.shields.io/github/license/Abhishekmitra-slg/CullSnap)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/Abhishekmitra-slg/CullSnap)](https://github.com/Abhishekmitra-slg/CullSnap/releases)
 
 **CullSnap** is a blazing fast, native desktop tool for photographers to cull and select thousands of photos in seconds. Built with Go and Fyne.
 
