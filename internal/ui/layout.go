@@ -7,6 +7,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/ui/picker"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -171,12 +172,11 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 	// Top Toolbar
 	toolbar := widget.NewToolbar(
 		widget.NewToolbarAction(theme.FolderOpenIcon(), func() {
-			dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-				if err != nil || uri == nil {
-					return
+			picker.ShowFinder(w, "Open Folder", func(path string) {
+				if path != "" {
+					loadDirectory(path)
 				}
-				loadDirectory(uri.Path())
-			}, w)
+			})
 		}),
 		widget.NewToolbarAction(theme.ComputerIcon(), func() {
 			entry := widget.NewEntry()
@@ -285,35 +285,12 @@ func SetupMainLayout(w fyne.Window, store *storage.SQLiteStore) fyne.CanvasObjec
 				}()
 			}
 
-			// Export Dialog
-			var exportDialog dialog.Dialog
-			browseBtn := widget.NewButtonWithIcon("Browse Folder", theme.FolderOpenIcon(), func() {
-				exportDialog.Hide()
-				dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-					if err == nil && uri != nil {
-						doExport(uri.Path())
-					}
-				}, w)
+			// Export Dialog - Use Custom Finder for unified UX
+			picker.ShowFinder(w, "Select Export Folder", func(path string) {
+				if path != "" {
+					doExport(path)
+				}
 			})
-			manualBtn := widget.NewButtonWithIcon("Enter Path", theme.ComputerIcon(), func() {
-				exportDialog.Hide()
-				entry := widget.NewEntry()
-				entry.SetPlaceHolder("/full/path/to/destination")
-				dialog.ShowCustomConfirm("Export Path", "Export", "Cancel", entry, func(ok bool) {
-					if ok && entry.Text != "" {
-						doExport(entry.Text)
-					}
-				}, w)
-			})
-
-			content := container.NewVBox(
-				widget.NewLabel(fmt.Sprintf("Exporting %d photos.", len(photosToExport))),
-				widget.NewLabel("Choose destination method:"),
-				browseBtn,
-				manualBtn,
-			)
-			exportDialog = dialog.NewCustom("Export Selection", "Cancel", content, w)
-			exportDialog.Show()
 		}),
 		widget.NewToolbarAction(theme.FileTextIcon(), func() {
 			if err := logger.OpenLogFile(); err != nil {
