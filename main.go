@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cullsnap/internal/app"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/storage"
 
@@ -71,7 +72,7 @@ func main() {
 	defer store.Close()
 
 	// Create an instance of the app structure
-	app := NewApp(store)
+	application := app.NewApp(store)
 
 	// Create application with options
 	err = wails.Run(&options.App{
@@ -83,9 +84,9 @@ func main() {
 			Handler: &FileLoader{},
 		},
 		BackgroundColour: &options.RGBA{R: 24, G: 24, B: 27, A: 1}, // Matches zinc-900 (modern dark theme)
-		OnStartup:        app.Startup,
+		OnStartup:        application.Startup,
 		Bind: []interface{}{
-			app,
+			application,
 		},
 		Mac: &mac.Options{
 			TitleBar: &mac.TitleBar{
