@@ -61,6 +61,6 @@ echo "🔨 Selected Target: ${TARGET}"
 
 # 4. Trigger Wails Build
 echo "🚀 Compiling..."
-wails build -platform "${TARGET}" -clean -m
+go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform "${TARGET}" -clean -m
 
 echo "✅ Build Complete! Your application is ready in the ./build/bin folder."
