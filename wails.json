@@ -9,5 +9,9 @@
   "author": {
     "name": "Abhishek Mitra",
     "email": "abhishekmitra.slg@gmail.com"
+  },
+  "linux": {
+    "app_id": "com.abhishekmitra.cullsnap",
+    "program_name": "CullSnap"
   }
 }

@@ -16,5 +16,5 @@ lint:
 build: lint
 	go run github.com/wailsapp/wails/v2/cmd/wails@latest build
 
-package-mac:
-	go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/universal -clean
+package:
+	./scripts/package.sh
