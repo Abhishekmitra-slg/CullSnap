@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FolderOpen, Download, HelpCircle, FileText, Clock } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
-import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/main/App';
+import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
 interface SidebarProps {
     currentDir: string;

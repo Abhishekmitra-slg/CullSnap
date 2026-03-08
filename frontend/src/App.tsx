@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources } from '../wailsjs/go/main/App';
-import { main as appMain, model as appModel } from '../wailsjs/go/models';
+import { SelectDirectory, ScanDirectory, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources } from '../wailsjs/go/app/App';
+import { app as appMain, model as appModel } from '../wailsjs/go/models';
 
 function App() {
     const [photos, setPhotos] = useState<appModel.Photo[]>([]);
