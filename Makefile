@@ -1,21 +1,20 @@
 .PHONY: test run build package
 
 APP_NAME := CullSnap
-SRC := ./cmd/cullsnap
+SRC := .
 
 test:
 	go test ./internal/...
 
 run:
-	go run $(SRC)
+	wails dev
 
 lint:
 	go fmt ./...
 	go vet ./...
 
 build: lint
-	go build -ldflags "-s -w" -o bin/$(APP_NAME) $(SRC)
+	go run github.com/wailsapp/wails/v2/cmd/wails@latest build
 
 package-mac:
-	fyne package -os darwin -icon $(PWD)/internal/assets/icon.png -name CullSnap -release -src ./cmd/cullsnap
-	zip -r CullSnap.app.zip CullSnap.app
+	go run github.com/wailsapp/wails/v2/cmd/wails@latest build -platform darwin/universal -clean
