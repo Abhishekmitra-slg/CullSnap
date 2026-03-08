@@ -13,11 +13,15 @@ var LogPath string
 
 // Init initializes the global logger to write to the specified file.
 func Init(filename string) error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
+	if filepath.IsAbs(filename) {
+		LogPath = filename
+	} else {
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		LogPath = filepath.Join(wd, filename)
 	}
-	LogPath = filepath.Join(wd, filename)
 
 	file, err := os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
