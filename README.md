@@ -14,6 +14,40 @@
 -   **Resource Monitoring**: Real-time MacOS Application Engine Memory, CPU, Disk I/O, and Network tracking built directly into the UI.
 -   **Export Ready**: One-click bulk export of selected photos to any destination directory without destructive file moving.
 
+## 🏗️ Architecture
+
+CullSnap natively binds a high-performance **Go** backend to a modern **React/Vite** frontend using the **Wails Framework**.
+
+```mermaid
+graph LR
+    subgraph Frontend [React / Vite UI]
+        direction TB
+        Grid["Virtual Photo Grid\n(@tanstack/react-virtual)"]
+        Sidebar["Sidebar Controls & Stats"]
+        Keys["Arrow Key Navigation\nReact useEffect"]
+    end
+
+    subgraph IPC [Wails Bridge]
+        Bindings["Typescript Bindings\nwailsjs/go/app/App"]
+    end
+
+    subgraph Backend [Go Desktop Backend]
+        direction TB
+        Scanner["Directory Scanner\n(internal/scanner)"]
+        Storage["SQLite Cache\n(internal/storage)"]
+        OS["System Resources Stats\n(shirou/gopsutil)"]
+        Assets["Go:Embed Frontend Assets"]
+    end
+
+    Grid <-->|Fetch Photos / Update Selection| Bindings
+    Sidebar <-->|Trigger Export / Read Metrics| Bindings
+    Keys <-->|Change Active Photo| Bindings
+
+    Bindings <-->|Execute Native Methods| Scanner
+    Bindings <-->|Persist State| Storage
+    Bindings <-->|Read CPU/RAM| OS
+```
+
 ## 🛠️ Installation & Build
 
 Ensure you have [Go](https://go.dev/) and Node/NPM installed. Then install the Wails CLI:
