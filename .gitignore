@@ -20,3 +20,14 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+# Security & Secrets
+.env
+.gemini/
+gha-creds-*.json
+*.key
+*.pem
+
+# Build output
+/bin/
+/obj/
