@@ -26,10 +26,12 @@ jobs:
       - name: Setup Python (For Agent)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install AI Agent CLI
-        run: pip install aider-chat
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install aider-chat
 
       - name: Run Autonomous Gemini Agent
         env:
