@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-:root {
+:root,
+[data-theme='dark'] {
   --bg-color: #18181b;
   /* zinc-900 */
   --bg-sidebar: #09090b;
@@ -26,6 +27,53 @@
 
   --glass-bg: rgba(39, 39, 42, 0.7);
   --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(12px);
+}
+
+[data-theme='light'] {
+  --bg-color: #f4f4f5;
+  /* zinc-100 */
+  --bg-sidebar: #e4e4e7;
+  /* zinc-200 */
+  --bg-panel: #ffffff;
+  /* white */
+  --bg-panel-hover: #f4f4f5;
+  /* zinc-100 */
+  --text-primary: #18181b;
+  /* zinc-900 */
+  --text-secondary: #71717a;
+  /* zinc-500 */
+  --accent: #3b82f6;
+  /* blue-500 */
+  --accent-hover: #2563eb;
+  /* blue-600 */
+  --success: #16a34a;
+  /* green-600 */
+  --danger: #dc2626;
+  /* red-600 */
+  --border-color: #d4d4d8;
+  /* zinc-300 */
+
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-blur: blur(12px);
+}
+
+[data-theme='matrix'] {
+  --bg-color: #000000;
+  --bg-sidebar: #020A02;
+  --bg-panel: #041404;
+  --bg-panel-hover: #061F06;
+  --text-primary: #00FF41;
+  --text-secondary: #00B32D;
+  --accent: #00FF41;
+  --accent-hover: #2CFF6B;
+  --success: #00FF41;
+  --danger: #FF4100;
+  --border-color: #008F26;
+
+  --glass-bg: rgba(0, 50, 0, 0.7);
+  --glass-border: rgba(0, 255, 65, 0.2);
   --glass-blur: blur(12px);
 }
 
@@ -161,6 +209,29 @@ body {
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+
+/* Theme Switcher */
+.theme-switcher {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+}
+
+.theme-switcher:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Typography */
