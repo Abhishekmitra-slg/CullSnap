@@ -31,3 +31,4 @@ gha-creds-*.json
 # Build output
 /bin/
 /obj/
+.aider*
