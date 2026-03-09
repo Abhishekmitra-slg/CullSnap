@@ -47,7 +47,8 @@ jobs:
           git config --global user.email "agent@gemini.cloud"
           
           # Run the agent. It maps the repo, reads GEMINI.md, and modifies files in place.
-          aider --model gemini/gemini-1.5-pro-latest --message "$CLEAN_PROMPT" --yes --no-auto-commits --read GEMINI.md
+          aider --model gemini/gemini-3.0-pro --message "$CLEAN_PROMPT" --yes --no-auto-commits --read GEMINI.md
+
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
