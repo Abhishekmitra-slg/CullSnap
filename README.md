@@ -56,6 +56,18 @@ Ensure you have [Go](https://go.dev/) and Node/NPM installed. Then install the W
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
+### 🍎 macOS Gatekeeper Warning
+Because this is an open-source tool, the pre-built macOS `.app` bundle from the Releases page is not digitally signed with a paid Apple Developer Certificate. macOS will flag it with *"Apple could not verify CullSnap is free of malware."*
+
+To run the downloaded app safely:
+1. Open your Terminal.
+2. Run the following command to remove the Apple Quarantine flag from the downloaded app:
+```bash
+xattr -cr /Applications/CullSnap.app
+```
+*(Make sure to change the path if you didn't drag it to your Applications folder!)*
+
+### Building from Source
 To build a Native Application Bundle (`.app` for Mac):
 ```bash
 make build
