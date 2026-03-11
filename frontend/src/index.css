@@ -464,3 +464,55 @@ h2 {
 .bg-green-500 {
   background-color: var(--success);
 }
+
+/* Deduplication Progress Overlay */
+.dedupe-progress-overlay {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text-primary);
+}
+
+.scanner-animation {
+  width: 120px;
+  height: 120px;
+  border: 4px solid var(--accent);
+  border-radius: 50%;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 24px;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+}
+
+.scanner-beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 50%;
+  background: linear-gradient(45deg, rgba(59, 130, 246, 0) 0%, rgba(59, 130, 246, 0.8) 100%);
+  transform-origin: bottom right;
+  animation: radar-spin 2s linear infinite;
+}
+
+@keyframes radar-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.progress-bar-container-large {
+  width: 80%;
+  max-width: 400px;
+  height: 8px;
+  background: var(--bg-sidebar);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 16px;
+  border: 1px solid var(--border-color);
+}
+
+.progress-bar-fill-large {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}

@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	stdruntime "runtime"
+	"sync"
 	"time"
 
+	"cullsnap/internal/dedupe"
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/model"
@@ -22,8 +24,10 @@ import (
 
 // App struct
 type App struct {
-	ctx   context.Context
-	store *storage.SQLiteStore
+	ctx          context.Context
+	store        *storage.SQLiteStore
+	dedupeMutex  sync.Mutex
+	dedupeCancel context.CancelFunc
 }
 
 // NewApp creates a new App application struct
@@ -190,4 +194,112 @@ func (a *App) GetSystemResources() SystemResources {
 	}
 
 	return metrics
+}
+
+// DedupeResult is the payload for the frontend
+type DedupeResult struct {
+	UniquePhotos    []model.Photo   `json:"uniquePhotos"`
+	DuplicateGroups [][]model.Photo `json:"duplicateGroups"`
+}
+
+// CancelDeduplicate allows the frontend to abort an ongoing deduplication process.
+func (a *App) CancelDeduplicate() {
+	a.dedupeMutex.Lock()
+	defer a.dedupeMutex.Unlock()
+	if a.dedupeCancel != nil {
+		a.dedupeCancel()
+		a.dedupeCancel = nil
+	}
+}
+
+// ScanAndDeduplicate runs perceptual hashing, quality scoring, sorting, and relocation.
+func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeResult, error) {
+	logger.Log.Info("Scanning and deduplicating directory", "path", path)
+	a.store.AddRecent(path)
+
+	// 1. Find explicit duplicates
+	// 8 is a good default threshold for dHash.
+	if similarityThreshold <= 0 {
+		similarityThreshold = 8
+	}
+
+	appCtx, cancel := context.WithCancel(a.ctx)
+	a.dedupeMutex.Lock()
+	a.dedupeCancel = cancel
+	a.dedupeMutex.Unlock()
+
+	defer func() {
+		a.dedupeMutex.Lock()
+		a.dedupeCancel = nil
+		a.dedupeMutex.Unlock()
+		cancel()
+	}()
+
+	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, func(current, total int, message string) {
+		runtime.EventsEmit(a.ctx, "dedupe-progress", map[string]interface{}{
+			"current": current,
+			"total":   total,
+			"message": message,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Select the best quality photo in each group to represent the unique
+	err = dedupe.FindBestPhotos(appCtx, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Sort groups chronologically
+	err = dedupe.SortGroupsByDate(appCtx, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. Move duplicates physically
+	errs := dedupe.RelocateGroupDuplicates(appCtx, groups)
+	if len(errs) > 0 && errs[0] == context.Canceled {
+		return nil, context.Canceled
+	}
+
+	// 5. Structure data for the frontend
+	res := &DedupeResult{
+		UniquePhotos:    make([]model.Photo, 0, len(groups)),
+		DuplicateGroups: make([][]model.Photo, 0),
+	}
+
+	for _, g := range groups {
+		var duplicates []model.Photo
+		for _, p := range g.Photos {
+			// Get basic file info
+			info, err := os.Stat(p.Path)
+			if err != nil {
+				continue // Skip gracefully
+			}
+
+			date, valid := dedupe.ExtractDateTaken(p.Path)
+			if !valid {
+				date = info.ModTime() // fallback
+			}
+
+			photoModel := model.Photo{
+				Path:    p.Path,
+				Size:    info.Size(),
+				TakenAt: date,
+			}
+
+			if p.IsUnique {
+				res.UniquePhotos = append(res.UniquePhotos, photoModel)
+			} else {
+				duplicates = append(duplicates, photoModel)
+			}
+		}
+		if len(duplicates) > 0 {
+			res.DuplicateGroups = append(res.DuplicateGroups, duplicates)
+		}
+	}
+
+	return res, nil
 }
