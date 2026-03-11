@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -12,6 +12,8 @@ interface SidebarProps {
     photos: model.Photo[];
     selectedPaths: Set<string>;
     onExportSuccess: (msg: string) => void;
+    theme: string;
+    onThemeChange: (theme: string) => void;
 }
 
 export function Sidebar({
@@ -22,7 +24,9 @@ export function Sidebar({
     onLoadDir,
     photos,
     selectedPaths,
-    onExportSuccess
+    onExportSuccess,
+    theme,
+    onThemeChange
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -85,6 +89,17 @@ export function Sidebar({
                         <div className="truncate-path" title={currentDir}>{currentDir}</div>
                     </div>
                 )}
+            </div>
+
+            <div className="sidebar-group mt-4">
+                <h2 className="text-small flex items-center gap-2 mb-1">
+                    <Palette size={16} /> Theme
+                </h2>
+                <select className="theme-switcher" value={theme} onChange={(e) => onThemeChange(e.target.value)}>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="matrix">Matrix</option>
+                </select>
             </div>
 
             <div className="sidebar-group mt-6 glass-panel p-4 flex flex-col" style={{ flex: 1, overflow: 'hidden' }}>

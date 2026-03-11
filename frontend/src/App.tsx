@@ -12,6 +12,7 @@ function App() {
     const [currentDir, setCurrentDir] = useState<string>('');
     const [activePhoto, setActivePhoto] = useState<appModel.Photo | null>(null);
     const [loading, setLoading] = useState(false);
+    const [theme, setTheme] = useState<string>('dark');
     const [sysMetrics, setSysMetrics] = useState<appMain.SystemResources | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
@@ -77,6 +78,10 @@ function App() {
         setTimeout(() => setExportSuccess(null), 3000);
     };
 
+    const handleThemeChange = (newTheme: string) => {
+        setTheme(newTheme);
+    };
+
     const loadDirectory = async (dir: string) => {
         setLoading(true);
         setCurrentDir(dir);
@@ -125,7 +130,7 @@ function App() {
     };
 
     return (
-        <div id="App" className="app-container">
+        <div id="App" className="app-container" data-theme={theme}>
             <div className="titlebar" />
 
             <Sidebar
@@ -137,6 +142,8 @@ function App() {
                 photos={photos}
                 selectedPaths={selectedPaths}
                 onExportSuccess={handleExportSuccess}
+                theme={theme}
+                onThemeChange={handleThemeChange}
             />
 
             <div className="main-content">
