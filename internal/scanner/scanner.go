@@ -27,6 +27,9 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == "duplicates" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

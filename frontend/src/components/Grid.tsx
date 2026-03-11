@@ -5,6 +5,7 @@ import { useRef, useEffect } from 'react';
 
 interface GridProps {
     photos: model.Photo[];
+    duplicateGroups?: model.Photo[][];
     selectedPaths: Set<string>;
     exportedPaths: Set<string>;
     activePhoto: model.Photo | null;
@@ -13,6 +14,7 @@ interface GridProps {
 
 export function Grid({
     photos,
+    duplicateGroups,
     selectedPaths,
     exportedPaths,
     activePhoto,
@@ -31,7 +33,7 @@ export function Grid({
         overscan: 5,
     });
 
-    if (photos.length === 0) {
+    if (photos.length === 0 && (!duplicateGroups || duplicateGroups.length === 0)) {
         return (
             <div className="grid-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                 <p>No photos loaded. Open a folder to begin culling.</p>
@@ -113,6 +115,45 @@ export function Grid({
                     );
                 })}
             </div>
+
+            {/* Collapsible Duplicates Section */}
+            {duplicateGroups && duplicateGroups.length > 0 && (
+                <details className="mt-8 mb-8 mx-4" style={{ cursor: 'pointer' }}>
+                    <summary className="text-large text-gray-400 font-semibold mb-4" style={{ opacity: 0.8 }}>
+                        Hidden Duplicates ({duplicateGroups.reduce((acc, g) => acc + g.length, 0)})
+                    </summary>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: '1rem' }}>
+                        {duplicateGroups.flat().map((photo) => {
+                            const isActive = activePhoto?.Path === photo.Path;
+                            return (
+                                <div
+                                    id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                                    key={photo.Path}
+                                    className={`thumbnail-card ${isActive ? 'active' : ''}`}
+                                    onClick={() => onPhotoClick(photo)}
+                                    style={{ height: '160px', width: '100%', opacity: 0.6 }} // Dim duplicates
+                                >
+                                    <img
+                                        src={photo.Path}
+                                        alt={photo.Path.split('/').pop()}
+                                        className="thumbnail-image"
+                                        loading="lazy"
+                                        decoding="async"
+                                        style={{ objectFit: 'cover', width: '100%', height: '100%', borderRadius: '0.5rem' }}
+                                        onLoad={(e) => {
+                                            (e.target as HTMLImageElement).classList.add('loaded');
+                                        }}
+                                    />
+                                    {/* Small duplicate badge */}
+                                    <div className="badge" style={{ background: 'var(--bg-panel)', color: 'var(--text-secondary)' }}>
+                                        Duplicate
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </details>
+            )}
         </div>
     );
 }

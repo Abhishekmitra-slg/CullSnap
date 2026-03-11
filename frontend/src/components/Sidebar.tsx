@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette, Layers } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -9,6 +9,8 @@ interface SidebarProps {
     selectedCount: number;
     onOpenFolder: () => void;
     onLoadDir: (dir: string) => void;
+    onDeduplicate: () => void;
+    isDeduplicating: boolean;
     photos: model.Photo[];
     selectedPaths: Set<string>;
     onExportSuccess: (msg: string) => void;
@@ -22,6 +24,8 @@ export function Sidebar({
     selectedCount,
     onOpenFolder,
     onLoadDir,
+    onDeduplicate,
+    isDeduplicating,
     photos,
     selectedPaths,
     onExportSuccess,
@@ -84,10 +88,22 @@ export function Sidebar({
                 </button>
 
                 {currentDir && (
-                    <div className="path mt-4">
+                    <div className="path mt-4 mb-2">
                         <h2 className="text-small mb-1">Current Folder</h2>
                         <div className="truncate-path" title={currentDir}>{currentDir}</div>
                     </div>
+                )}
+
+                {currentDir && (
+                    <button 
+                        className="btn w-full mt-2" 
+                        onClick={onDeduplicate}
+                        disabled={isDeduplicating || photos.length === 0}
+                        title="Find and group duplicate photos, keeping the sharpest one"
+                    >
+                        <Layers size={18} />
+                        {isDeduplicating ? 'Processing...' : 'Find Duplicates'}
+                    </button>
                 )}
             </div>
 

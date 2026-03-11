@@ -4,10 +4,12 @@ go 1.25.0
 
 require (
 	fyne.io/fyne/v2 v2.7.3
+	github.com/corona10/goimagehash v1.1.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/sync v0.20.0
 	modernc.org/sqlite v1.46.1
 )
 
@@ -29,6 +31,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect

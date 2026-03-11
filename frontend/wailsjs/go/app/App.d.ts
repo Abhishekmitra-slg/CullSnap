@@ -3,6 +3,8 @@
 import {model} from '../models';
 import {app} from '../models';
 
+export function CancelDeduplicate():Promise<void>;
+
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string):Promise<number>;
 
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;
@@ -14,6 +16,8 @@ export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 export function GetSystemResources():Promise<app.SystemResources>;
 
 export function OpenLog():Promise<void>;
+
+export function ScanAndDeduplicate(arg1:string,arg2:number):Promise<app.DedupeResult>;
 
 export function ScanDirectory(arg1:string):Promise<Array<model.Photo>>;
 
