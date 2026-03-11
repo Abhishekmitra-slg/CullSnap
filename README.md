@@ -9,6 +9,7 @@
 ## ✨ Features
 
 -   **Infinite Virtual Grid**: Built with `@tanstack/react-virtual` to effortlessly scroll through directories of 10,000+ photos using less than 30MB of Engine RAM.
+-   **Smart Deduplication**: Pure-Go perceptual hashing automatically groups duplicate/burst photos and intelligently selects the sharpest image using a fast Laplacian Variance algorithm.
 -   **RAW & JPEG Processing**: High-performance backend embedded thumbnail extraction for RAW camera files.
 -   **Intelligent Syncing**: Backend SQLite tagging automatically saves your Culling progress seamlessly across app restarts.
 -   **Resource Monitoring**: Real-time MacOS Application Engine Memory, CPU, Disk I/O, and Network tracking built directly into the UI.
@@ -82,7 +83,8 @@ make dev
 ## 🎮 Usage Guide
 
 1.  **Open Folder**: Click the Folder icon to load a directory on your machine.
-2.  **Navigate**: Use `Arrows ← / →` or `↑ / ↓` to instantly traverse through photos.
+2.  **Deduplicate**: Click the **Find Duplicates** button in the sidebar to automatically group burst shots and isolate the sharpest unique photos to the top of your grid.
+3.  **Navigate**: Use `Arrows ← / →` or `↑ / ↓` to instantly traverse through photos.
 3.  **Cull**: Press `S` to toggle keeping the photo (indicated by a Blue Checkmark).
 4.  **Review**: Grid provides instant visual feedback on your selections and highlights previously exported files (Green Checkmark).
 5.  **Export**: Click the **Export (N)** button in the sidebar to copy all selected photos to a separate delivery folder on your drive.
