@@ -33,6 +33,7 @@ type App struct {
 	store        *storage.SQLiteStore
 	dedupeMutex  sync.Mutex
 	dedupeCancel context.CancelFunc
+	thumbCache   *cullImage.ThumbCache
 }
 
 // NewApp creates a new App application struct
@@ -44,6 +45,14 @@ func NewApp(store *storage.SQLiteStore) *App {
 // so we can call the runtime methods
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Initialize thumbnail cache
+	tc, err := cullImage.NewThumbCache()
+	if err != nil {
+		logger.Log.Error("Failed to initialize thumbnail cache", "error", err)
+	} else {
+		a.thumbCache = tc
+	}
 }
 
 // SelectDirectory opens a native OS dialog to select a folder
@@ -88,6 +97,64 @@ func (a *App) ToggleSelection(path string, sessionID string, selected bool) erro
 // GetExportedStatus returns map of exported paths under a directory
 func (a *App) GetExportedStatus(dirPath string) (map[string]bool, error) {
 	return a.store.GetExportedInDirectory(dirPath)
+}
+
+// PreloadThumbnails generates cached thumbnails for all images in a directory.
+// Uses parallel goroutines (runtime.NumCPU()) for fast generation.
+// Emits "thumb-progress" events for the UI loading animation.
+// Returns photos with ThumbnailPath populated.
+func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
+	if a.thumbCache == nil {
+		// No cache available — return photos without thumbnail paths
+		return scanner.ScanDirectory(dirPath)
+	}
+
+	photos, err := scanner.ScanDirectory(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build item list with mod times
+	type thumbItem struct {
+		Path    string
+		ModTime time.Time
+	}
+	items := make([]struct {
+		Path    string
+		ModTime time.Time
+	}, len(photos))
+
+	for i, p := range photos {
+		items[i] = struct {
+			Path    string
+			ModTime time.Time
+		}{Path: p.Path, ModTime: p.TakenAt}
+	}
+
+	// Parallel thumbnail generation with progress
+	numWorkers := stdruntime.NumCPU()
+	if numWorkers < 2 {
+		numWorkers = 2
+	}
+	if numWorkers > 8 {
+		numWorkers = 8
+	}
+
+	thumbnailMap := a.thumbCache.GenerateBatch(items, numWorkers, func(completed, total int) {
+		runtime.EventsEmit(a.ctx, "thumb-progress", map[string]interface{}{
+			"current": completed,
+			"total":   total,
+		})
+	})
+
+	// Populate ThumbnailPath on photos
+	for i := range photos {
+		if tp, ok := thumbnailMap[photos[i].Path]; ok {
+			photos[i].ThumbnailPath = tp
+		}
+	}
+
+	return photos, nil
 }
 
 // ExportPhotos copies specified photos to a destination directory inside a timestamped subfolder

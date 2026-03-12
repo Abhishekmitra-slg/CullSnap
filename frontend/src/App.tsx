@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
 import { app as appMain, model as appModel } from '../wailsjs/go/models';
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
     const [photos, setPhotos] = useState<appModel.Photo[]>([]);
@@ -20,6 +21,7 @@ function App() {
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const [dedupCompleted, setDedupCompleted] = useState(false);
+    const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
 
     useEffect(() => {
         const interval = setInterval(async () => {
@@ -131,15 +133,17 @@ function App() {
     const loadDirectory = async (dir: string) => {
         setLoading(true);
         setCurrentDir(dir);
+        setThumbProgress(null);
         try {
-            const loadedPhotos = await ScanDirectory(dir);
-            setPhotos(loadedPhotos || []);
+            // Phase 1: Quick scan — show photos immediately with original paths
+            const quickPhotos = await ScanDirectory(dir);
+            setPhotos(quickPhotos || []);
 
             const exportedStatus = await GetExportedStatus(dir);
             setExportedPaths(new Set(Object.keys(exportedStatus || {})));
 
-            if (loadedPhotos && loadedPhotos.length > 0) {
-                setActivePhoto(loadedPhotos[0]);
+            if (quickPhotos && quickPhotos.length > 0) {
+                setActivePhoto(quickPhotos[0]);
             } else {
                 setActivePhoto(null);
             }
@@ -147,7 +151,7 @@ function App() {
             setDuplicateGroups([]);
             setDedupCompleted(false);
 
-            // Load star ratings for this directory
+            // Load star ratings
             try {
                 const dirRatings = await GetRatingsForDirectory(dir);
                 setRatings(dirRatings || {});
@@ -165,9 +169,30 @@ function App() {
             } catch {
                 // No dedup results found, that's fine
             }
+
+            setLoading(false);
+
+            // Phase 2: Preload thumbnails in background (parallel goroutines)
+            // Listen for progress events
+            const thumbHandler = (data: any) => {
+                setThumbProgress(data);
+            };
+            EventsOn('thumb-progress', thumbHandler);
+
+            try {
+                const thumbPhotos = await PreloadThumbnails(dir);
+                if (thumbPhotos && thumbPhotos.length > 0) {
+                    // Update photos with thumbnail paths
+                    setPhotos(thumbPhotos);
+                }
+            } catch (e) {
+                console.error('Thumbnail preload failed:', e);
+            } finally {
+                EventsOff('thumb-progress');
+                setThumbProgress(null);
+            }
         } catch (e) {
             console.error(e);
-        } finally {
             setLoading(false);
         }
     };
@@ -311,7 +336,7 @@ function App() {
                     {loading ? (
                         <div className="progress-container"><div className="progress-bar-indeterminate"></div></div>
                     ) : (
-                        <span>{photos.length} photos • {selectedPaths.size} selected</span>
+                <span>{photos.length} photos • {selectedPaths.size} selected{thumbProgress ? ` • Loading thumbnails ${thumbProgress.current}/${thumbProgress.total}` : ''}</span>
                     )}
                 </div>
 
