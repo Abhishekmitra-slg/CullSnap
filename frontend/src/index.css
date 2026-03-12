@@ -67,8 +67,8 @@
   --bg-card: #ffffff;
 
   --text-primary: #1a1a2e;
-  --text-secondary: #6666880;
-  --text-muted: #9999bb;
+  --text-secondary: #666688;
+  --text-muted: #8888aa;
 
   --accent: #4f8cff;
   --accent-hover: #3d7aee;
@@ -341,7 +341,6 @@ h2 {
   display: flex;
   overflow: hidden;
   background-color: var(--bg-base);
-  padding-top: 38px;
   position: relative;
 }
 
@@ -355,7 +354,7 @@ h2 {
   max-width: 560px;
   border-right: 1px solid var(--border-color);
   overflow-y: auto;
-  padding: 10px;
+  padding: 44px 10px 10px 10px;
   background: var(--bg-surface);
   flex-shrink: 0;
 }
