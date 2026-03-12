@@ -13,23 +13,36 @@ interface GridProps {
     onRatingChange: (path: string, rating: number) => void;
 }
 
-// Lazy-loading thumbnail component using IntersectionObserver
+// Thumbnail component — immediately shows file path, upgrades to base64 in background
 function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [src, setSrc] = useState<string>('');
-    const [isVisible, setIsVisible] = useState(false);
+    const [src, setSrc] = useState<string>(path); // Always start with the real path
     const [loaded, setLoaded] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
 
+        let cancelled = false;
+
         const observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
                     if (entry.isIntersecting) {
-                        setIsVisible(true);
                         observer.unobserve(entry.target);
+                        // Try to upgrade to base64 thumbnail (faster subsequent loads)
+                        const upgrade = async () => {
+                            try {
+                                const { GetThumbnailBase64 } = await import('../../wailsjs/go/app/App');
+                                const data = await GetThumbnailBase64(path);
+                                if (!cancelled && data && data.length > 50) {
+                                    setSrc(data);
+                                }
+                            } catch {
+                                // Keep using the original path — it's already set
+                            }
+                        };
+                        upgrade();
                     }
                 });
             },
@@ -37,48 +50,19 @@ function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
         );
 
         observer.observe(el);
-        return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        if (!isVisible) return;
-
-        let cancelled = false;
-        const loadThumb = async () => {
-            try {
-                const { GetThumbnailBase64 } = await import('../../wailsjs/go/app/App');
-                const data = await GetThumbnailBase64(path);
-                if (!cancelled && data && data.length > 30) {
-                    setSrc(data);
-                    return;
-                }
-            } catch {
-                // Thumbnail generation failed
-            }
-            // Fallback: use the original file path directly
-            if (!cancelled) setSrc(path);
-        };
-        loadThumb();
-        return () => { cancelled = true; };
-    }, [isVisible, path]);
+        return () => { cancelled = true; observer.disconnect(); };
+    }, [path]);
 
     return (
-        <div ref={containerRef} style={{ minHeight: src ? undefined : 120, background: src ? undefined : 'var(--bg-panel)' }}>
-            {src && (
-                <img
-                    src={src}
-                    alt={alt}
-                    className={`thumbnail-image ${loaded ? 'loaded' : ''}`}
-                    decoding="async"
-                    onLoad={() => setLoaded(true)}
-                    onError={() => {
-                        // If base64 failed, try raw path; if raw path failed, give up
-                        if (src !== path) {
-                            setSrc(path);
-                        }
-                    }}
-                />
-            )}
+        <div ref={containerRef}>
+            <img
+                src={src}
+                alt={alt}
+                className={`thumbnail-image ${loaded ? 'loaded' : ''}`}
+                decoding="async"
+                loading="lazy"
+                onLoad={() => setLoaded(true)}
+            />
         </div>
     );
 }

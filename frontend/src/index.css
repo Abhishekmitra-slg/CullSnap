@@ -506,59 +506,55 @@ h2 {
   object-fit: contain;
 }
 
-/* EXIF Panel — Full-Width Frosted Glass */
+/* EXIF Panel — Bottom-Right Frosted Glass Card */
 .exif-panel {
-  background: rgba(12, 12, 30, 0.75);
+  background: rgba(12, 16, 40, 0.72);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 16px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 18px 22px;
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  bottom: 12px;
+  right: 12px;
+  width: 300px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .exif-panel-title {
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
+}
+
+.exif-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 20px;
+  align-items: baseline;
 }
 
 .exif-item {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 140px;
+  display: contents;
 }
 
 .exif-label {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
-  min-width: 80px;
-  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
 }
 
 .exif-value {
-  font-size: 0.8rem;
-  color: var(--text-primary);
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.92);
   font-weight: 500;
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
 }
+
 
 /* Filename overlay in viewer */
 .viewer-info-overlay {
