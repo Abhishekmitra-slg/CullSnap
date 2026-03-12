@@ -2,9 +2,9 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,22 +25,23 @@ var assets embed.FS
 type FileLoader struct{}
 
 func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	requestedFilename := strings.TrimPrefix(req.URL.Path, "/")
-
-	// Ensure we only serve local absolute paths
-	if strings.HasPrefix(req.URL.Path, "/") {
+	// URL-decode the path to handle special characters (spaces, &, etc.)
+	requestedFilename, err := url.PathUnescape(req.URL.Path)
+	if err != nil {
 		requestedFilename = req.URL.Path
-	} else {
+	}
+
+	// Ensure absolute path
+	if !strings.HasPrefix(requestedFilename, "/") {
 		requestedFilename = "/" + requestedFilename
 	}
 
-	fileData, err := os.ReadFile(requestedFilename)
-	if err != nil {
-		res.WriteHeader(http.StatusNotFound)
-		res.Write([]byte(fmt.Sprintf("Could not load file %s", requestedFilename)))
-		return
-	}
-	res.Write(fileData)
+	// Use http.ServeFile — it handles:
+	// - Content-Type detection from file extension
+	// - Range requests for efficient partial reads
+	// - Proper caching headers
+	// - Streaming (doesn't load full file into memory)
+	http.ServeFile(res, req, requestedFilename)
 }
 
 func main() {

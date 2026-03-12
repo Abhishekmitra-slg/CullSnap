@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"cullsnap/internal/logger"
 )
 
 // ThumbCache manages a disk-based thumbnail cache.
@@ -36,6 +38,7 @@ func NewThumbCache() (*ThumbCache, error) {
 		return nil, fmt.Errorf("failed to create thumbnail cache: %w", err)
 	}
 
+	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir)
 	return &ThumbCache{cacheDir: cacheDir}, nil
 }
 
@@ -97,6 +100,7 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 		return "", err
 	}
 
+	logger.Log.Debug("Thumbnail generated", "file", filepath.Base(path), "thumb", filepath.Base(thumbPath))
 	return thumbPath, nil
 }
 
@@ -151,6 +155,8 @@ func (tc *ThumbCache) GenerateBatch(
 				resultMu.Lock()
 				if thumbPath != "" {
 					result[item.Path] = thumbPath
+				} else {
+					logger.Log.Warn("Thumbnail failed, will use original", "file", filepath.Base(item.Path))
 				}
 				completed++
 				c := completed
@@ -172,5 +178,6 @@ func (tc *ThumbCache) GenerateBatch(
 	// Wait for all workers to complete
 	wg.Wait()
 
+	logger.Log.Info("Batch thumbnail generation complete", "total", len(items), "cached", len(result), "failed", len(items)-len(result))
 	return result
 }
