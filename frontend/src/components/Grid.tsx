@@ -47,14 +47,14 @@ export function Grid({
 
     return (
         <div className="grid-panel" ref={parentRef}>
-            <div className="masonry-grid">
+            <div className="photo-grid">
                 {photos.map((photo) => {
                     const isSelected = selectedPaths.has(photo.Path);
                     const isExported = exportedPaths.has(photo.Path);
                     const isActive = activePhoto?.Path === photo.Path;
                     const rating = ratings[photo.Path] || 0;
-                    // Use cached thumbnail if available, otherwise fall back to original path
-                    const thumbSrc = photo.ThumbnailPath || photo.Path;
+                    // Use cached thumbnail if available, else original path
+                    const imgSrc = photo.ThumbnailPath || photo.Path;
 
                     return (
                         <div
@@ -74,10 +74,12 @@ export function Grid({
                                 </div>
                             )}
 
+                            {/* Show image with lazy loading (works with CSS Grid) */}
                             <img
-                                src={thumbSrc}
+                                src={imgSrc}
                                 alt={photo.Path.split('/').pop()}
                                 className="thumbnail-image"
+                                loading="lazy"
                                 decoding="async"
                             />
 
@@ -104,10 +106,10 @@ export function Grid({
                     <summary>
                         Hidden Duplicates ({duplicateGroups.reduce((acc, g) => acc + g.length, 0)})
                     </summary>
-                    <div className="duplicates-grid">
+                    <div className="photo-grid">
                         {duplicateGroups.flat().map((photo) => {
                             const isActive = activePhoto?.Path === photo.Path;
-                            const thumbSrc = photo.ThumbnailPath || photo.Path;
+                            const imgSrc = photo.ThumbnailPath || photo.Path;
                             return (
                                 <div
                                     id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
@@ -117,9 +119,10 @@ export function Grid({
                                     style={{ opacity: 0.55 }}
                                 >
                                     <img
-                                        src={thumbSrc}
+                                        src={imgSrc}
                                         alt={photo.Path.split('/').pop()}
                                         className="thumbnail-image"
+                                        loading="lazy"
                                         decoding="async"
                                     />
                                 </div>

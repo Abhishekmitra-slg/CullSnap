@@ -104,6 +104,7 @@ func (a *App) GetExportedStatus(dirPath string) (map[string]bool, error) {
 // Emits "thumb-progress" events for the UI loading animation.
 // Returns photos with ThumbnailPath populated.
 func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
+	logger.Log.Info("PreloadThumbnails called", "path", dirPath, "hasCacheInit", a.thumbCache != nil)
 	if a.thumbCache == nil {
 		// No cache available — return photos without thumbnail paths
 		return scanner.ScanDirectory(dirPath)
