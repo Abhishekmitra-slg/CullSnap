@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npx --package typescript tsc && npx --package vite vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,11 +14,11 @@
     "@types/react-dom": "^19.2.3",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.4",
+    "react-dom": "^19.2.4",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.4"
   }
 }
