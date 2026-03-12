@@ -38,10 +38,6 @@ export function GetSystemResources() {
   return window['go']['app']['App']['GetSystemResources']();
 }
 
-export function GetThumbnailBase64(arg1) {
-  return window['go']['app']['App']['GetThumbnailBase64'](arg1);
-}
-
 export function OpenFolderInFinder(arg1) {
   return window['go']['app']['App']['OpenFolderInFinder'](arg1);
 }

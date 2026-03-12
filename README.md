@@ -4,16 +4,21 @@
 [![Wails Version](https://img.shields.io/badge/Wails-v2-red?style=flat&logo=wails)](wails.json)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**CullSnap** is a high-performance, native desktop tool designed for photographers to cull and select thousands of high-resolution photos in seconds. Initially built on Fyne, the application has been ported to the **Wails Framework with a React/Vite frontend** to deliver a stunning MacOS glassmorphism experience with virtualized DOM scrolling.
+**CullSnap** is a high-performance, native desktop tool designed for photographers to cull and select thousands of high-resolution photos in seconds. Built with the **Wails Framework** (Go backend + React/Vite frontend) delivering a stunning dark-mode glassmorphism experience.
 
 ## ✨ Features
 
--   **Infinite Virtual Grid**: Built with `@tanstack/react-virtual` to effortlessly scroll through directories of 10,000+ photos using less than 30MB of Engine RAM.
--   **Smart Deduplication**: Pure-Go perceptual hashing automatically groups duplicate/burst photos and intelligently selects the sharpest image using a fast Laplacian Variance algorithm.
--   **RAW & JPEG Processing**: High-performance backend embedded thumbnail extraction for RAW camera files.
--   **Intelligent Syncing**: Backend SQLite tagging automatically saves your Culling progress seamlessly across app restarts.
--   **Resource Monitoring**: Real-time MacOS Application Engine Memory, CPU, Disk I/O, and Network tracking built directly into the UI.
--   **Export Ready**: One-click bulk export of selected photos to any destination directory without destructive file moving.
+-   **Fast Photo Grid**: CSS Grid layout with lazy loading and cached disk thumbnails for buttery-smooth scrolling through 1000+ photos.
+-   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions (0700/0600). Cached thumbnails load instantly on revisit.
+-   **Smart Deduplication**: Pure-Go perceptual hashing automatically groups duplicate/burst photos and selects the sharpest image using a Laplacian Variance algorithm. Auto-detects previous dedup results.
+-   **RAW & JPEG Processing**: High-performance embedded thumbnail extraction for RAW camera files (CR2, CR3, ARW, NEF, DNG).
+-   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken with aligned grid layout.
+-   **Star Ratings**: 1–5 star rating system persisted to SQLite for each photo.
+-   **Folder Navigation**: Click any folder name in the sidebar to open it directly in Finder/Explorer.
+-   **Intelligent Syncing**: SQLite backend saves culling progress, ratings, and export status across app restarts.
+-   **Resource Monitoring**: Real-time CPU, RAM, Disk I/O, and Network tracking in the status bar.
+-   **Export Ready**: One-click bulk export of selected photos (always uses full-resolution originals, never thumbnails).
+-   **Shimmer Loading**: Cards display a subtle shimmer animation while thumbnails load, stopping individually as each image appears.
 
 ## 🏗️ Architecture
 
@@ -23,28 +28,31 @@ CullSnap natively binds a high-performance **Go** backend to a modern **React/Vi
 graph LR
     subgraph Frontend [React / Vite UI]
         direction TB
-        Grid["Virtual Photo Grid\n(@tanstack/react-virtual)"]
-        Sidebar["Sidebar Controls & Stats"]
-        Keys["Arrow Key Navigation\nReact useEffect"]
+        Grid["Photo Grid\n(CSS Grid + lazy loading)"]
+        Viewer["Full-Res Viewer\n+ EXIF Panel"]
+        Sidebar["Sidebar Controls\n& Star Ratings"]
     end
 
     subgraph IPC [Wails Bridge]
-        Bindings["Typescript Bindings\nwailsjs/go/app/App"]
+        Bindings["TypeScript Bindings\nwailsjs/go/app/App"]
     end
 
     subgraph Backend [Go Desktop Backend]
         direction TB
         Scanner["Directory Scanner\n(internal/scanner)"]
-        Storage["SQLite Cache\n(internal/storage)"]
-        OS["System Resources Stats\n(shirou/gopsutil)"]
-        Assets["Go:Embed Frontend Assets"]
+        ThumbCache["Thumbnail Cache\n(internal/image/thumbcache)"]
+        Dedupe["Perceptual Hash\n+ Laplacian Variance"]
+        Storage["SQLite Persistence\n(internal/storage)"]
+        OS["System Resources\n(shirou/gopsutil)"]
     end
 
-    Grid <-->|Fetch Photos / Update Selection| Bindings
-    Sidebar <-->|Trigger Export / Read Metrics| Bindings
-    Keys <-->|Change Active Photo| Bindings
+    Grid <-->|Fetch Photos / Thumbnails| Bindings
+    Viewer <-->|Load Full-Res + EXIF| Bindings
+    Sidebar <-->|Export / Dedup / Ratings| Bindings
 
-    Bindings <-->|Execute Native Methods| Scanner
+    Bindings <-->|Scan + Cache Thumbs| Scanner
+    Bindings <-->|Parallel Thumb Gen| ThumbCache
+    Bindings <-->|Find Duplicates| Dedupe
     Bindings <-->|Persist State| Storage
     Bindings <-->|Read CPU/RAM| OS
 ```
@@ -82,12 +90,39 @@ make dev
 
 ## 🎮 Usage Guide
 
-1.  **Open Folder**: Click the Folder icon to load a directory on your machine.
-2.  **Deduplicate**: Click the **Find Duplicates** button in the sidebar to automatically group burst shots and isolate the sharpest unique photos to the top of your grid.
-3.  **Navigate**: Use `Arrows ← / →` or `↑ / ↓` to instantly traverse through photos.
-3.  **Cull**: Press `S` to toggle keeping the photo (indicated by a Blue Checkmark).
-4.  **Review**: Grid provides instant visual feedback on your selections and highlights previously exported files (Green Checkmark).
-5.  **Export**: Click the **Export (N)** button in the sidebar to copy all selected photos to a separate delivery folder on your drive.
+1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive.
+2.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
+3.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos.
+4.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
+5.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
+6.  **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
+7.  **EXIF**: Select any photo to view its EXIF metadata in the frosted-glass overlay.
+8.  **Export**: Click **Export (N)** to copy all selected photos (full resolution) to a delivery folder.
+
+## 📁 Project Structure
+
+```
+CullSnap/
+├── main.go                      # Wails app entry + FileLoader asset handler
+├── internal/
+│   ├── app/app.go              # Core app logic, all Wails-bound methods
+│   ├── image/
+│   │   ├── thumbnail.go        # EXIF thumbnail extraction + resize fallback
+│   │   └── thumbcache.go       # Disk-based thumbnail cache (parallel workers)
+│   ├── scanner/scanner.go      # Directory walker
+│   ├── dedupe/                 # Perceptual hashing + quality scoring
+│   ├── export/                 # Photo export logic
+│   ├── model/photo.go          # Photo struct (Path, ThumbnailPath, EXIF, etc.)
+│   ├── storage/                # SQLite persistence
+│   └── logger/                 # Structured logging
+└── frontend/src/
+    ├── App.tsx                 # Main app with 2-phase loading
+    ├── components/
+    │   ├── Grid.tsx            # Photo grid with shimmer + lazy loading
+    │   ├── Viewer.tsx          # Full-res viewer + EXIF panel
+    │   └── Sidebar.tsx         # Controls, folders, dedup status
+    └── index.css               # Dark theme, glassmorphism, animations
+```
 
 ## 🤝 Contributing
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
