@@ -129,7 +129,19 @@ export function Sidebar({
             {/* Current folder indicator */}
             {currentDir && (
                 <div style={{ padding: '4px 12px', margin: '4px 0' }}>
-                    <div className="text-small truncate-path" title={currentDir} style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>
+                    <div
+                        className="text-small truncate-path"
+                        title={`Click to open: ${currentDir}`}
+                        style={{ color: 'var(--accent)', fontSize: '0.7rem', cursor: 'pointer' }}
+                        onClick={async () => {
+                            try {
+                                const { OpenFolderInFinder } = await import('../../wailsjs/go/app/App');
+                                OpenFolderInFinder(currentDir);
+                            } catch (e) {
+                                console.error('Failed to open folder:', e);
+                            }
+                        }}
+                    >
                         📂 {folderName}
                     </div>
                 </div>
