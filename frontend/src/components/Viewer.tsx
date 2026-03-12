@@ -83,16 +83,20 @@ export function Viewer({ photo }: ViewerProps) {
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{mbSize} MB</div>
             </div>
 
-            {/* EXIF Panel — bottom right, vertical table like mockup */}
+            {/* EXIF Panel — full-width frosted glass at bottom */}
             {exif && (
                 <div className="exif-panel">
-                    <div className="exif-panel-title">EXIF metadata</div>
-                    <ExifRow label="Camera" value={exif.camera} />
-                    <ExifRow label="Lens" value={exif.lens} />
-                    <ExifRow label="ISO" value={exif.iso} />
-                    <ExifRow label="Aperture" value={exif.aperture} />
-                    <ExifRow label="Shutter" value={exif.shutter} />
-                    <ExifRow label="Date Taken" value={exif.dateTaken} />
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32 }}>
+                        <div className="exif-panel-title" style={{ whiteSpace: 'nowrap', paddingTop: 2 }}>EXIF metadata</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 28px', flex: 1 }}>
+                            <ExifRow label="Camera" value={exif.camera} />
+                            <ExifRow label="Lens" value={exif.lens} />
+                            <ExifRow label="ISO" value={exif.iso} />
+                            <ExifRow label="Aperture" value={exif.aperture} />
+                            <ExifRow label="Shutter" value={exif.shutter} />
+                            <ExifRow label="Date Taken" value={exif.dateTaken} />
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

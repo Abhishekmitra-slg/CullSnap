@@ -506,22 +506,21 @@ h2 {
   object-fit: contain;
 }
 
-/* EXIF Panel — Vertical Table Layout */
+/* EXIF Panel — Full-Width Frosted Glass */
 .exif-panel {
-  background: rgba(12, 12, 24, 0.92);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-top: 1px solid var(--glass-border);
-  padding: 14px 20px;
+  background: rgba(12, 12, 30, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   position: absolute;
   bottom: 0;
+  left: 0;
   right: 0;
-  width: 280px;
-  border-radius: var(--radius-md) 0 0 0;
-  border-left: 1px solid var(--glass-border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .exif-panel-title {
@@ -535,10 +534,9 @@ h2 {
 
 .exif-item {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  padding: 2px 0;
-  gap: 12px;
+  gap: 6px;
+  min-width: 140px;
 }
 
 .exif-label {
