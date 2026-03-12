@@ -27,6 +27,8 @@ export function OpenFolderInFinder(arg1:string):Promise<void>;
 
 export function OpenLog():Promise<void>;
 
+export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
+
 export function ScanAndDeduplicate(arg1:string,arg2:number):Promise<app.DedupeResult>;
 
 export function ScanDirectory(arg1:string):Promise<Array<model.Photo>>;

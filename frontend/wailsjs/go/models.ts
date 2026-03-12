@@ -117,6 +117,7 @@ export namespace model {
 	
 	export class Photo {
 	    Path: string;
+	    ThumbnailPath: string;
 	    Width: number;
 	    Height: number;
 	    Size: number;
@@ -130,6 +131,7 @@ export namespace model {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Path = source["Path"];
+	        this.ThumbnailPath = source["ThumbnailPath"];
 	        this.Width = source["Width"];
 	        this.Height = source["Height"];
 	        this.Size = source["Size"];

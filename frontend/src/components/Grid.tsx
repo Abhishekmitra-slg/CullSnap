@@ -53,6 +53,8 @@ export function Grid({
                     const isExported = exportedPaths.has(photo.Path);
                     const isActive = activePhoto?.Path === photo.Path;
                     const rating = ratings[photo.Path] || 0;
+                    // Use cached thumbnail if available, otherwise fall back to original path
+                    const thumbSrc = photo.ThumbnailPath || photo.Path;
 
                     return (
                         <div
@@ -73,14 +75,10 @@ export function Grid({
                             )}
 
                             <img
-                                src={photo.Path}
+                                src={thumbSrc}
                                 alt={photo.Path.split('/').pop()}
                                 className="thumbnail-image"
-                                loading="lazy"
                                 decoding="async"
-                                onLoad={(e) => {
-                                    (e.target as HTMLImageElement).classList.add('loaded');
-                                }}
                             />
 
                             {/* Star rating overlay */}
@@ -109,6 +107,7 @@ export function Grid({
                     <div className="duplicates-grid">
                         {duplicateGroups.flat().map((photo) => {
                             const isActive = activePhoto?.Path === photo.Path;
+                            const thumbSrc = photo.ThumbnailPath || photo.Path;
                             return (
                                 <div
                                     id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
@@ -118,14 +117,10 @@ export function Grid({
                                     style={{ opacity: 0.55 }}
                                 >
                                     <img
-                                        src={photo.Path}
+                                        src={thumbSrc}
                                         alt={photo.Path.split('/').pop()}
                                         className="thumbnail-image"
-                                        loading="lazy"
                                         decoding="async"
-                                        onLoad={(e) => {
-                                            (e.target as HTMLImageElement).classList.add('loaded');
-                                        }}
                                     />
                                 </div>
                             );

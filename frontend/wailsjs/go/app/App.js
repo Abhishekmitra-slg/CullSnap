@@ -50,6 +50,10 @@ export function OpenLog() {
   return window['go']['app']['App']['OpenLog']();
 }
 
+export function PreloadThumbnails(arg1) {
+  return window['go']['app']['App']['PreloadThumbnails'](arg1);
+}
+
 export function ScanAndDeduplicate(arg1, arg2) {
   return window['go']['app']['App']['ScanAndDeduplicate'](arg1, arg2);
 }
