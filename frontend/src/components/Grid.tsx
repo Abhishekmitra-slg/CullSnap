@@ -1,6 +1,6 @@
 import { Check, Star } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 
 interface GridProps {
     photos: model.Photo[];
@@ -11,6 +11,63 @@ interface GridProps {
     onPhotoClick: (photo: model.Photo) => void;
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
+}
+
+// Lazy-loading thumbnail component using IntersectionObserver
+function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
+    const imgRef = useRef<HTMLImageElement>(null);
+    const [src, setSrc] = useState<string>('');
+    const [isVisible, setIsVisible] = useState(false);
+
+    useEffect(() => {
+        const img = imgRef.current;
+        if (!img) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        setIsVisible(true);
+                        observer.unobserve(entry.target);
+                    }
+                });
+            },
+            { rootMargin: '200px' } // Preload 200px ahead
+        );
+
+        observer.observe(img);
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!isVisible) return;
+
+        let cancelled = false;
+        const loadThumb = async () => {
+            try {
+                const { GetThumbnailBase64 } = await import('../../wailsjs/go/app/App');
+                const data = await GetThumbnailBase64(path);
+                if (!cancelled && data) {
+                    setSrc(data);
+                }
+            } catch {
+                // Fallback to original path if thumbnail generation fails
+                if (!cancelled) setSrc(path);
+            }
+        };
+        loadThumb();
+        return () => { cancelled = true; };
+    }, [isVisible, path]);
+
+    return (
+        <img
+            ref={imgRef}
+            src={src || undefined}
+            alt={alt}
+            className={`thumbnail-image ${src ? 'loaded' : ''}`}
+            decoding="async"
+        />
+    );
 }
 
 export function Grid({
@@ -72,25 +129,16 @@ export function Grid({
                                 </div>
                             )}
 
-                            <img
-                                src={photo.Path}
-                                alt={photo.Path.split('/').pop()}
-                                className="thumbnail-image"
-                                loading="lazy"
-                                decoding="async"
-                                onLoad={(e) => {
-                                    (e.target as HTMLImageElement).classList.add('loaded');
-                                }}
-                            />
+                            <LazyThumbnail path={photo.Path} alt={photo.Path.split('/').pop() || ''} />
 
                             {/* Star rating overlay */}
                             <div className="star-rating">
                                 {[1, 2, 3, 4, 5].map((star) => (
                                     <Star
                                         key={star}
-                                        size={14}
+                                        size={18}
                                         className={`star ${star <= rating ? 'filled' : ''}`}
-                                        fill={star <= rating ? 'var(--star-gold)' : 'none'}
+                                        fill={star <= rating ? '#fbbf24' : 'none'}
                                         onClick={(e) => handleStarClick(e, photo.Path, star)}
                                     />
                                 ))}
@@ -117,16 +165,7 @@ export function Grid({
                                     onClick={() => onPhotoClick(photo)}
                                     style={{ opacity: 0.55 }}
                                 >
-                                    <img
-                                        src={photo.Path}
-                                        alt={photo.Path.split('/').pop()}
-                                        className="thumbnail-image"
-                                        loading="lazy"
-                                        decoding="async"
-                                        onLoad={(e) => {
-                                            (e.target as HTMLImageElement).classList.add('loaded');
-                                        }}
-                                    />
+                                    <LazyThumbnail path={photo.Path} alt={photo.Path.split('/').pop() || ''} />
                                 </div>
                             );
                         })}

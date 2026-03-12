@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 
 	"cullsnap/internal/dedupe"
 	"cullsnap/internal/export"
+	cullImage "cullsnap/internal/image"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
@@ -118,6 +122,31 @@ func (a *App) OpenLog() {
 	default:
 		exec.Command("xdg-open", logPath).Start()
 	}
+}
+
+// OpenFolderInFinder opens a folder in the native file manager
+func (a *App) OpenFolderInFinder(path string) {
+	switch stdruntime.GOOS {
+	case "darwin":
+		exec.Command("open", path).Start()
+	case "windows":
+		exec.Command("explorer", path).Start()
+	default:
+		exec.Command("xdg-open", path).Start()
+	}
+}
+
+// GetThumbnailBase64 returns a base64-encoded JPEG thumbnail for fast grid loading
+func (a *App) GetThumbnailBase64(path string) (string, error) {
+	thumb, err := cullImage.GetThumbnail(path)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 75}); err != nil {
+		return "", err
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
 // SystemResources represents the current system resource usage
