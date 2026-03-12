@@ -2,11 +2,13 @@ package dedupe
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sort"
 	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
+	"github.com/rwcarlsen/goexif/tiff"
 )
 
 // PhotoMeta holds enriched information about a photo, specifically EXIF data.
@@ -37,6 +39,89 @@ func ExtractDateTaken(path string) (time.Time, bool) {
 	}
 
 	return date, true
+}
+
+// FullEXIF contains detailed EXIF metadata for display purposes.
+type FullEXIF struct {
+	Camera    string
+	Lens      string
+	ISO       string
+	Aperture  string
+	Shutter   string
+	DateTaken string
+}
+
+// ExtractFullEXIF extracts comprehensive EXIF metadata from a photo.
+func ExtractFullEXIF(path string) (*FullEXIF, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	e, err := exif.Decode(file)
+	if err != nil {
+		return nil, fmt.Errorf("no EXIF data: %w", err)
+	}
+
+	info := &FullEXIF{}
+
+	// Camera make + model
+	if make, err := e.Get(exif.Make); err == nil {
+		info.Camera = tagString(make)
+	}
+	if model, err := e.Get(exif.Model); err == nil {
+		if info.Camera != "" {
+			info.Camera += " "
+		}
+		info.Camera += tagString(model)
+	}
+
+	// Lens
+	if lens, err := e.Get(exif.LensModel); err == nil {
+		info.Lens = tagString(lens)
+	}
+
+	// ISO
+	if iso, err := e.Get(exif.ISOSpeedRatings); err == nil {
+		info.ISO = tagString(iso)
+	}
+
+	// Aperture (FNumber)
+	if fnum, err := e.Get(exif.FNumber); err == nil {
+		n, d, _ := fnum.Rat2(0)
+		if d != 0 {
+			info.Aperture = fmt.Sprintf("f/%.1f", float64(n)/float64(d))
+		}
+	}
+
+	// Shutter speed (ExposureTime)
+	if exp, err := e.Get(exif.ExposureTime); err == nil {
+		n, d, _ := exp.Rat2(0)
+		if d != 0 {
+			if n == 1 {
+				info.Shutter = fmt.Sprintf("1/%ds", d)
+			} else {
+				info.Shutter = fmt.Sprintf("%.1fs", float64(n)/float64(d))
+			}
+		}
+	}
+
+	// Date taken
+	if date, err := e.DateTime(); err == nil && !date.IsZero() {
+		info.DateTaken = date.Format("Jan 2, 2006 3:04 PM")
+	}
+
+	return info, nil
+}
+
+// tagString safely extracts a string from a TIFF tag.
+func tagString(t *tiff.Tag) string {
+	s, err := t.StringVal()
+	if err != nil {
+		return t.String()
+	}
+	return s
 }
 
 // SortGroupsByDate extracts dates from the "Unique" representation inside a group

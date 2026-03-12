@@ -14,6 +14,14 @@ export function GetExportedStatus(arg1) {
   return window['go']['app']['App']['GetExportedStatus'](arg1);
 }
 
+export function GetPhotoEXIF(arg1) {
+  return window['go']['app']['App']['GetPhotoEXIF'](arg1);
+}
+
+export function GetRatingsForDirectory(arg1) {
+  return window['go']['app']['App']['GetRatingsForDirectory'](arg1);
+}
+
 export function GetRecentFolders() {
   return window['go']['app']['App']['GetRecentFolders']();
 }
@@ -44,6 +52,10 @@ export function SelectDirectory() {
 
 export function SelectExportDirectory() {
   return window['go']['app']['App']['SelectExportDirectory']();
+}
+
+export function SetPhotoRating(arg1, arg2) {
+  return window['go']['app']['App']['SetPhotoRating'](arg1, arg2);
 }
 
 export function ToggleSelection(arg1, arg2, arg3) {

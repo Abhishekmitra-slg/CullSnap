@@ -1,7 +1,6 @@
-import { Check } from 'lucide-react';
+import { Check, Star } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef, useEffect } from 'react';
+import { useRef, useCallback } from 'react';
 
 interface GridProps {
     photos: model.Photo[];
@@ -10,6 +9,8 @@ interface GridProps {
     exportedPaths: Set<string>;
     activePhoto: model.Photo | null;
     onPhotoClick: (photo: model.Photo) => void;
+    ratings: Record<string, number>;
+    onRatingChange: (path: string, rating: number) => void;
 }
 
 export function Grid({
@@ -18,99 +19,82 @@ export function Grid({
     selectedPaths,
     exportedPaths,
     activePhoto,
-    onPhotoClick
+    onPhotoClick,
+    ratings,
+    onRatingChange,
 }: GridProps) {
     const parentRef = useRef<HTMLDivElement>(null);
 
-    // Number of columns in the grid (responsive could be dynamic, hardcode to 4 for simplicity first)
-    const columns = 4;
-    const count = Math.ceil(photos.length / columns);
-
-    const rowVirtualizer = useVirtualizer({
-        count,
-        getScrollElement: () => parentRef.current,
-        estimateSize: () => 180, // estimated height of row + gap
-        overscan: 5,
-    });
+    const handleStarClick = useCallback((e: React.MouseEvent, path: string, star: number) => {
+        e.stopPropagation();
+        const current = ratings[path] || 0;
+        onRatingChange(path, current === star ? 0 : star);
+    }, [ratings, onRatingChange]);
 
     if (photos.length === 0 && (!duplicateGroups || duplicateGroups.length === 0)) {
         return (
-            <div className="grid-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                <p>No photos loaded. Open a folder to begin culling.</p>
+            <div className="grid-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <p style={{ marginTop: 12, fontSize: '0.875rem' }}>No photos loaded</p>
+                    <p style={{ fontSize: '0.75rem', marginTop: 4 }}>Open a folder to begin culling</p>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="grid-panel" ref={parentRef} style={{ overflowY: 'auto' }}>
-            <div
-                className="photo-grid-virtual"
-                style={{
-                    height: `${rowVirtualizer.getTotalSize()}px`,
-                    width: '100%',
-                    position: 'relative',
-                }}
-            >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const rowPhotos = photos.slice(
-                        virtualRow.index * columns,
-                        (virtualRow.index + 1) * columns
-                    );
+        <div className="grid-panel" ref={parentRef}>
+            <div className="masonry-grid">
+                {photos.map((photo) => {
+                    const isSelected = selectedPaths.has(photo.Path);
+                    const isExported = exportedPaths.has(photo.Path);
+                    const isActive = activePhoto?.Path === photo.Path;
+                    const rating = ratings[photo.Path] || 0;
 
                     return (
                         <div
-                            key={virtualRow.index}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                height: `${virtualRow.size}px`,
-                                transform: `translateY(${virtualRow.start}px)`,
-                                display: 'grid',
-                                gridTemplateColumns: `repeat(${columns}, 1fr)`,
-                                gap: '1rem',
-                                padding: '1rem'
-                            }}
+                            id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                            key={photo.Path}
+                            className={`thumbnail-card ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+                            onClick={() => onPhotoClick(photo)}
                         >
-                            {rowPhotos.map((photo) => {
-                                const isSelected = selectedPaths.has(photo.Path);
-                                const isExported = exportedPaths.has(photo.Path);
-                                const isActive = activePhoto?.Path === photo.Path;
+                            {isSelected && (
+                                <div className="badge badge-selected">
+                                    <Check size={12} />
+                                </div>
+                            )}
+                            {!isSelected && isExported && (
+                                <div className="badge badge-exported">
+                                    <Check size={12} />
+                                </div>
+                            )}
 
-                                return (
-                                    <div
-                                        id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
-                                        key={photo.Path}
-                                        className={`thumbnail-card ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
-                                        onClick={() => onPhotoClick(photo)}
-                                        style={{ height: '160px', width: '100%' }} // Fixed height for virtual rows
-                                    >
-                                        {isSelected && (
-                                            <div className="badge badge-selected bg-blue-500">
-                                                <Check size={14} />
-                                            </div>
-                                        )}
-                                        {!isSelected && isExported && (
-                                            <div className="badge badge-exported bg-green-500">
-                                                <Check size={14} />
-                                            </div>
-                                        )}
+                            <img
+                                src={photo.Path}
+                                alt={photo.Path.split('/').pop()}
+                                className="thumbnail-image"
+                                loading="lazy"
+                                decoding="async"
+                                onLoad={(e) => {
+                                    (e.target as HTMLImageElement).classList.add('loaded');
+                                }}
+                            />
 
-                                        <img
-                                            src={photo.Path}
-                                            alt={photo.Path.split('/').pop()}
-                                            className="thumbnail-image"
-                                            loading="lazy"
-                                            decoding="async"
-                                            style={{ objectFit: 'cover', width: '100%', height: '100%', borderRadius: '0.5rem' }}
-                                            onLoad={(e) => {
-                                                (e.target as HTMLImageElement).classList.add('loaded');
-                                            }}
-                                        />
-                                    </div>
-                                );
-                            })}
+                            {/* Star rating overlay */}
+                            <div className="star-rating">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                        key={star}
+                                        size={14}
+                                        className={`star ${star <= rating ? 'filled' : ''}`}
+                                        fill={star <= rating ? 'var(--star-gold)' : 'none'}
+                                        onClick={(e) => handleStarClick(e, photo.Path, star)}
+                                    />
+                                ))}
+                            </div>
                         </div>
                     );
                 })}
@@ -118,11 +102,11 @@ export function Grid({
 
             {/* Collapsible Duplicates Section */}
             {duplicateGroups && duplicateGroups.length > 0 && (
-                <details className="mt-8 mb-8 mx-4" style={{ cursor: 'pointer' }}>
-                    <summary className="text-large text-gray-400 font-semibold mb-4" style={{ opacity: 0.8 }}>
+                <details className="duplicates-section">
+                    <summary>
                         Hidden Duplicates ({duplicateGroups.reduce((acc, g) => acc + g.length, 0)})
                     </summary>
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: '1rem' }}>
+                    <div className="duplicates-grid">
                         {duplicateGroups.flat().map((photo) => {
                             const isActive = activePhoto?.Path === photo.Path;
                             return (
@@ -131,7 +115,7 @@ export function Grid({
                                     key={photo.Path}
                                     className={`thumbnail-card ${isActive ? 'active' : ''}`}
                                     onClick={() => onPhotoClick(photo)}
-                                    style={{ height: '160px', width: '100%', opacity: 0.6 }} // Dim duplicates
+                                    style={{ opacity: 0.55 }}
                                 >
                                     <img
                                         src={photo.Path}
@@ -139,15 +123,10 @@ export function Grid({
                                         className="thumbnail-image"
                                         loading="lazy"
                                         decoding="async"
-                                        style={{ objectFit: 'cover', width: '100%', height: '100%', borderRadius: '0.5rem' }}
                                         onLoad={(e) => {
                                             (e.target as HTMLImageElement).classList.add('loaded');
                                         }}
                                     />
-                                    {/* Small duplicate badge */}
-                                    <div className="badge" style={{ background: 'var(--bg-panel)', color: 'var(--text-secondary)' }}>
-                                        Duplicate
-                                    </div>
                                 </div>
                             );
                         })}

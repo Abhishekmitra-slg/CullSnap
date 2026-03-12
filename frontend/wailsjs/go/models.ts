@@ -32,6 +32,28 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class PhotoEXIF {
+	    camera: string;
+	    lens: string;
+	    iso: string;
+	    aperture: string;
+	    shutter: string;
+	    dateTaken: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PhotoEXIF(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.camera = source["camera"];
+	        this.lens = source["lens"];
+	        this.iso = source["iso"];
+	        this.aperture = source["aperture"];
+	        this.shutter = source["shutter"];
+	        this.dateTaken = source["dateTaken"];
+	    }
+	}
 	export class SystemResources {
 	    cpu: number;
 	    ram: number;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette, Layers } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette, Layers, X } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -51,19 +51,13 @@ export function Sidebar({
 
     const handleExport = async () => {
         if (selectedCount === 0) return;
-
         try {
             const destDir = await SelectExportDirectory();
             if (!destDir) return;
-
             setIsExporting(true);
             const selectedPhotos = photos.filter(p => selectedPaths.has(p.Path));
             await ExportPhotos(selectedPhotos, destDir);
-
-            // Reload current dir status to show green checks
-            if (currentDir) {
-                onLoadDir(currentDir);
-            }
+            if (currentDir) onLoadDir(currentDir);
             onExportSuccess(`Successfully exported ${selectedCount} photos!`);
         } catch (e) {
             console.error(e);
@@ -73,134 +67,133 @@ export function Sidebar({
         }
     };
 
-    const handleHelp = () => {
-        setShowHelp(true);
-    };
-
     return (
         <div className="sidebar">
-            <h2>CullSnap</h2>
+            <div className="sidebar-logo">CullSnap</div>
 
+            {/* Actions */}
             <div className="sidebar-group">
-                <button className="btn w-full" onClick={onOpenFolder}>
-                    <FolderOpen size={18} />
+                <button className="btn btn-gradient w-full" onClick={onOpenFolder}>
+                    <FolderOpen size={16} />
                     Open Folder
                 </button>
 
                 {currentDir && (
-                    <div className="path mt-4 mb-2">
-                        <h2 className="text-small mb-1">Current Folder</h2>
-                        <div className="truncate-path" title={currentDir}>{currentDir}</div>
-                    </div>
-                )}
-
-                {currentDir && (
-                    <button 
-                        className="btn w-full mt-2" 
+                    <button
+                        className="btn w-full mt-2"
                         onClick={onDeduplicate}
-                        disabled={isDeduplicating || photos.length === 0}
-                        title="Find and group duplicate photos, keeping the sharpest one"
+                        disabled={isDeduplicating || photosCount === 0}
+                        title="Find and group duplicate photos"
                     >
-                        <Layers size={18} />
+                        <Layers size={16} />
                         {isDeduplicating ? 'Processing...' : 'Find Duplicates'}
                     </button>
                 )}
             </div>
 
-            <div className="sidebar-group mt-4">
-                <h2 className="text-small flex items-center gap-2 mb-1">
-                    <Palette size={16} /> Theme
-                </h2>
-                <select className="theme-switcher" value={theme} onChange={(e) => onThemeChange(e.target.value)}>
+            {/* Current folder */}
+            {currentDir && (
+                <div style={{ padding: '0 4px' }}>
+                    <div className="sidebar-label">Current Folder</div>
+                    <div className="truncate-path text-small" title={currentDir} style={{ padding: '0 12px' }}>
+                        {currentDir}
+                    </div>
+                </div>
+            )}
+
+            {/* Theme */}
+            <div style={{ padding: '0 4px' }}>
+                <div className="sidebar-label">
+                    <Palette size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                    Theme
+                </div>
+                <select
+                    className="theme-switcher"
+                    value={theme}
+                    onChange={(e) => onThemeChange(e.target.value)}
+                >
                     <option value="dark">Dark</option>
                     <option value="light">Light</option>
-                    <option value="matrix">Matrix</option>
                 </select>
             </div>
 
-            <div className="sidebar-group mt-6 glass-panel p-4 flex flex-col" style={{ flex: 1, overflow: 'hidden' }}>
-                <h2 className="text-small flex items-center gap-2 mb-3" style={{ flexShrink: 0 }}>
-                    <Clock size={16} /> Recent Folders
-                </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+            {/* Recents */}
+            <div className="recents-panel" style={{ marginTop: 8 }}>
+                <div className="sidebar-label" style={{ padding: '0 0 8px 0' }}>
+                    <Clock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                    Recent Folders
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', flex: 1 }}>
                     {recents.map((dir, i) => (
                         <button
                             key={i}
-                            className="btn text-small justify-start" style={{ background: 'transparent', padding: '0.25rem' }}
+                            className="recent-item"
                             onClick={() => onLoadDir(dir)}
                             title={dir}
                         >
-                            <div className="truncate-path">{dir.split('/').pop() || dir}</div>
+                            <span className="truncate-path">{dir.split('/').pop() || dir}</span>
                         </button>
                     ))}
+                    {recents.length === 0 && (
+                        <span className="text-small" style={{ padding: '4px 8px', color: 'var(--text-muted)' }}>
+                            No recent folders
+                        </span>
+                    )}
                 </div>
             </div>
 
-            <div className="sidebar-bottom mt-auto flex flex-col gap-3">
+            {/* Bottom actions */}
+            <div className="mt-auto flex flex-col gap-2">
                 <button
-                    className="btn btn-primary w-full justify-center"
+                    className="btn btn-gradient w-full justify-center"
                     disabled={selectedCount === 0 || isExporting}
                     onClick={handleExport}
                 >
-                    <Download size={18} />
+                    <Download size={16} />
                     {isExporting ? 'Exporting...' : `Export (${selectedCount})`}
                 </button>
 
-                <div className="flex gap-2" style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: 6 }}>
                     <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs">
-                        <FileText size={18} />
+                        <FileText size={14} />
                         Logs
                     </button>
-                    <button className="btn w-full justify-center" onClick={handleHelp} title="Help">
-                        <HelpCircle size={18} />
+                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help">
+                        <HelpCircle size={14} />
                         Help
                     </button>
                 </div>
             </div>
 
-            {/* Custom Help Modal */}
+            {/* Help Modal */}
             {showHelp && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowHelp(false)}>
-                    <div style={{ background: 'var(--bg-panel)', padding: '32px', borderRadius: '12px', border: '1px solid var(--border-color)', minWidth: '400px', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 style={{ margin: 0 }}>Help & Information</h2>
-                            <button className="btn" onClick={() => setShowHelp(false)}>Close</button>
+                <div className="modal-overlay" onClick={() => setShowHelp(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-3">
+                            <h2 style={{ margin: 0 }}>Help & Shortcuts</h2>
+                            <button className="btn" onClick={() => setShowHelp(false)} style={{ padding: '4px 8px' }}>
+                                <X size={16} />
+                            </button>
                         </div>
 
-                        <div className="text-small" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', lineHeight: '1.6' }}>
+                        <div className="text-small" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', lineHeight: '1.6' }}>
                             <section>
-                                <h3 className="mb-2" style={{ color: 'var(--accent)' }}>Getting Started</h3>
-                                <p>CullSnap is a high-performance photo culling tool designed to help you quickly review, select, and export your best photos from large folders.</p>
-                                <ul style={{ listStyleType: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                                    <li>Click <strong>Open Folder</strong> to choose a directory containing your images.</li>
-                                    <li>CullSnap securely scans the folder without moving any files.</li>
-                                    <li>If you have previously reviewed a folder, your selections will automatically be restored.</li>
+                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Getting Started</h3>
+                                <p>CullSnap is a high-performance photo culling tool. Click <strong>Open Folder</strong> to load a directory of images. Navigate, select, and export your best shots.</p>
+                            </section>
+
+                            <section>
+                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Keyboard Shortcuts</h3>
+                                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>S</kbd> — Toggle selection on active photo</li>
+                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>← →</kbd> — Navigate between photos</li>
+                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>Click</kbd> — View photo full-size</li>
                                 </ul>
                             </section>
 
                             <section>
-                                <h3 className="mb-2" style={{ color: 'var(--accent)' }}>Keyboard Shortcuts</h3>
-                                <ul style={{ listStyle: 'none', padding: 0 }}>
-                                    <li className="mb-2"><kbd style={{ background: 'var(--bg-sidebar)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>S</kbd> - Toggle selection tag (Blue Checkmark) for the currently active photo.</li>
-                                    <li className="mb-2"><kbd style={{ background: 'var(--bg-sidebar)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>Arrows</kbd> - Use ← / → or ↑ / ↓ to rapidly navigate backward or forward through your photos.</li>
-                                    <li><kbd style={{ background: 'var(--bg-sidebar)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>Click</kbd> - Click any thumbnail in the left grid to view it in full resolution on the right.</li>
-                                </ul>
-                            </section>
-
-                            <section>
-                                <h3 className="mb-2" style={{ color: 'var(--accent)' }}>Exporting Photos</h3>
-                                <p>Once you are finished selecting your favorite shots:</p>
-                                <ol style={{ listStyleType: 'decimal', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                                    <li>Click the <strong>Export (N)</strong> button at the bottom of the sidebar.</li>
-                                    <li>Choose a destination directory (e.g. a "Selects" folder).</li>
-                                    <li>CullSnap will safely <strong>copy</strong> the selected photos to the destination.</li>
-                                    <li>A green checkmark will appear on exported photos to indicate they have been successfully copied out.</li>
-                                </ol>
-                            </section>
-
-                            <section>
-                                <h3 className="mb-2" style={{ color: 'var(--accent)' }}>System Requirements</h3>
-                                <p>CullSnap supports extracting embedded profiles from Canon CR2/CR3 and standard JPEG files for blisteringly fast preview rendering. Keep an eye on the bottom status bar for your computer's live System Resource utilization.</p>
+                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Exporting</h3>
+                                <p>Select photos with <strong>S</strong>, then click <strong>Export</strong> to copy them to a destination folder. Exported photos show a green badge.</p>
                             </section>
                         </div>
                     </div>

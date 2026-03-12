@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory } from '../wailsjs/go/app/App';
 import { app as appMain, model as appModel } from '../wailsjs/go/models';
 
 function App() {
@@ -18,6 +18,7 @@ function App() {
     const [theme, setTheme] = useState<string>('dark');
     const [sysMetrics, setSysMetrics] = useState<appMain.SystemResources | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+    const [ratings, setRatings] = useState<Record<string, number>>({});
 
     useEffect(() => {
         const interval = setInterval(async () => {
@@ -143,6 +144,14 @@ function App() {
             }
             setSelectedPaths(new Set());
             setDuplicateGroups([]); // clear duplicates on fresh load
+
+            // Load star ratings for this directory
+            try {
+                const dirRatings = await GetRatingsForDirectory(dir);
+                setRatings(dirRatings || {});
+            } catch {
+                setRatings({});
+            }
         } catch (e) {
             console.error(e);
         } finally {
@@ -206,6 +215,15 @@ function App() {
         setActivePhoto(photo);
     };
 
+    const handleRatingChange = useCallback(async (path: string, rating: number) => {
+        setRatings(prev => ({ ...prev, [path]: rating }));
+        try {
+            await SetPhotoRating(path, rating);
+        } catch (e) {
+            console.error('Failed to save rating:', e);
+        }
+    }, []);
+
     return (
         <div id="App" className="app-container" data-theme={theme}>
             <div className="titlebar" />
@@ -266,6 +284,8 @@ function App() {
                     exportedPaths={exportedPaths}
                     activePhoto={activePhoto}
                     onPhotoClick={handlePhotoClick}
+                    ratings={ratings}
+                    onRatingChange={handleRatingChange}
                 />
 
                 <Viewer photo={activePhoto} />

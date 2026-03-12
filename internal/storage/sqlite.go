@@ -48,6 +48,11 @@ func (s *SQLiteStore) initSchema() error {
 			path TEXT PRIMARY KEY,
 			exported_at DATETIME
 		);`,
+		`CREATE TABLE IF NOT EXISTS ratings (
+			path TEXT PRIMARY KEY,
+			rating INTEGER DEFAULT 0,
+			updated_at DATETIME
+		);`,
 	}
 
 	for _, query := range queries {
@@ -204,4 +209,42 @@ func (s *SQLiteStore) GetExportedInDirectory(dirPath string) (map[string]bool, e
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+// SaveRating persists a star rating (0-5) for a photo path.
+func (s *SQLiteStore) SaveRating(path string, rating int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if rating <= 0 {
+		_, err := s.db.Exec("DELETE FROM ratings WHERE path = ?", path)
+		return err
+	}
+	query := `INSERT OR REPLACE INTO ratings (path, rating, updated_at) VALUES (?, ?, ?)`
+	_, err := s.db.Exec(query, path, rating, time.Now())
+	return err
+}
+
+// GetRatingsInDirectory returns all ratings for photos in a directory.
+func (s *SQLiteStore) GetRatingsInDirectory(dirPath string) (map[string]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := "SELECT path, rating FROM ratings WHERE path LIKE ?"
+	rows, err := s.db.Query(query, dirPath+"/%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ratings := make(map[string]int)
+	for rows.Next() {
+		var p string
+		var r int
+		if err := rows.Scan(&p, &r); err != nil {
+			return nil, err
+		}
+		ratings[p] = r
+	}
+	return ratings, nil
 }
