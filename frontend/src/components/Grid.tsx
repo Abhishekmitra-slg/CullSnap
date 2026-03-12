@@ -1,6 +1,6 @@
 import { Check, Star } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback } from 'react';
 
 interface GridProps {
     photos: model.Photo[];
@@ -11,60 +11,6 @@ interface GridProps {
     onPhotoClick: (photo: model.Photo) => void;
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
-}
-
-// Thumbnail component — immediately shows file path, upgrades to base64 in background
-function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
-    const [src, setSrc] = useState<string>(path); // Always start with the real path
-    const [loaded, setLoaded] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-
-        let cancelled = false;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (entry.isIntersecting) {
-                        observer.unobserve(entry.target);
-                        // Try to upgrade to base64 thumbnail (faster subsequent loads)
-                        const upgrade = async () => {
-                            try {
-                                const { GetThumbnailBase64 } = await import('../../wailsjs/go/app/App');
-                                const data = await GetThumbnailBase64(path);
-                                if (!cancelled && data && data.length > 50) {
-                                    setSrc(data);
-                                }
-                            } catch {
-                                // Keep using the original path — it's already set
-                            }
-                        };
-                        upgrade();
-                    }
-                });
-            },
-            { rootMargin: '300px' }
-        );
-
-        observer.observe(el);
-        return () => { cancelled = true; observer.disconnect(); };
-    }, [path]);
-
-    return (
-        <div ref={containerRef}>
-            <img
-                src={src}
-                alt={alt}
-                className={`thumbnail-image ${loaded ? 'loaded' : ''}`}
-                decoding="async"
-                loading="lazy"
-                onLoad={() => setLoaded(true)}
-            />
-        </div>
-    );
 }
 
 export function Grid({
@@ -126,7 +72,16 @@ export function Grid({
                                 </div>
                             )}
 
-                            <LazyThumbnail path={photo.Path} alt={photo.Path.split('/').pop() || ''} />
+                            <img
+                                src={photo.Path}
+                                alt={photo.Path.split('/').pop()}
+                                className="thumbnail-image"
+                                loading="lazy"
+                                decoding="async"
+                                onLoad={(e) => {
+                                    (e.target as HTMLImageElement).classList.add('loaded');
+                                }}
+                            />
 
                             {/* Star rating overlay */}
                             <div className="star-rating">
@@ -162,7 +117,16 @@ export function Grid({
                                     onClick={() => onPhotoClick(photo)}
                                     style={{ opacity: 0.55 }}
                                 >
-                                    <LazyThumbnail path={photo.Path} alt={photo.Path.split('/').pop() || ''} />
+                                    <img
+                                        src={photo.Path}
+                                        alt={photo.Path.split('/').pop()}
+                                        className="thumbnail-image"
+                                        loading="lazy"
+                                        decoding="async"
+                                        onLoad={(e) => {
+                                            (e.target as HTMLImageElement).classList.add('loaded');
+                                        }}
+                                    />
                                 </div>
                             );
                         })}
