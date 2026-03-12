@@ -49,14 +49,19 @@ func MoveDuplicate(originalPath string) (string, error) {
 
 // RelocateGroupDuplicates physically moves non-unique photos of the groups.
 // Updates the Path of the PhotoInfo struct to the new location.
-func RelocateGroupDuplicates(ctx context.Context, groups []*DuplicateGroup) []error {
+func RelocateGroupDuplicates(ctx context.Context, groups []*DuplicateGroup, progressCallback func(current, total int, message string)) []error {
 	var errs []error
+	totalGroups := len(groups)
 
-	for _, g := range groups {
+	for i, g := range groups {
 		select {
 		case <-ctx.Done():
 			return []error{ctx.Err()}
 		default:
+		}
+
+		if progressCallback != nil {
+			progressCallback(i+1, totalGroups, "Moving duplicate files...")
 		}
 
 		for _, p := range g.Photos {

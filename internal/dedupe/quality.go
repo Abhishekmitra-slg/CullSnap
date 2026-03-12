@@ -91,12 +91,17 @@ func colorToLuminance(c color.Color) float64 {
 }
 
 // FindBestPhoto updates the duplicate group by selecting the one with highest sharpness variance.
-func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup) error {
-	for _, group := range groups {
+func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, progressCallback func(current, total int, message string)) error {
+	totalGroups := len(groups)
+	for i, group := range groups {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		if progressCallback != nil {
+			progressCallback(i+1, totalGroups, "Selecting best quality photos...")
 		}
 
 		if len(group.Photos) <= 1 {
