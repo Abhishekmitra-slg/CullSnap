@@ -21,8 +21,6 @@ export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 
 export function GetSystemResources():Promise<app.SystemResources>;
 
-export function GetThumbnailBase64(arg1:string):Promise<string>;
-
 export function OpenFolderInFinder(arg1:string):Promise<void>;
 
 export function OpenLog():Promise<void>;

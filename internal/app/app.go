@@ -1,11 +1,8 @@
 package app
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
-	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -104,7 +101,7 @@ func (a *App) GetExportedStatus(dirPath string) (map[string]bool, error) {
 // Emits "thumb-progress" events for the UI loading animation.
 // Returns photos with ThumbnailPath populated.
 func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
-	logger.Log.Info("PreloadThumbnails called", "path", dirPath, "hasCacheInit", a.thumbCache != nil)
+	logger.Log.Info("PreloadThumbnails starting", "path", dirPath)
 	if a.thumbCache == nil {
 		// No cache available — return photos without thumbnail paths
 		return scanner.ScanDirectory(dirPath)
@@ -205,18 +202,7 @@ func (a *App) OpenFolderInFinder(path string) {
 	}
 }
 
-// GetThumbnailBase64 returns a base64-encoded JPEG thumbnail for fast grid loading
-func (a *App) GetThumbnailBase64(path string) (string, error) {
-	thumb, err := cullImage.GetThumbnail(path)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 75}); err != nil {
-		return "", err
-	}
-	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
-}
+
 
 // SystemResources represents the current system resource usage
 type SystemResources struct {
