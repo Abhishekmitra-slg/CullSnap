@@ -23,10 +23,8 @@ export function Viewer({ photo }: ViewerProps) {
             return;
         }
 
-        // Try to load EXIF from backend
         const loadExif = async () => {
             try {
-                // GetPhotoEXIF is a Wails binding we'll add
                 const { GetPhotoEXIF } = await import('../../wailsjs/go/app/App');
                 const data = await GetPhotoEXIF(photo.Path);
                 if (data) {
@@ -40,7 +38,6 @@ export function Viewer({ photo }: ViewerProps) {
                     });
                 }
             } catch {
-                // EXIF not available, that's fine
                 setExif(null);
             }
         };
@@ -65,12 +62,10 @@ export function Viewer({ photo }: ViewerProps) {
     }
 
     const filename = photo.Path.split('/').pop();
-    const kbSize = (photo.Size / 1024).toFixed(1);
     const mbSize = (photo.Size / 1024 / 1024).toFixed(1);
-    const sizeText = photo.Size > 1024 * 1024 ? `${mbSize} MB` : `${kbSize} KB`;
 
     return (
-        <div className="viewer-panel">
+        <div className="viewer-panel" style={{ position: 'relative' }}>
             {/* Main image */}
             <div className="viewer-image-container">
                 <img
@@ -80,30 +75,31 @@ export function Viewer({ photo }: ViewerProps) {
                 />
             </div>
 
-            {/* Filename overlay */}
+            {/* Filename overlay — top right */}
             <div className="viewer-info-overlay glass-panel">
                 <div style={{ fontWeight: 600, color: 'white', wordBreak: 'break-all', fontSize: '0.8125rem' }}>
                     {filename}
                 </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{sizeText}</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{mbSize} MB</div>
             </div>
 
-            {/* EXIF Panel */}
+            {/* EXIF Panel — bottom right, vertical table like mockup */}
             {exif && (
                 <div className="exif-panel">
-                    <ExifItem label="Camera" value={exif.camera} />
-                    <ExifItem label="Lens" value={exif.lens} />
-                    <ExifItem label="ISO" value={exif.iso} />
-                    <ExifItem label="Aperture" value={exif.aperture} />
-                    <ExifItem label="Shutter" value={exif.shutter} />
-                    <ExifItem label="Date" value={exif.dateTaken} />
+                    <div className="exif-panel-title">EXIF metadata</div>
+                    <ExifRow label="Camera" value={exif.camera} />
+                    <ExifRow label="Lens" value={exif.lens} />
+                    <ExifRow label="ISO" value={exif.iso} />
+                    <ExifRow label="Aperture" value={exif.aperture} />
+                    <ExifRow label="Shutter" value={exif.shutter} />
+                    <ExifRow label="Date Taken" value={exif.dateTaken} />
                 </div>
             )}
         </div>
     );
 }
 
-function ExifItem({ label, value }: { label: string; value: string }) {
+function ExifRow({ label, value }: { label: string; value: string }) {
     return (
         <div className="exif-item">
             <span className="exif-label">{label}</span>
