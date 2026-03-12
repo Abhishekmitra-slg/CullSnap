@@ -16,6 +16,8 @@ interface SidebarProps {
     onExportSuccess: (msg: string) => void;
     theme: string;
     onThemeChange: (theme: string) => void;
+    dedupCompleted: boolean;
+    duplicateCount: number;
 }
 
 export function Sidebar({
@@ -30,7 +32,9 @@ export function Sidebar({
     selectedPaths,
     onExportSuccess,
     theme,
-    onThemeChange
+    onThemeChange,
+    dedupCompleted,
+    duplicateCount
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -119,11 +123,17 @@ export function Sidebar({
                     className="btn w-full mt-2"
                     onClick={onDeduplicate}
                     disabled={isDeduplicating || photosCount === 0 || !currentDir}
-                    title="Find and group duplicate photos"
+                    title={dedupCompleted ? 'Re-run deduplication on this folder' : 'Find and group duplicate photos'}
                 >
                     <Layers size={16} />
-                    {isDeduplicating ? 'Processing...' : 'Find Duplicates'}
+                    {isDeduplicating ? 'Processing...' : dedupCompleted ? 'Re-run Duplicates' : 'Find Duplicates'}
                 </button>
+
+                {dedupCompleted && duplicateCount > 0 && (
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', padding: '2px 4px', textAlign: 'center' }}>
+                        ✓ {duplicateCount} duplicate{duplicateCount !== 1 ? 's' : ''} found
+                    </div>
+                )}
             </div>
 
             {/* Current folder indicator */}
