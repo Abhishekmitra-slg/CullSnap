@@ -235,31 +235,35 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		cancel()
 	}()
 
-	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, func(current, total int, message string) {
+	// Shared progress emitter
+	emitProgress := func(current, total int, message string) {
 		runtime.EventsEmit(a.ctx, "dedupe-progress", map[string]interface{}{
 			"current": current,
 			"total":   total,
 			"message": message,
 		})
-	})
+	}
+
+	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, emitProgress)
 	if err != nil {
 		return nil, err
 	}
 
 	// 2. Select the best quality photo in each group to represent the unique
-	err = dedupe.FindBestPhotos(appCtx, groups)
+	err = dedupe.FindBestPhotos(appCtx, groups, emitProgress)
 	if err != nil {
 		return nil, err
 	}
 
 	// 3. Sort groups chronologically
+	emitProgress(0, len(groups), "Sorting by date...")
 	err = dedupe.SortGroupsByDate(appCtx, groups)
 	if err != nil {
 		return nil, err
 	}
 
 	// 4. Move duplicates physically
-	errs := dedupe.RelocateGroupDuplicates(appCtx, groups)
+	errs := dedupe.RelocateGroupDuplicates(appCtx, groups, emitProgress)
 	if len(errs) > 0 && errs[0] == context.Canceled {
 		return nil, context.Canceled
 	}

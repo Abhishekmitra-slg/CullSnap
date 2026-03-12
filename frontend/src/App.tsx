@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
@@ -32,9 +32,34 @@ function App() {
     }, []);
 
     // Listen to deduplication progress events
+    const phaseStartRef = useRef<{ time: number; message: string } | null>(null);
+    const [eta, setEta] = useState<string | null>(null);
+
     useEffect(() => {
         const handler = (data: any) => {
             setDedupeProgress(data);
+
+            // Track phase changes for ETA calculation
+            if (!phaseStartRef.current || phaseStartRef.current.message !== data.message) {
+                phaseStartRef.current = { time: Date.now(), message: data.message };
+                setEta(null);
+            } else if (data.current > 0 && data.total > 0) {
+                const elapsed = (Date.now() - phaseStartRef.current.time) / 1000; // seconds
+                const itemsPerSec = data.current / elapsed;
+                const remaining = data.total - data.current;
+                if (itemsPerSec > 0 && remaining > 0) {
+                    const secsLeft = remaining / itemsPerSec;
+                    if (secsLeft < 60) {
+                        setEta(`~${Math.ceil(secsLeft)}s remaining`);
+                    } else {
+                        const mins = Math.floor(secsLeft / 60);
+                        const secs = Math.ceil(secsLeft % 60);
+                        setEta(`~${mins}m ${secs}s remaining`);
+                    }
+                } else {
+                    setEta(null);
+                }
+            }
         };
         // Use global window.runtime injected by Wails
         if ((window as any).runtime) {
@@ -146,6 +171,8 @@ function App() {
         } finally {
             setIsDeduplicating(false);
             setDedupeProgress(null);
+            setEta(null);
+            phaseStartRef.current = null;
         }
     };
 
@@ -191,21 +218,26 @@ function App() {
                         <div className="scanner-beam"></div>
                     </div>
                     <h2 className="text-xl mb-2" style={{ color: 'var(--text-primary)', textTransform: 'none', letterSpacing: 'normal', fontSize: '1.25rem' }}>
-                        {dedupeProgress ? dedupeProgress.message : 'Analyzing visual signatures...'}
+                        {dedupeProgress ? dedupeProgress.message : 'Initializing...'}
                     </h2>
                     
-                    {dedupeProgress && (
+                    {dedupeProgress && dedupeProgress.total > 0 && (
                         <>
                             <div className="progress-bar-container-large">
                                 <div className="progress-bar-fill-large" style={{ width: `${(dedupeProgress.current / dedupeProgress.total) * 100}%` }}></div>
                             </div>
-                            <p className="text-small mt-2 mb-6">
-                                {dedupeProgress.current} / {dedupeProgress.total} images processed
+                            <p className="text-small mt-2" style={{ color: 'var(--text-secondary)' }}>
+                                {dedupeProgress.current} / {dedupeProgress.total}
                             </p>
+                            {eta && (
+                                <p className="text-small mt-1 mb-4" style={{ color: 'var(--text-muted, var(--text-secondary))', fontStyle: 'italic' }}>
+                                    {eta}
+                                </p>
+                            )}
                         </>
                     )}
 
-                    <button className="btn btn-primary" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleCancelDeduplicate}>
+                    <button className="btn btn-primary mt-4" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleCancelDeduplicate}>
                         Abort Process
                     </button>
                 </div>
