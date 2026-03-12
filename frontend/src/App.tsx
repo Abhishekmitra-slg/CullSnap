@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus } from '../wailsjs/go/app/App';
 import { app as appMain, model as appModel } from '../wailsjs/go/models';
 
 function App() {
@@ -19,6 +19,7 @@ function App() {
     const [sysMetrics, setSysMetrics] = useState<appMain.SystemResources | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
+    const [dedupCompleted, setDedupCompleted] = useState(false);
 
     useEffect(() => {
         const interval = setInterval(async () => {
@@ -143,7 +144,8 @@ function App() {
                 setActivePhoto(null);
             }
             setSelectedPaths(new Set());
-            setDuplicateGroups([]); // clear duplicates on fresh load
+            setDuplicateGroups([]);
+            setDedupCompleted(false);
 
             // Load star ratings for this directory
             try {
@@ -151,6 +153,17 @@ function App() {
                 setRatings(dirRatings || {});
             } catch {
                 setRatings({});
+            }
+
+            // Auto-detect existing dedup results
+            try {
+                const status = await CheckDedupStatus(dir);
+                if (status && status.hasDuplicates && status.duplicates) {
+                    setDuplicateGroups([status.duplicates]);
+                    setDedupCompleted(true);
+                }
+            } catch {
+                // No dedup results found, that's fine
             }
         } catch (e) {
             console.error(e);
@@ -274,6 +287,8 @@ function App() {
                 onExportSuccess={handleExportSuccess}
                 theme={theme}
                 onThemeChange={handleThemeChange}
+                dedupCompleted={dedupCompleted}
+                duplicateCount={duplicateGroups.reduce((acc, g) => acc + g.length, 0)}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>

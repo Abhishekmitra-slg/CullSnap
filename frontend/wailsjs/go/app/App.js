@@ -6,6 +6,10 @@ export function CancelDeduplicate() {
   return window['go']['app']['App']['CancelDeduplicate']();
 }
 
+export function CheckDedupStatus(arg1) {
+  return window['go']['app']['App']['CheckDedupStatus'](arg1);
+}
+
 export function ExportPhotos(arg1, arg2) {
   return window['go']['app']['App']['ExportPhotos'](arg1, arg2);
 }

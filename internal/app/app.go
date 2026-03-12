@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	stdruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -278,6 +279,60 @@ func (a *App) SetPhotoRating(path string, rating int) error {
 // GetRatingsForDirectory retrieves all ratings for photos in a directory.
 func (a *App) GetRatingsForDirectory(dirPath string) (map[string]int, error) {
 	return a.store.GetRatingsInDirectory(dirPath)
+}
+
+// DedupStatus holds information about existing dedup results for a directory.
+type DedupStatus struct {
+	HasDuplicates  bool            `json:"hasDuplicates"`
+	DuplicateCount int             `json:"duplicateCount"`
+	Duplicates     []model.Photo   `json:"duplicates"`
+}
+
+// CheckDedupStatus checks if a directory has an existing "duplicates" subfolder
+// and returns its contents. This allows the frontend to auto-detect previous
+// dedup results without re-running the process.
+func (a *App) CheckDedupStatus(dirPath string) (*DedupStatus, error) {
+	dupeDir := filepath.Join(dirPath, "duplicates")
+	info, err := os.Stat(dupeDir)
+	if err != nil || !info.IsDir() {
+		return &DedupStatus{HasDuplicates: false}, nil
+	}
+
+	// Scan the duplicates directory for photos
+	var duplicates []model.Photo
+	entries, err := os.ReadDir(dupeDir)
+	if err != nil {
+		return &DedupStatus{HasDuplicates: false}, nil
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".cr2" || ext == ".cr3" || ext == ".arw" || ext == ".nef" || ext == ".dng" {
+			fInfo, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			p := model.Photo{
+				Path:    filepath.Join(dupeDir, entry.Name()),
+				Size:    fInfo.Size(),
+				TakenAt: fInfo.ModTime(),
+			}
+			// Try to get actual date taken from EXIF
+			if date, valid := dedupe.ExtractDateTaken(p.Path); valid {
+				p.TakenAt = date
+			}
+			duplicates = append(duplicates, p)
+		}
+	}
+
+	return &DedupStatus{
+		HasDuplicates:  len(duplicates) > 0,
+		DuplicateCount: len(duplicates),
+		Duplicates:     duplicates,
+	}, nil
 }
 
 // ScanAndDeduplicate runs perceptual hashing, quality scoring, sorting, and relocation.
