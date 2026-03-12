@@ -388,9 +388,28 @@ h2 {
   position: relative;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: all var(--transition-smooth);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   aspect-ratio: 4/3;
+  /* Shimmer animation until image loads */
+  background: linear-gradient(
+    90deg,
+    var(--bg-card) 25%,
+    rgba(255, 255, 255, 0.06) 50%,
+    var(--bg-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thumbnail-card.loaded {
+  background: var(--bg-card);
+  animation: none;
 }
 
 .thumbnail-card:hover {
@@ -416,24 +435,7 @@ h2 {
   object-fit: cover;
 }
 
-/* Shimmer animation for cards while thumbnails load */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
 
-.thumbnail-card:empty,
-.thumbnail-card .thumbnail-image[src=""] {
-  background: linear-gradient(
-    90deg,
-    var(--bg-card) 25%,
-    rgba(255, 255, 255, 0.06) 50%,
-    var(--bg-card) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  min-height: 120px;
-}
 
 /* Star rating overlay */
 .star-rating {

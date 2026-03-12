@@ -81,6 +81,9 @@ export function Grid({
                                 className="thumbnail-image"
                                 loading="lazy"
                                 decoding="async"
+                                onLoad={(e) => {
+                                    (e.target as HTMLImageElement).closest('.thumbnail-card')?.classList.add('loaded');
+                                }}
                             />
 
                             {/* Star rating overlay */}
@@ -124,6 +127,9 @@ export function Grid({
                                         className="thumbnail-image"
                                         loading="lazy"
                                         decoding="async"
+                                        onLoad={(e) => {
+                                            (e.target as HTMLImageElement).closest('.thumbnail-card')?.classList.add('loaded');
+                                        }}
                                     />
                                 </div>
                             );
