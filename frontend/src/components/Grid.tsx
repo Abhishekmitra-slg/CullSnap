@@ -15,13 +15,14 @@ interface GridProps {
 
 // Lazy-loading thumbnail component using IntersectionObserver
 function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
-    const imgRef = useRef<HTMLImageElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [src, setSrc] = useState<string>('');
     const [isVisible, setIsVisible] = useState(false);
+    const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
-        const img = imgRef.current;
-        if (!img) return;
+        const el = containerRef.current;
+        if (!el) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
@@ -32,10 +33,10 @@ function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
                     }
                 });
             },
-            { rootMargin: '200px' } // Preload 200px ahead
+            { rootMargin: '300px' }
         );
 
-        observer.observe(img);
+        observer.observe(el);
         return () => observer.disconnect();
     }, []);
 
@@ -47,26 +48,38 @@ function LazyThumbnail({ path, alt }: { path: string; alt: string }) {
             try {
                 const { GetThumbnailBase64 } = await import('../../wailsjs/go/app/App');
                 const data = await GetThumbnailBase64(path);
-                if (!cancelled && data) {
+                if (!cancelled && data && data.length > 30) {
                     setSrc(data);
+                    return;
                 }
             } catch {
-                // Fallback to original path if thumbnail generation fails
-                if (!cancelled) setSrc(path);
+                // Thumbnail generation failed
             }
+            // Fallback: use the original file path directly
+            if (!cancelled) setSrc(path);
         };
         loadThumb();
         return () => { cancelled = true; };
     }, [isVisible, path]);
 
     return (
-        <img
-            ref={imgRef}
-            src={src || undefined}
-            alt={alt}
-            className={`thumbnail-image ${src ? 'loaded' : ''}`}
-            decoding="async"
-        />
+        <div ref={containerRef} style={{ minHeight: src ? undefined : 120, background: src ? undefined : 'var(--bg-panel)' }}>
+            {src && (
+                <img
+                    src={src}
+                    alt={alt}
+                    className={`thumbnail-image ${loaded ? 'loaded' : ''}`}
+                    decoding="async"
+                    onLoad={() => setLoaded(true)}
+                    onError={() => {
+                        // If base64 failed, try raw path; if raw path failed, give up
+                        if (src !== path) {
+                            setSrc(path);
+                        }
+                    }}
+                />
+            )}
+        </div>
     );
 }
 
