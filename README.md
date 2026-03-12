@@ -57,26 +57,37 @@ graph LR
     Bindings <-->|Read CPU/RAM| OS
 ```
 
-## 🛠️ Installation & Build
+## 🛠️ Installation
 
+### 🍎 macOS (Recommended)
+The easiest way to install CullSnap on macOS and bypass Gatekeeper warnings is via Homebrew:
+
+```bash
+brew tap abhishekmitra-slg/tap
+brew install --cask cullsnap
+```
+
+### 🪟 Windows & 🐧 Linux
+Download the latest binary from the [Releases](https://github.com/Abhishekmitra-slg/CullSnap/releases) page.
+
+---
+
+### 🍎 Manual macOS Installation (Troubleshooting)
+If you download the `.zip` manually instead of using Homebrew, macOS will flag it with *"Apple could not verify CullSnap is free of malware."*
+
+To run the manually downloaded app:
+1. Open your Terminal.
+2. Run:
+```bash
+xattr -cr /Applications/CullSnap.app
+```
+
+### Building from Source
 Ensure you have [Go](https://go.dev/) and Node/NPM installed. Then install the Wails CLI:
-
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
-### 🍎 macOS Gatekeeper Warning
-Because this is an open-source tool, the pre-built macOS `.app` bundle from the Releases page is not digitally signed with a paid Apple Developer Certificate. macOS will flag it with *"Apple could not verify CullSnap is free of malware."*
-
-To run the downloaded app safely:
-1. Open your Terminal.
-2. Run the following command to remove the Apple Quarantine flag from the downloaded app:
-```bash
-xattr -cr /Applications/CullSnap.app
-```
-*(Make sure to change the path if you didn't drag it to your Applications folder!)*
-
-### Building from Source
 To build a Native Application Bundle (`.app` for Mac):
 ```bash
 make build
