@@ -9,6 +9,10 @@ export function ExportPhotos(arg1:Array<model.Photo>,arg2:string):Promise<number
 
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;
 
+export function GetPhotoEXIF(arg1:string):Promise<app.PhotoEXIF>;
+
+export function GetRatingsForDirectory(arg1:string):Promise<Record<string, number>>;
+
 export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
@@ -24,5 +28,7 @@ export function ScanDirectory(arg1:string):Promise<Array<model.Photo>>;
 export function SelectDirectory():Promise<string>;
 
 export function SelectExportDirectory():Promise<string>;
+
+export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;

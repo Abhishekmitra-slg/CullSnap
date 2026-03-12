@@ -212,6 +212,45 @@ func (a *App) CancelDeduplicate() {
 	}
 }
 
+// PhotoEXIF contains EXIF metadata for display in the viewer panel.
+type PhotoEXIF struct {
+	Camera    string `json:"camera"`
+	Lens      string `json:"lens"`
+	ISO       string `json:"iso"`
+	Aperture  string `json:"aperture"`
+	Shutter   string `json:"shutter"`
+	DateTaken string `json:"dateTaken"`
+}
+
+// GetPhotoEXIF extracts EXIF metadata from a photo.
+func (a *App) GetPhotoEXIF(path string) (*PhotoEXIF, error) {
+	info, err := dedupe.ExtractFullEXIF(path)
+	if err != nil {
+		return nil, err
+	}
+	return &PhotoEXIF{
+		Camera:    info.Camera,
+		Lens:      info.Lens,
+		ISO:       info.ISO,
+		Aperture:  info.Aperture,
+		Shutter:   info.Shutter,
+		DateTaken: info.DateTaken,
+	}, nil
+}
+
+// SetPhotoRating persists a star rating (0-5) for a photo.
+func (a *App) SetPhotoRating(path string, rating int) error {
+	if rating < 0 || rating > 5 {
+		return fmt.Errorf("rating must be between 0 and 5")
+	}
+	return a.store.SaveRating(path, rating)
+}
+
+// GetRatingsForDirectory retrieves all ratings for photos in a directory.
+func (a *App) GetRatingsForDirectory(dirPath string) (map[string]int, error) {
+	return a.store.GetRatingsInDirectory(dirPath)
+}
+
 // ScanAndDeduplicate runs perceptual hashing, quality scoring, sorting, and relocation.
 func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeResult, error) {
 	logger.Log.Info("Scanning and deduplicating directory", "path", path)
