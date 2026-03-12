@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Palette, Layers, X } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Image, FolderInput, Star, Trash2, Sun, Moon } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -35,6 +35,7 @@ export function Sidebar({
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [activeNav, setActiveNav] = useState('library');
 
     useEffect(() => {
         loadRecents();
@@ -67,63 +68,80 @@ export function Sidebar({
         }
     };
 
+    const folderName = currentDir ? currentDir.split('/').pop() || currentDir : '';
+
     return (
         <div className="sidebar">
-            <div className="sidebar-logo">CullSnap</div>
+            {/* Logo + Theme toggle row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div className="sidebar-logo">CullSnap</div>
+                <button
+                    className="btn"
+                    onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
+                    style={{ padding: '4px 8px', border: 'none', background: 'transparent' }}
+                    title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+                >
+                    {theme === 'dark' ? <Sun size={14} color="var(--text-secondary)" /> : <Moon size={14} color="var(--text-secondary)" />}
+                </button>
+            </div>
 
-            {/* Actions */}
+            {/* Navigation */}
+            <div className="sidebar-group">
+                <button className={`btn-nav ${activeNav === 'library' ? 'active' : ''}`} onClick={() => setActiveNav('library')}>
+                    <Image size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                    Library
+                </button>
+                <button className={`btn-nav ${activeNav === 'imports' ? 'active' : ''}`} onClick={() => setActiveNav('imports')}>
+                    <FolderInput size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                    Imports
+                </button>
+                <button className={`btn-nav ${activeNav === 'starred' ? 'active' : ''}`} onClick={() => setActiveNav('starred')}>
+                    <Star size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                    Starred
+                </button>
+                <button className={`btn-nav ${activeNav === 'rejected' ? 'active' : ''}`} onClick={() => setActiveNav('rejected')}>
+                    <Trash2 size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                    Rejected
+                </button>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'var(--border-color)', margin: '8px 0' }} />
+
+            {/* Action Buttons */}
             <div className="sidebar-group">
                 <button className="btn btn-gradient w-full" onClick={onOpenFolder}>
                     <FolderOpen size={16} />
                     Open Folder
                 </button>
 
-                {currentDir && (
-                    <button
-                        className="btn w-full mt-2"
-                        onClick={onDeduplicate}
-                        disabled={isDeduplicating || photosCount === 0}
-                        title="Find and group duplicate photos"
-                    >
-                        <Layers size={16} />
-                        {isDeduplicating ? 'Processing...' : 'Find Duplicates'}
-                    </button>
-                )}
+                <button
+                    className="btn w-full mt-2"
+                    onClick={onDeduplicate}
+                    disabled={isDeduplicating || photosCount === 0 || !currentDir}
+                    title="Find and group duplicate photos"
+                >
+                    <Layers size={16} />
+                    {isDeduplicating ? 'Processing...' : 'Find Duplicates'}
+                </button>
             </div>
 
-            {/* Current folder */}
+            {/* Current folder indicator */}
             {currentDir && (
-                <div style={{ padding: '0 4px' }}>
-                    <div className="sidebar-label">Current Folder</div>
-                    <div className="truncate-path text-small" title={currentDir} style={{ padding: '0 12px' }}>
-                        {currentDir}
+                <div style={{ padding: '4px 12px', margin: '4px 0' }}>
+                    <div className="text-small truncate-path" title={currentDir} style={{ color: 'var(--accent)', fontSize: '0.7rem' }}>
+                        📂 {folderName}
                     </div>
                 </div>
             )}
 
-            {/* Theme */}
-            <div style={{ padding: '0 4px' }}>
-                <div className="sidebar-label">
-                    <Palette size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                    Theme
+            {/* Recent Folders */}
+            <div className="recents-panel">
+                <div className="sidebar-label" style={{ padding: '0 0 6px 0' }}>
+                    <Clock size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                    Recent
                 </div>
-                <select
-                    className="theme-switcher"
-                    value={theme}
-                    onChange={(e) => onThemeChange(e.target.value)}
-                >
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                </select>
-            </div>
-
-            {/* Recents */}
-            <div className="recents-panel" style={{ marginTop: 8 }}>
-                <div className="sidebar-label" style={{ padding: '0 0 8px 0' }}>
-                    <Clock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                    Recent Folders
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', flex: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, overflowY: 'auto', flex: 1 }}>
                     {recents.map((dir, i) => (
                         <button
                             key={i}
@@ -135,7 +153,7 @@ export function Sidebar({
                         </button>
                     ))}
                     {recents.length === 0 && (
-                        <span className="text-small" style={{ padding: '4px 8px', color: 'var(--text-muted)' }}>
+                        <span className="text-small" style={{ padding: '4px 8px', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
                             No recent folders
                         </span>
                     )}
@@ -154,12 +172,12 @@ export function Sidebar({
                 </button>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs">
-                        <FileText size={14} />
+                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs" style={{ fontSize: '0.75rem' }}>
+                        <FileText size={13} />
                         Logs
                     </button>
-                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help">
-                        <HelpCircle size={14} />
+                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help" style={{ fontSize: '0.75rem' }}>
+                        <HelpCircle size={13} />
                         Help
                     </button>
                 </div>
@@ -179,21 +197,18 @@ export function Sidebar({
                         <div className="text-small" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', lineHeight: '1.6' }}>
                             <section>
                                 <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Getting Started</h3>
-                                <p>CullSnap is a high-performance photo culling tool. Click <strong>Open Folder</strong> to load a directory of images. Navigate, select, and export your best shots.</p>
+                                <p>CullSnap is a high-performance photo culling tool. Click <strong>Open Folder</strong> to load a directory of images.</p>
                             </section>
-
                             <section>
                                 <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Keyboard Shortcuts</h3>
                                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>S</kbd> — Toggle selection on active photo</li>
-                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>← →</kbd> — Navigate between photos</li>
-                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>Click</kbd> — View photo full-size</li>
+                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>S</kbd> — Toggle selection</li>
+                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>← →</kbd> — Navigate photos</li>
                                 </ul>
                             </section>
-
                             <section>
                                 <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Exporting</h3>
-                                <p>Select photos with <strong>S</strong>, then click <strong>Export</strong> to copy them to a destination folder. Exported photos show a green badge.</p>
+                                <p>Select photos with <strong>S</strong>, then click <strong>Export</strong>.</p>
                             </section>
                         </div>
                     </div>
