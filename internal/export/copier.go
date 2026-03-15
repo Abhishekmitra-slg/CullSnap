@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"cullsnap/internal/model"
+	"cullsnap/internal/video"
 )
 
 // ExportSelections copies selected photos to the destination directory.
@@ -39,10 +40,31 @@ func ExportSelections(photos []model.Photo, destDir string) (int, error) {
 			srcFile.Close()
 			return count, fmt.Errorf("failed to create destination file %s: %w", destPath, err)
 		}
+		
+		isClippedVideo := p.IsVideo && (p.TrimStart > 0 || p.TrimEnd > 0)
+		if isClippedVideo {
+			// Ensure file is closed because FFmpeg handles its own I/O
+			destFile.Close()
+			srcFile.Close()
+			
+			// Remove the empty placeholder file 
+			os.Remove(destPath)
 
-		_, err = io.Copy(destFile, srcFile)
-		destFile.Close()
-		srcFile.Close()
+			// If TrimEnd isn't specified or is larger than duration somehow, FFmpeg handles it,
+			// but best to pass the duration precisely.
+			if p.TrimEnd == 0 {
+				p.TrimEnd = p.Duration
+			}
+			
+			err = video.TrimVideo(p.Path, destPath, p.TrimStart, p.TrimEnd)
+			if err != nil {
+				return count, fmt.Errorf("failed to trim video %s: %w", p.Path, err)
+			}
+		} else {
+			_, err = io.Copy(destFile, srcFile)
+			destFile.Close()
+			srcFile.Close()
+		}
 
 		if err != nil {
 			return count, fmt.Errorf("failed to copy content to %s: %w", destPath, err)

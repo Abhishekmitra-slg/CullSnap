@@ -59,11 +59,16 @@ export function Sidebar({
         try {
             const destDir = await SelectExportDirectory();
             if (!destDir) return;
+            
+            const defaultName = "Session_" + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            const folderName = prompt("Enter a name for the export folder:", defaultName);
+            if (folderName === null) return; // User cancelled
+
             setIsExporting(true);
             const selectedPhotos = photos.filter(p => selectedPaths.has(p.Path));
-            await ExportPhotos(selectedPhotos, destDir);
+            await ExportPhotos(selectedPhotos, destDir, folderName);
             if (currentDir) onLoadDir(currentDir);
-            onExportSuccess(`Successfully exported ${selectedCount} photos!`);
+            onExportSuccess(`Successfully exported ${selectedCount} items!`);
         } catch (e) {
             console.error(e);
             alert(`Export failed: ${e}`);
