@@ -155,10 +155,13 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	return photos, nil
 }
 
-// ExportPhotos copies specified photos to a destination directory inside a timestamped subfolder
-func (a *App) ExportPhotos(photos []model.Photo, destDir string) (int, error) {
-	timestamp := time.Now().Format("20060102_150405")
-	sessionDir := filepath.Join(destDir, fmt.Sprintf("Session_%s", timestamp))
+// ExportPhotos copies specified photos/videos to a destination directory inside a specific subfolder
+func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName string) (int, error) {
+	if folderName == "" {
+		timestamp := time.Now().Format("20060102_150405")
+		folderName = fmt.Sprintf("Session_%s", timestamp)
+	}
+	sessionDir := filepath.Join(destDir, folderName)
 
 	count, err := export.ExportSelections(photos, sessionDir)
 	if err == nil && count > 0 {

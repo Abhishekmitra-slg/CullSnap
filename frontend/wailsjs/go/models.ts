@@ -123,6 +123,10 @@ export namespace model {
 	    Size: number;
 	    // Go type: time
 	    TakenAt: any;
+	    IsVideo: boolean;
+	    Duration: number;
+	    TrimStart: number;
+	    TrimEnd: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Photo(source);
@@ -136,6 +140,10 @@ export namespace model {
 	        this.Height = source["Height"];
 	        this.Size = source["Size"];
 	        this.TakenAt = this.convertValues(source["TakenAt"], null);
+	        this.IsVideo = source["IsVideo"];
+	        this.Duration = source["Duration"];
+	        this.TrimStart = source["TrimStart"];
+	        this.TrimEnd = source["TrimEnd"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

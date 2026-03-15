@@ -262,6 +262,11 @@ function App() {
         }
     }, []);
 
+    const handleTrimChange = useCallback((path: string, start: number, end: number) => {
+        setPhotos(prev => prev.map(p => p.Path === path ? appModel.Photo.createFrom({ ...p, TrimStart: start, TrimEnd: end }) : p));
+        setActivePhoto(prev => (prev?.Path === path) ? appModel.Photo.createFrom({ ...prev, TrimStart: start, TrimEnd: end }) : prev);
+    }, []);
+
     return (
         <div id="App" className="app-container" data-theme={theme}>
             <div className="titlebar" />
@@ -328,7 +333,7 @@ function App() {
                     onRatingChange={handleRatingChange}
                 />
 
-                <Viewer photo={activePhoto} />
+                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} />
             </div>
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>

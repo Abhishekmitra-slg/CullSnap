@@ -28,7 +28,7 @@ func Init(filename string) error {
 		return err
 	}
 
-	handler := slog.NewJSONHandler(file, nil)
+	handler := slog.NewJSONHandler(file, &slog.HandlerOptions{Level: slog.LevelInfo})
 	Log = slog.New(handler)
 
 	Log.Info("Logger initialized", "path", LogPath)
