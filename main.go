@@ -109,20 +109,39 @@ func setCacheControl(w http.ResponseWriter, filePath, cacheDir string) {
 	}
 }
 
+// trackingWriter wraps http.ResponseWriter and records whether WriteHeader has been called.
+// Used by panicRecoveryMiddleware to avoid a "superfluous WriteHeader" warning when
+// http.ServeFile has already started writing before the panic occurred.
+type trackingWriter struct {
+	http.ResponseWriter
+	headerWritten bool
+}
+
+func (tw *trackingWriter) WriteHeader(status int) {
+	tw.headerWritten = true
+	tw.ResponseWriter.WriteHeader(status)
+}
+
+func (tw *trackingWriter) Write(b []byte) (int, error) {
+	tw.headerWritten = true
+	return tw.ResponseWriter.Write(b)
+}
+
 // panicRecoveryMiddleware wraps any HTTP handler with a deferred recover.
 // If the handler panics (e.g. broken pipe when client disconnects mid-stream),
 // the panic is logged and a 500 is returned rather than crashing the process.
 func panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tw := &trackingWriter{ResponseWriter: w}
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Printf("MediaServer: recovered from panic: %v", rec)
-				// Only write error if headers haven't been sent yet
-				// (if ServeFile already started writing, we can't change the status code)
-				w.WriteHeader(http.StatusInternalServerError)
+				if !tw.headerWritten {
+					tw.WriteHeader(http.StatusInternalServerError)
+				}
 			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(tw, r)
 	})
 }
 
