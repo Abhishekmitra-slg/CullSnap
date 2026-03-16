@@ -127,6 +127,12 @@ func (tw *trackingWriter) Write(b []byte) (int, error) {
 	return tw.ResponseWriter.Write(b)
 }
 
+// Unwrap returns the underlying ResponseWriter, enabling http.ResponseController
+// to traverse wrapper chains (e.g. for Flush or SetWriteDeadline).
+func (tw *trackingWriter) Unwrap() http.ResponseWriter {
+	return tw.ResponseWriter
+}
+
 // panicRecoveryMiddleware wraps any HTTP handler with a deferred recover.
 // If the handler panics (e.g. broken pipe when client disconnects mid-stream),
 // the panic is logged and a 500 is returned rather than crashing the process.
