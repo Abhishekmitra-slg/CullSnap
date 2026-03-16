@@ -41,6 +41,13 @@ function App() {
         return () => { EventsOff('sys-metrics'); };
     }, []);
 
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        };
+    }, []);
+
     // Listen to deduplication progress events
     const phaseStartRef = useRef<{ time: number; message: string } | null>(null);
     const [eta, setEta] = useState<string | null>(null);

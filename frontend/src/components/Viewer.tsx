@@ -86,6 +86,7 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
             .then(blob => {
                 if (controller.signal.aborted) return; // navigated away during fetch
                 const newUrl = URL.createObjectURL(blob);
+                blobUrlRef.current = newUrl; // assign before setImageSrc so unmount cleanup can see it
                 setImageSrc(newUrl);
             })
             .catch(err => {
