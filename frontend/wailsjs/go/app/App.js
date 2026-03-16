@@ -34,10 +34,6 @@ export function GetSelections(arg1) {
   return window['go']['app']['App']['GetSelections'](arg1);
 }
 
-export function GetSystemResources() {
-  return window['go']['app']['App']['GetSystemResources']();
-}
-
 export function OpenFolderInFinder(arg1) {
   return window['go']['app']['App']['OpenFolderInFinder'](arg1);
 }

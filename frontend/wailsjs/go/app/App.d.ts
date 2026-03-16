@@ -19,8 +19,6 @@ export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 
-export function GetSystemResources():Promise<app.SystemResources>;
-
 export function OpenFolderInFinder(arg1:string):Promise<void>;
 
 export function OpenLog():Promise<void>;
