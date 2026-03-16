@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Image, FolderInput, Star, Trash2, Sun, Moon } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Sun, Moon } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -39,7 +39,6 @@ export function Sidebar({
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
-    const [activeNav, setActiveNav] = useState('library');
 
     useEffect(() => {
         loadRecents();
@@ -59,11 +58,16 @@ export function Sidebar({
         try {
             const destDir = await SelectExportDirectory();
             if (!destDir) return;
+            
+            const defaultName = "Session_" + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            const folderName = prompt("Enter a name for the export folder:", defaultName);
+            if (folderName === null) return; // User cancelled
+
             setIsExporting(true);
             const selectedPhotos = photos.filter(p => selectedPaths.has(p.Path));
-            await ExportPhotos(selectedPhotos, destDir);
+            await ExportPhotos(selectedPhotos, destDir, folderName);
             if (currentDir) onLoadDir(currentDir);
-            onExportSuccess(`Successfully exported ${selectedCount} photos!`);
+            onExportSuccess(`Successfully exported ${selectedCount} items!`);
         } catch (e) {
             console.error(e);
             alert(`Export failed: ${e}`);
@@ -88,29 +92,6 @@ export function Sidebar({
                     {theme === 'dark' ? <Sun size={14} color="var(--text-secondary)" /> : <Moon size={14} color="var(--text-secondary)" />}
                 </button>
             </div>
-
-            {/* Navigation */}
-            <div className="sidebar-group">
-                <button className={`btn-nav ${activeNav === 'library' ? 'active' : ''}`} onClick={() => setActiveNav('library')}>
-                    <Image size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Library
-                </button>
-                <button className={`btn-nav ${activeNav === 'imports' ? 'active' : ''}`} onClick={() => setActiveNav('imports')}>
-                    <FolderInput size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Imports
-                </button>
-                <button className={`btn-nav ${activeNav === 'starred' ? 'active' : ''}`} onClick={() => setActiveNav('starred')}>
-                    <Star size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Starred
-                </button>
-                <button className={`btn-nav ${activeNav === 'rejected' ? 'active' : ''}`} onClick={() => setActiveNav('rejected')}>
-                    <Trash2 size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Rejected
-                </button>
-            </div>
-
-            {/* Divider */}
-            <div style={{ height: 1, background: 'var(--border-color)', margin: '8px 0' }} />
 
             {/* Action Buttons */}
             <div className="sidebar-group">

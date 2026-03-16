@@ -2,8 +2,17 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
-import { app as appMain, model as appModel } from '../wailsjs/go/models';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
+import { model as appModel } from '../wailsjs/go/models';
+
+interface SystemMetrics {
+    cpu: number;
+    ram: number;
+    diskRead: number;
+    diskWrite: number;
+    netSent: number;
+    netRecv: number;
+}
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
@@ -17,22 +26,17 @@ function App() {
     const [isDeduplicating, setIsDeduplicating] = useState(false);
     const [dedupeProgress, setDedupeProgress] = useState<{current: number, total: number, message: string} | null>(null);
     const [theme, setTheme] = useState<string>('dark');
-    const [sysMetrics, setSysMetrics] = useState<appMain.SystemResources | null>(null);
+    const [sysMetrics, setSysMetrics] = useState<SystemMetrics | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
 
     useEffect(() => {
-        const interval = setInterval(async () => {
-            try {
-                const metrics = await GetSystemResources();
-                setSysMetrics(metrics);
-            } catch (e) {
-                console.error("Failed to fetch metrics", e);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
+        EventsOn('sys-metrics', (data: any) => {
+            setSysMetrics(data);
+        });
+        return () => { EventsOff('sys-metrics'); };
     }, []);
 
     // Listen to deduplication progress events
@@ -147,7 +151,15 @@ function App() {
             } else {
                 setActivePhoto(null);
             }
-            setSelectedPaths(new Set());
+
+            // Restore persisted selections from previous session
+            try {
+                const savedSelections = await GetSelections(dir);
+                setSelectedPaths(new Set(Object.keys(savedSelections || {})));
+            } catch {
+                setSelectedPaths(new Set());
+            }
+
             setDuplicateGroups([]);
             setDedupCompleted(false);
 
@@ -262,6 +274,11 @@ function App() {
         }
     }, []);
 
+    const handleTrimChange = useCallback((path: string, start: number, end: number) => {
+        setPhotos(prev => prev.map(p => p.Path === path ? appModel.Photo.createFrom({ ...p, TrimStart: start, TrimEnd: end }) : p));
+        setActivePhoto(prev => (prev?.Path === path) ? appModel.Photo.createFrom({ ...prev, TrimStart: start, TrimEnd: end }) : prev);
+    }, []);
+
     return (
         <div id="App" className="app-container" data-theme={theme}>
             <div className="titlebar" />
@@ -328,7 +345,7 @@ function App() {
                     onRatingChange={handleRatingChange}
                 />
 
-                <Viewer photo={activePhoto} />
+                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} />
             </div>
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>

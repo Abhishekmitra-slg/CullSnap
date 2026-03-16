@@ -16,6 +16,8 @@ import (
 	"cullsnap/internal/app"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/video"
+
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -182,6 +184,12 @@ func main() {
 		log.Fatal(err)
 	}
 	logger.Log.Info("Application starting", "dir", appDir)
+
+	// Init Video (FFmpeg)
+	if err := video.Init(); err != nil {
+		logger.Log.Error("Failed to init video support (FFmpeg): ", "error", err)
+		// We don't fatal here, as the user can still use CullSnap for photos
+	}
 
 	// Init Storage
 	store, err := storage.NewSQLiteStore(dbPath)

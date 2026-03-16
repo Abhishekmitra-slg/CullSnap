@@ -10,6 +10,12 @@ type Photo struct {
 	Height        int
 	Size          int64
 	TakenAt       time.Time
+
+	// Video Support
+	IsVideo   bool    // True if media is a video
+	Duration  float64 // Total video duration in seconds
+	TrimStart float64 // Clipping start point in seconds
+	TrimEnd   float64 // Clipping end point in seconds
 }
 
 // Session represents a culling session.

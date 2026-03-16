@@ -7,7 +7,7 @@ export function CancelDeduplicate():Promise<void>;
 
 export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
-export function ExportPhotos(arg1:Array<model.Photo>,arg2:string):Promise<number>;
+export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
 
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;
 
@@ -18,8 +18,6 @@ export function GetRatingsForDirectory(arg1:string):Promise<Record<string, numbe
 export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
-
-export function GetSystemResources():Promise<app.SystemResources>;
 
 export function OpenFolderInFinder(arg1:string):Promise<void>;
 

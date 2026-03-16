@@ -13,5 +13,6 @@
   "linux": {
     "app_id": "com.abhishekmitra.cullsnap",
     "program_name": "CullSnap"
-  }
+  },
+  "port": 34115
 }
