@@ -54,7 +54,8 @@ export function Grid({
                     const isActive = activePhoto?.Path === photo.Path;
                     const rating = ratings[photo.Path] || 0;
                     // Use cached thumbnail if available, else original path
-                    const imgSrc = photo.ThumbnailPath || photo.Path;
+                    const rawSrc = photo.ThumbnailPath || photo.Path;
+                    const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
 
                     return (
                         <div
@@ -71,6 +72,15 @@ export function Grid({
                             {!isSelected && isExported && (
                                 <div className="badge badge-exported">
                                     <Check size={12} />
+                                </div>
+                            )}
+
+                            {/* Video duration badge */}
+                            {photo.IsVideo && (
+                                <div className="badge badge-video">
+                                    <span style={{ fontSize: '10px' }}>
+                                        {Math.floor(photo.Duration / 60)}:{(Math.floor(photo.Duration % 60)).toString().padStart(2, '0')}
+                                    </span>
                                 </div>
                             )}
 
@@ -112,7 +122,8 @@ export function Grid({
                     <div className="photo-grid">
                         {duplicateGroups.flat().map((photo) => {
                             const isActive = activePhoto?.Path === photo.Path;
-                            const imgSrc = photo.ThumbnailPath || photo.Path;
+                            const rawSrc = photo.ThumbnailPath || photo.Path;
+                            const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
                             return (
                                 <div
                                     id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}

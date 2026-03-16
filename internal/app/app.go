@@ -50,6 +50,9 @@ func (a *App) Startup(ctx context.Context) {
 	} else {
 		a.thumbCache = tc
 	}
+
+	// Start background goroutine to push system metrics every second
+	go a.emitSystemMetrics()
 }
 
 // SelectDirectory opens a native OS dialog to select a folder
@@ -155,10 +158,13 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	return photos, nil
 }
 
-// ExportPhotos copies specified photos to a destination directory inside a timestamped subfolder
-func (a *App) ExportPhotos(photos []model.Photo, destDir string) (int, error) {
-	timestamp := time.Now().Format("20060102_150405")
-	sessionDir := filepath.Join(destDir, fmt.Sprintf("Session_%s", timestamp))
+// ExportPhotos copies specified photos/videos to a destination directory inside a specific subfolder
+func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName string) (int, error) {
+	if folderName == "" {
+		timestamp := time.Now().Format("20060102_150405")
+		folderName = fmt.Sprintf("Session_%s", timestamp)
+	}
+	sessionDir := filepath.Join(destDir, folderName)
 
 	count, err := export.ExportSelections(photos, sessionDir)
 	if err == nil && count > 0 {
@@ -214,70 +220,74 @@ type SystemResources struct {
 	NetRecv   float64 `json:"netRecv"`
 }
 
-var lastDiskRead uint64
-var lastDiskWrite uint64
-var lastNetSent uint64
-var lastNetRecv uint64
-var lastUpdate time.Time
-var currentProcess *process.Process
+// emitSystemMetrics runs in a background goroutine, pushing metrics to the
+// frontend via Wails events every second. Stops when the app context is cancelled.
+func (a *App) emitSystemMetrics() {
+	var (
+		lastDiskRead  uint64
+		lastDiskWrite uint64
+		lastNetSent   uint64
+		lastNetRecv   uint64
+		lastUpdate    time.Time
+		proc          *process.Process
+	)
 
-// GetSystemResources fetches the system resources utilized by the system
-func (a *App) GetSystemResources() SystemResources {
-	var metrics SystemResources
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	// 1. Get process CPU using gopsutil
-	if currentProcess == nil {
-		p, err := process.NewProcess(int32(os.Getpid()))
-		if err == nil {
-			currentProcess = p
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
 		}
-	}
 
-	if currentProcess != nil {
-		cpuPercent, _ := currentProcess.CPUPercent()
-		metrics.CPU = cpuPercent
+		var metrics SystemResources
 
-		// Storage/Disk IO
-		ioCounters, _ := currentProcess.IOCounters()
-		if ioCounters != nil {
-			now := time.Now()
-			if !lastUpdate.IsZero() {
-				elapsed := now.Sub(lastUpdate).Seconds()
-				if elapsed > 0 {
-					metrics.DiskRead = float64(ioCounters.ReadBytes-lastDiskRead) / 1024 / 1024 / elapsed
-					metrics.DiskWrite = float64(ioCounters.WriteBytes-lastDiskWrite) / 1024 / 1024 / elapsed
-				}
+		if proc == nil {
+			p, err := process.NewProcess(int32(os.Getpid()))
+			if err == nil {
+				proc = p
 			}
-			lastDiskRead = ioCounters.ReadBytes
-			lastDiskWrite = ioCounters.WriteBytes
-			lastUpdate = now
 		}
-	}
 
-	// 2. Get accurate Go Backend memory usage (in MB)
-	// gopsutil RSS counts the entire MacOS WKWebview reserved memory allocations (which can be huge but lazy loaded).
-	// We want to show the app's actual backend heap consumption.
-	var m stdruntime.MemStats
-	stdruntime.ReadMemStats(&m)
-	metrics.RAM = float64(m.Alloc) / 1024 / 1024
+		if proc != nil {
+			cpuPercent, _ := proc.CPUPercent()
+			metrics.CPU = cpuPercent
 
-	// For network, just get total system network and calculate diff
-	// Process-specific network is hard to get cross-platform cleanly with gopsutil,
-	// so we get system-wide, or we can just leave it 0 if we only want app specific.
-	// But let's try network counters.
-	netStats, _ := net.IOCounters(false)
-	if len(netStats) > 0 {
-		stat := netStats[0]
-		// To keep it simple, let's just do a rough diff.
-		if lastNetSent > 0 && lastNetRecv > 0 {
-			metrics.NetSent = float64(stat.BytesSent-lastNetSent) / 1024 // KB
-			metrics.NetRecv = float64(stat.BytesRecv-lastNetRecv) / 1024 // KB
+			ioCounters, _ := proc.IOCounters()
+			if ioCounters != nil {
+				now := time.Now()
+				if !lastUpdate.IsZero() {
+					elapsed := now.Sub(lastUpdate).Seconds()
+					if elapsed > 0 {
+						metrics.DiskRead = float64(ioCounters.ReadBytes-lastDiskRead) / 1024 / 1024 / elapsed
+						metrics.DiskWrite = float64(ioCounters.WriteBytes-lastDiskWrite) / 1024 / 1024 / elapsed
+					}
+				}
+				lastDiskRead = ioCounters.ReadBytes
+				lastDiskWrite = ioCounters.WriteBytes
+				lastUpdate = now
+			}
 		}
-		lastNetSent = stat.BytesSent
-		lastNetRecv = stat.BytesRecv
-	}
 
-	return metrics
+		var m stdruntime.MemStats
+		stdruntime.ReadMemStats(&m)
+		metrics.RAM = float64(m.Alloc) / 1024 / 1024
+
+		netStats, _ := net.IOCounters(false)
+		if len(netStats) > 0 {
+			stat := netStats[0]
+			if lastNetSent > 0 && lastNetRecv > 0 {
+				metrics.NetSent = float64(stat.BytesSent-lastNetSent) / 1024
+				metrics.NetRecv = float64(stat.BytesRecv-lastNetRecv) / 1024
+			}
+			lastNetSent = stat.BytesSent
+			lastNetRecv = stat.BytesRecv
+		}
+
+		runtime.EventsEmit(a.ctx, "sys-metrics", metrics)
+	}
 }
 
 // DedupeResult is the payload for the frontend

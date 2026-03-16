@@ -6,13 +6,20 @@ import (
 	"strings"
 
 	"cullsnap/internal/model"
+	"cullsnap/internal/video"
 )
 
 var allowedExtensions = map[string]bool{
+	// Photos
 	".jpg":  true,
 	".jpeg": true,
 	".png":  true,
-	// Add RAW formats later if needed, starting with basic support
+	// Videos
+	".mp4":  true,
+	".mov":  true,
+	".webm": true,
+	".mkv":  true,
+	".avi":  true,
 }
 
 // ScanDirectory worker pool implementation could go here,
@@ -39,11 +46,23 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 			if err != nil {
 				return nil // Skip if can't get info
 			}
+			
+			isVideo := isVideoExt(ext)
+			var duration float64
+			if isVideo {
+				// Using the previously built ffmpeg module to extract duration quickly
+				dur, err := video.GetDuration(path)
+				if err == nil {
+					duration = dur
+				}
+			}
 
 			p := model.Photo{
-				Path:    path,
-				Size:    info.Size(),
-				TakenAt: info.ModTime(), // Fallback to ModTime, ideally parse EXIF later
+				Path:     path,
+				Size:     info.Size(),
+				TakenAt:  info.ModTime(), // Fallback to ModTime, ideally parse EXIF later
+				IsVideo:  isVideo,
+				Duration: duration,
 			}
 
 			photos = append(photos, p)
@@ -52,4 +71,12 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 	})
 
 	return photos, err
+}
+
+func isVideoExt(ext string) bool {
+	switch ext {
+	case ".mp4", ".mov", ".webm", ".mkv", ".avi":
+		return true
+	}
+	return false
 }
