@@ -35,6 +35,9 @@ gha-creds-*.json
 node_modules/
 .aider*
 
+# Test output
+*.out
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

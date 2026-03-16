@@ -88,28 +88,6 @@ export namespace app {
 	        this.dateTaken = source["dateTaken"];
 	    }
 	}
-	export class SystemResources {
-	    cpu: number;
-	    ram: number;
-	    diskRead: number;
-	    diskWrite: number;
-	    netSent: number;
-	    netRecv: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new SystemResources(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cpu = source["cpu"];
-	        this.ram = source["ram"];
-	        this.diskRead = source["diskRead"];
-	        this.diskWrite = source["diskWrite"];
-	        this.netSent = source["netSent"];
-	        this.netRecv = source["netRecv"];
-	    }
-	}
 
 }
 
