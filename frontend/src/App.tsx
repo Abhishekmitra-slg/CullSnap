@@ -22,6 +22,8 @@ function App() {
     const [exportedPaths, setExportedPaths] = useState<Set<string>>(new Set());
     const [currentDir, setCurrentDir] = useState<string>('');
     const [activePhoto, setActivePhoto] = useState<appModel.Photo | null>(null);
+    const [activePhotoPath, setActivePhotoPath] = useState<string>('');
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [loading, setLoading] = useState(false);
     const [isDeduplicating, setIsDeduplicating] = useState(false);
     const [dedupeProgress, setDedupeProgress] = useState<{current: number, total: number, message: string} | null>(null);
@@ -80,39 +82,49 @@ function App() {
         };
     }, []);
 
+    const setActivePhotoDebounced = useCallback((photo: appModel.Photo) => {
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+            setActivePhoto(photo);
+        }, 80);
+    }, []);
+
     // Keyboard shortcut listener
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 's' || e.key === 'S') {
-                if (activePhoto) {
-                    handleToggleSelection(activePhoto.Path);
+                if (activePhotoPath) {
+                    handleToggleSelection(activePhotoPath);
                 }
             } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (photos.length > 0) {
-                    const currentIndex = activePhoto ? photos.findIndex(p => p.Path === activePhoto.Path) : -1;
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex < photos.length - 1) {
-                        setActivePhoto(photos[currentIndex + 1]);
-                        // Try to scroll the thumbnail into view if possible
-                        const id = photos[currentIndex + 1].Path.replace(/[^a-zA-Z0-9]/g, '-');
-                        document.getElementById(`thumb-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        const nextPhoto = photos[currentIndex + 1];
+                        setActivePhotoPath(nextPhoto.Path);          // immediate — grid highlight
+                        setActivePhotoDebounced(nextPhoto);           // 80ms — viewer load
+                        document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (photos.length > 0) {
-                    const currentIndex = activePhoto ? photos.findIndex(p => p.Path === activePhoto.Path) : -1;
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex > 0) {
-                        setActivePhoto(photos[currentIndex - 1]);
-                        const id = photos[currentIndex - 1].Path.replace(/[^a-zA-Z0-9]/g, '-');
-                        document.getElementById(`thumb-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        const prevPhoto = photos[currentIndex - 1];
+                        setActivePhotoPath(prevPhoto.Path);
+                        setActivePhotoDebounced(prevPhoto);
+                        document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activePhoto, selectedPaths, photos, currentDir]);
+    }, [activePhotoPath, selectedPaths, photos, currentDir, setActivePhotoDebounced]);
 
     const handleOpenFolder = async () => {
         try {
@@ -148,8 +160,10 @@ function App() {
 
             if (quickPhotos && quickPhotos.length > 0) {
                 setActivePhoto(quickPhotos[0]);
+                setActivePhotoPath(quickPhotos[0].Path);
             } else {
                 setActivePhoto(null);
+                setActivePhotoPath('');
             }
 
             // Restore persisted selections from previous session
@@ -220,8 +234,10 @@ function App() {
                 setDuplicateGroups(result.duplicateGroups || []);
                 if (result.uniquePhotos && result.uniquePhotos.length > 0) {
                     setActivePhoto(result.uniquePhotos[0]);
+                    setActivePhotoPath(result.uniquePhotos[0].Path);
                 } else {
                     setActivePhoto(null);
+                    setActivePhotoPath('');
                 }
             }
         } catch (e) {
@@ -262,6 +278,7 @@ function App() {
     };
 
     const handlePhotoClick = (photo: appModel.Photo) => {
+        setActivePhotoPath(photo.Path);
         setActivePhoto(photo);
     };
 
@@ -339,7 +356,7 @@ function App() {
                     duplicateGroups={duplicateGroups}
                     selectedPaths={selectedPaths}
                     exportedPaths={exportedPaths}
-                    activePhoto={activePhoto}
+                    activePhotoPath={activePhotoPath}
                     onPhotoClick={handlePhotoClick}
                     ratings={ratings}
                     onRatingChange={handleRatingChange}
