@@ -7,7 +7,7 @@ interface GridProps {
     duplicateGroups?: model.Photo[][];
     selectedPaths: Set<string>;
     exportedPaths: Set<string>;
-    activePhoto: model.Photo | null;
+    activePhotoPath: string;
     onPhotoClick: (photo: model.Photo) => void;
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
@@ -18,7 +18,7 @@ export function Grid({
     duplicateGroups,
     selectedPaths,
     exportedPaths,
-    activePhoto,
+    activePhotoPath,
     onPhotoClick,
     ratings,
     onRatingChange,
@@ -51,7 +51,7 @@ export function Grid({
                 {photos.map((photo) => {
                     const isSelected = selectedPaths.has(photo.Path);
                     const isExported = exportedPaths.has(photo.Path);
-                    const isActive = activePhoto?.Path === photo.Path;
+                    const isActive = activePhotoPath === photo.Path;
                     const rating = ratings[photo.Path] || 0;
                     // Use cached thumbnail if available, else original path
                     const rawSrc = photo.ThumbnailPath || photo.Path;
@@ -121,7 +121,7 @@ export function Grid({
                     </summary>
                     <div className="photo-grid">
                         {duplicateGroups.flat().map((photo) => {
-                            const isActive = activePhoto?.Path === photo.Path;
+                            const isActive = activePhotoPath === photo.Path;
                             const rawSrc = photo.ThumbnailPath || photo.Path;
                             const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
                             return (

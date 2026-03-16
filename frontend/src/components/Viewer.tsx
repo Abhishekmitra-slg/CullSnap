@@ -18,6 +18,9 @@ interface ViewerProps {
 export function Viewer({ photo, onTrimChange }: ViewerProps) {
     const [exif, setExif] = useState<PhotoEXIF | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const blobUrlRef = useRef<string | null>(null);
+    const [imageSrc, setImageSrc] = useState<string>('');
 
     useEffect(() => {
         if (!photo || photo.IsVideo) {
@@ -44,6 +47,51 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
             }
         };
         loadExif();
+    }, [photo?.Path, photo?.IsVideo]);
+
+    // Unmount cleanup: revoke any live blob URL and abort any in-flight fetch
+    useEffect(() => {
+        return () => {
+            abortControllerRef.current?.abort();
+            if (blobUrlRef.current) {
+                URL.revokeObjectURL(blobUrlRef.current);
+                blobUrlRef.current = null;
+            }
+        };
+    }, []); // empty deps = runs only on unmount
+
+    useEffect(() => {
+        if (!photo || photo.IsVideo) {
+            // Videos use src attribute directly — clear any previous blob
+            if (blobUrlRef.current) {
+                URL.revokeObjectURL(blobUrlRef.current);
+                blobUrlRef.current = null;
+            }
+            setImageSrc('');
+            return;
+        }
+
+        // Abort any previous in-flight request before starting a new one
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const mediaUrl = `http://localhost:34342/wails-media?path=${encodeURIComponent(photo.Path)}`;
+
+        fetch(mediaUrl, { signal: controller.signal })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.blob();
+            })
+            .then(blob => {
+                if (controller.signal.aborted) return; // navigated away during fetch
+                const newUrl = URL.createObjectURL(blob);
+                setImageSrc(newUrl);
+            })
+            .catch(err => {
+                if (err.name === 'AbortError') return; // expected — user navigated away
+                console.error('Failed to load image:', err);
+            });
     }, [photo?.Path, photo?.IsVideo]);
 
     if (!photo) {
@@ -110,6 +158,7 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
             <div className="viewer-image-container" style={{ position: 'relative' }}>
                 {photo.IsVideo ? (
                     <video
+                        key={photo.Path}
                         ref={videoRef}
                         src={`http://localhost:34342/wails-media?path=${encodeURIComponent(photo.Path)}`}
                         className="viewer-image" // reuse CSS
@@ -118,9 +167,17 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
                     />
                 ) : (
                     <img
-                        src={`http://localhost:34342/wails-media?path=${encodeURIComponent(photo.Path)}`}
+                        src={imageSrc}
                         alt={filename}
                         className="viewer-image"
+                        onLoad={() => {
+                            // Revoke the PREVIOUS blob URL only after the new image is fully painted.
+                            // Never revoke here if blobUrlRef.current === imageSrc (same image).
+                            if (blobUrlRef.current && blobUrlRef.current !== imageSrc) {
+                                URL.revokeObjectURL(blobUrlRef.current);
+                            }
+                            blobUrlRef.current = imageSrc;
+                        }}
                     />
                 )}
             </div>
