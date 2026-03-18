@@ -86,9 +86,8 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	cfg.ServerIdleTimeoutSec, _ = strconv.Atoi(val)
 	cfg.CacheDir, _ = a.store.GetConfig("cacheDir")
 
-	if probeJSON, _ := a.store.GetConfig("probe"); probeJSON != "" {
-		json.Unmarshal([]byte(probeJSON), &cfg.Probe)
-	}
+	// Always re-run the probe on startup so hardware info stays current.
+	cfg.Probe = RunSystemProbe(ffmpegPath)
 
 	if cfg.MaxConnections < 10 {
 		cfg.MaxConnections = 10
@@ -351,9 +350,16 @@ func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName stri
 
 	count, err := export.ExportSelections(photos, sessionDir)
 	if err == nil && count > 0 {
-		// Mark exported in DB
+		// Mark exported and clear selections in DB
+		srcDir := ""
+		if len(photos) > 0 {
+			srcDir = filepath.Dir(photos[0].Path)
+		}
 		for _, p := range photos {
 			a.store.MarkExported(p.Path)
+			if srcDir != "" {
+				a.store.SaveSelection(p.Path, srcDir, false)
+			}
 		}
 	}
 	return count, err

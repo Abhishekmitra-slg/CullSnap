@@ -2,8 +2,10 @@ package app
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // SystemProbe holds detected hardware and OS capabilities.
@@ -84,13 +86,46 @@ func DeriveDefaults(probe SystemProbe) AppConfig {
 	return cfg
 }
 
+// detectStorageHint returns "SSD", "HDD", or "unknown" for the boot/home volume.
+func detectStorageHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		out, err := exec.Command("diskutil", "info", "/").Output()
+		if err != nil {
+			return "unknown"
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, "Solid State:") {
+				if strings.Contains(line, "Yes") {
+					return "SSD"
+				}
+				return "HDD"
+			}
+		}
+		return "unknown"
+	case "linux":
+		// Read rotational flag for the root device.
+		// /sys/block/<dev>/queue/rotational: 0 = SSD, 1 = HDD
+		out, err := exec.Command("lsblk", "-no", "ROTA", "/").Output()
+		if err != nil {
+			return "unknown"
+		}
+		if strings.TrimSpace(string(out)) == "0" {
+			return "SSD"
+		}
+		return "HDD"
+	default:
+		return "unknown"
+	}
+}
+
 // RunSystemProbe collects hardware and OS information.
 func RunSystemProbe(ffmpegPath string) SystemProbe {
 	probe := SystemProbe{
 		OS:          runtime.GOOS,
 		Arch:        runtime.GOARCH,
 		CPUs:        runtime.NumCPU(),
-		StorageHint: "unknown",
+		StorageHint: detectStorageHint(),
 	}
 	probe.RAMMB = detectRAMMB()
 	probe.FDSoftLimit = detectFDLimit()

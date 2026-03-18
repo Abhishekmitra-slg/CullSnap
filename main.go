@@ -186,6 +186,13 @@ func main() {
 			IdleTimeout:  30 * time.Second,
 			BaseContext:  func(_ net.Listener) context.Context { return serverCtx },
 		}
+		// Shut down the HTTP server when the app context is cancelled (OnShutdown).
+		// Without this, the goroutine keeps holding port 34342 and the next
+		// hot-reload attempt fails with "address already in use".
+		go func() {
+			<-serverCtx.Done()
+			mediaServer.Close()
+		}()
 		if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Failed to start media server: %v", err)
 		}

@@ -41,6 +41,7 @@ export function Sidebar({
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [exportDialog, setExportDialog] = useState<{ destDir: string; folderName: string } | null>(null);
 
     useEffect(() => {
         loadRecents();
@@ -60,12 +61,19 @@ export function Sidebar({
         try {
             const destDir = await SelectExportDirectory();
             if (!destDir) return;
-            
             const defaultName = "Session_" + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-            const folderName = prompt("Enter a name for the export folder:", defaultName);
-            if (folderName === null) return; // User cancelled
+            setExportDialog({ destDir, folderName: defaultName });
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
-            setIsExporting(true);
+    const handleExportConfirm = async () => {
+        if (!exportDialog) return;
+        const { destDir, folderName } = exportDialog;
+        setExportDialog(null);
+        setIsExporting(true);
+        try {
             const selectedPhotos = photos.filter(p => selectedPaths.has(p.Path));
             await ExportPhotos(selectedPhotos, destDir, folderName);
             if (currentDir) onLoadDir(currentDir);
@@ -177,20 +185,39 @@ export function Sidebar({
                 </button>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs" style={{ fontSize: '0.75rem' }}>
-                        <FileText size={13} />
-                        Logs
+                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs">
+                        <FileText size={14} />
                     </button>
-                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help" style={{ fontSize: '0.75rem' }}>
-                        <HelpCircle size={13} />
-                        Help
+                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help">
+                        <HelpCircle size={14} />
                     </button>
-                    <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings" style={{ fontSize: '0.75rem' }}>
-                        <Settings size={13} />
-                        Settings
+                    <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings">
+                        <Settings size={14} />
                     </button>
                 </div>
             </div>
+
+            {/* Export Name Dialog */}
+            {exportDialog && (
+                <div className="export-name-dialog" onClick={() => setExportDialog(null)}>
+                    <div className="export-name-dialog-box" onClick={e => e.stopPropagation()}>
+                        <h3>Name Export Folder</h3>
+                        <input
+                            type="text"
+                            value={exportDialog.folderName}
+                            onChange={e => setExportDialog({ ...exportDialog, folderName: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') handleExportConfirm(); if (e.key === 'Escape') setExportDialog(null); }}
+                            autoFocus
+                        />
+                        <div className="export-name-dialog-actions">
+                            <button className="btn" onClick={() => setExportDialog(null)}>Cancel</button>
+                            <button className="btn btn-gradient" onClick={handleExportConfirm} disabled={!exportDialog.folderName.trim()}>
+                                Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Help Modal */}
             {showHelp && (
