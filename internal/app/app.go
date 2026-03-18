@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	stdruntime "runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,7 @@ type App struct {
 	dedupeMutex  sync.Mutex
 	dedupeCancel context.CancelFunc
 	thumbCache   *cullImage.ThumbCache
+	cfg          *AppConfig
 }
 
 // NewApp creates a new App application struct
@@ -43,8 +46,14 @@ func NewApp(store *storage.SQLiteStore) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// Initialize thumbnail cache
-	tc, err := cullImage.NewThumbCache()
+	home, _ := os.UserHomeDir()
+	ffmpegPath := filepath.Join(home, ".cullsnap", "bin", "ffmpeg")
+	if stdruntime.GOOS == "windows" {
+		ffmpegPath += ".exe"
+	}
+	a.cfg = a.loadOrInitConfig(ffmpegPath)
+
+	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir)
 	if err != nil {
 		logger.Log.Error("Failed to initialize thumbnail cache", "error", err)
 	} else {
@@ -53,6 +62,92 @@ func (a *App) Startup(ctx context.Context) {
 
 	// Start background goroutine to push system metrics every second
 	go a.emitSystemMetrics()
+}
+
+func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
+	maxConn, _ := a.store.GetConfig("maxConnections")
+	if maxConn == "" {
+		probe := RunSystemProbe(ffmpegPath)
+		cfg := DeriveDefaults(probe)
+		a.persistConfig(&cfg)
+		return &cfg
+	}
+
+	cfg := &AppConfig{}
+	cfg.MaxConnections, _ = strconv.Atoi(maxConn)
+	val, _ := a.store.GetConfig("thumbnailWorkers")
+	cfg.ThumbnailWorkers, _ = strconv.Atoi(val)
+	val, _ = a.store.GetConfig("scannerWorkers")
+	cfg.ScannerWorkers, _ = strconv.Atoi(val)
+	val, _ = a.store.GetConfig("serverIdleTimeoutSec")
+	cfg.ServerIdleTimeoutSec, _ = strconv.Atoi(val)
+	cfg.CacheDir, _ = a.store.GetConfig("cacheDir")
+
+	if probeJSON, _ := a.store.GetConfig("probe"); probeJSON != "" {
+		json.Unmarshal([]byte(probeJSON), &cfg.Probe)
+	}
+
+	if cfg.MaxConnections < 10 {
+		cfg.MaxConnections = 10
+	}
+	if cfg.ThumbnailWorkers < 2 {
+		cfg.ThumbnailWorkers = 2
+	}
+	if cfg.ScannerWorkers < 1 {
+		cfg.ScannerWorkers = 1
+	}
+	if cfg.ServerIdleTimeoutSec < 1 {
+		cfg.ServerIdleTimeoutSec = 30
+	}
+	if cfg.CacheDir == "" {
+		cacheBase, _ := os.UserCacheDir()
+		cfg.CacheDir = filepath.Join(cacheBase, "CullSnap", "thumbs")
+	}
+	return cfg
+}
+
+func (a *App) persistConfig(cfg *AppConfig) {
+	a.store.SetConfig("maxConnections", strconv.Itoa(cfg.MaxConnections))
+	a.store.SetConfig("thumbnailWorkers", strconv.Itoa(cfg.ThumbnailWorkers))
+	a.store.SetConfig("scannerWorkers", strconv.Itoa(cfg.ScannerWorkers))
+	a.store.SetConfig("serverIdleTimeoutSec", strconv.Itoa(cfg.ServerIdleTimeoutSec))
+	a.store.SetConfig("cacheDir", cfg.CacheDir)
+	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
+		a.store.SetConfig("probe", string(probeJSON))
+	}
+}
+
+// GetAppConfig returns the current configuration including last system probe data.
+func (a *App) GetAppConfig() (*AppConfig, error) {
+	if a.cfg == nil {
+		return nil, fmt.Errorf("config not initialised")
+	}
+	return a.cfg, nil
+}
+
+// SaveAppConfig persists user-overridden values.
+func (a *App) SaveAppConfig(cfg AppConfig) error {
+	cfg.Probe = a.cfg.Probe
+	a.cfg = &cfg
+	a.persistConfig(&cfg)
+	return nil
+}
+
+// ResetAppConfig re-runs the system probe and resets config to derived defaults.
+func (a *App) ResetAppConfig() (*AppConfig, error) {
+	home, _ := os.UserHomeDir()
+	ffmpegPath := filepath.Join(home, ".cullsnap", "bin", "ffmpeg")
+	if stdruntime.GOOS == "windows" {
+		ffmpegPath += ".exe"
+	}
+	probe := RunSystemProbe(ffmpegPath)
+	cfg := DeriveDefaults(probe)
+	a.cfg = &cfg
+	if err := a.store.DeleteAllConfig(); err != nil {
+		return nil, err
+	}
+	a.persistConfig(&cfg)
+	return &cfg, nil
 }
 
 // SelectDirectory opens a native OS dialog to select a folder

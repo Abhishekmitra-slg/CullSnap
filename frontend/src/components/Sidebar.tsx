@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Sun, Moon } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Sun, Moon, Settings } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -18,6 +18,7 @@ interface SidebarProps {
     onThemeChange: (theme: string) => void;
     dedupCompleted: boolean;
     duplicateCount: number;
+    onOpenSettings: () => void;
 }
 
 export function Sidebar({
@@ -34,7 +35,8 @@ export function Sidebar({
     theme,
     onThemeChange,
     dedupCompleted,
-    duplicateCount
+    duplicateCount,
+    onOpenSettings
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -182,6 +184,10 @@ export function Sidebar({
                     <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help" style={{ fontSize: '0.75rem' }}>
                         <HelpCircle size={13} />
                         Help
+                    </button>
+                    <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings" style={{ fontSize: '0.75rem' }}>
+                        <Settings size={13} />
+                        Settings
                     </button>
                 </div>
             </div>
