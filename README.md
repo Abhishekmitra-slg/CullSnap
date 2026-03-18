@@ -1,23 +1,45 @@
-# CullSnap 📸
+<p align="center">
+  <img src="build/appicon.png" width="128" alt="CullSnap icon" />
+</p>
 
-[![Go Version](https://img.shields.io/badge/Go-1.23-00ADD8?style=flat&logo=go)](go.mod)
-[![Wails Version](https://img.shields.io/badge/Wails-v2-red?style=flat&logo=wails)](wails.json)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<h1 align="center">CullSnap</h1>
 
-**CullSnap** is a high-performance, native desktop tool designed for photographers to cull and select thousands of high-resolution photos in seconds. Built with the **Wails Framework** (Go backend + React/Vite frontend) delivering a stunning dark-mode glassmorphism experience.
+<p align="center">
+  <strong>A blazing-fast, native desktop photo &amp; video culling tool for photographers.</strong>
+</p>
+
+<p align="center">
+  <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go" alt="Go Version" /></a>
+  <a href="wails.json"><img src="https://img.shields.io/badge/Wails-v2.11-E34F26?style=flat-square" alt="Wails Version" /></a>
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest"><img src="https://img.shields.io/github/v/release/Abhishekmitra-slg/CullSnap?style=flat-square&color=blue" alt="Latest Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="#installation">Install</a> &middot;
+  <a href="#-features">Features</a> &middot;
+  <a href="#-usage-guide">Usage</a> &middot;
+  <a href="#-architecture">Architecture</a> &middot;
+  <a href="#building-from-source">Build</a>
+</p>
+
+---
+
+CullSnap lets photographers review, rate, deduplicate, and export thousands of photos and videos from a single native window. The Go backend handles heavy lifting (perceptual hashing, parallel thumbnail generation, FFmpeg video trimming) while the React frontend delivers a responsive glassmorphism UI with virtualized scrolling.
 
 ## ✨ Features
 
--   **Fast Photo & Video Grid**: Modern grid layout with lazy loading and cached disk thumbnails for buttery-smooth scrolling through 1000s of assets.
--   **Video Support**: Native support for MP4, MOV, WEBM, MKV, and AVI. Includes duration extraction and frame-accurate thumbnail generation.
+-   **Fast Photo & Video Grid**: Virtualized grid layout (TanStack Virtual, ~52 DOM nodes max) with cached disk thumbnails for buttery-smooth scrolling through 1000s of assets.
+-   **Video Support**: Native support for MP4, MOV, WEBM, MKV, and AVI. Includes background duration extraction, frame-accurate thumbnail generation, and lossless trim-on-export via FFmpeg fast-seek.
 -   **Native Apple Silicon Support**: Automatically provisions native `arm64` FFmpeg and FFprobe binaries on Apple Silicon Macs, delivering maximum performance without Rosetta 2.
--   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions.
--   **Smart Deduplication**: Pure-Go perceptual hashing automatically groups duplicate/burst photos and selects the sharpest image using a Laplacian Variance algorithm.
--   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with parallel goroutine generation.
+-   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions. Worker count is auto-tuned from hardware and user-configurable.
+-   **Smart Deduplication**: Pure-Go perceptual hashing (dHash) automatically groups duplicate/burst photos and selects the sharpest image using a Laplacian Variance algorithm.
+-   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
--   **Stable Media Architecture**: Uses a dedicated high-speed server on port `34342` to serve local assets, ensuring smooth video scrubbing and instant image loading.
--   **Custom Export Pathing**: Rename the destination folder on-the-fly during export for better session organization.
+-   **Stable Media Architecture**: Dedicated high-speed server on port `34342` with panic recovery, connection semaphore, structured shutdown, and MIME-correct headers for all video formats.
+-   **Custom Export Pathing**: Inline dialog for naming export folders on-the-fly. Post-export, selections auto-clear (blue ticks) and exported files show green ticks on reload.
 -   **Star Ratings**: 1–5 star rating system persisted to SQLite for each photo and video.
+-   **Auto-Tuned Performance**: System probe detects CPU cores, RAM, storage type (SSD/HDD), and file descriptor limits. Settings modal exposes MaxConnections, ThumbnailWorkers, and ScannerWorkers sliders.
 -   **Resource Monitoring**: Real-time CPU, RAM, Disk I/O, and Network tracking in the status bar.
 
 ## 🏗️ Architecture
@@ -28,9 +50,9 @@ CullSnap natively binds a high-performance **Go** backend to a modern **React/Vi
 graph LR
     subgraph Frontend [React / Vite UI]
         direction TB
-        Grid["Photo Grid\n(CSS Grid + lazy loading)"]
-        Viewer["Full-Res Viewer\n+ EXIF Panel"]
-        Sidebar["Sidebar Controls\n& Star Ratings"]
+        Grid["Virtualized Grid\n(TanStack Virtual)"]
+        Viewer["Image/Video Viewer\n+ EXIF + Trim"]
+        Sidebar["Sidebar Controls\n& Settings"]
     end
 
     subgraph IPC [Wails Bridge]
@@ -40,23 +62,24 @@ graph LR
     subgraph Backend [Go Desktop Backend]
         direction TB
         Scanner["Directory Scanner\n(internal/scanner)"]
-        ThumbCache["Thumbnail Cache\n(internal/image/thumbcache)"]
-        FFmpeg["FFmpeg Engine\n(internal/video/ffmpeg)"]
+        ThumbCache["Thumbnail Cache\n(internal/image)"]
+        FFmpeg["FFmpeg Engine\n(internal/video)"]
         Dedupe["Perceptual Hash\n+ Quality Scoring"]
         Storage["SQLite Persistence\n(internal/storage)"]
-        OS["System Resources\n(shirou/gopsutil)"]
-        MediaServer["Dedicated Media Server\n(Port 34342)"]
+        Config["System Probe\n+ AppConfig"]
+        MediaServer["Media Server :34342\n(panic recovery + semaphore)"]
     end
 
-    Grid <-->|Fetch Photos / Thumbnails| Bindings
-    Viewer <-->|Load Full-Res + EXIF| Bindings
-    Sidebar <-->|Export / Dedup / Ratings| Bindings
+    Grid <-->|Photos / Thumbnails| Bindings
+    Viewer <-->|Full-Res + EXIF| Bindings
+    Sidebar <-->|Export / Dedup / Settings| Bindings
 
-    Bindings <-->|Scan + Cache Thumbs| Scanner
+    Bindings <-->|Scan + Enrich| Scanner
     Bindings <-->|Parallel Thumb Gen| ThumbCache
+    Bindings <-->|Trim + Duration| FFmpeg
     Bindings <-->|Find Duplicates| Dedupe
     Bindings <-->|Persist State| Storage
-    Bindings <-->|Read CPU/RAM| OS
+    Bindings <-->|Auto-Tune| Config
 ```
 
 ## 🛠️ Installation
@@ -70,7 +93,7 @@ brew install --cask cullsnap
 ```
 
 ### 🪟 Windows & 🐧 Linux
-Download the latest binary from the [Releases](https://github.com/Abhishekmitra-slg/CullSnap/releases) page.
+Download the latest binary from the [Releases](https://github.com/Abhishekmitra-slg/CullSnap/releases/latest) page.
 
 ---
 
@@ -85,7 +108,7 @@ xattr -cr /Applications/CullSnap.app
 ```
 
 ### Building from Source
-Ensure you have [Go](https://go.dev/) and Node/NPM installed. Then install the Wails CLI:
+Ensure you have [Go 1.25+](https://go.dev/) and Node.js 22+ installed. Then install the Wails CLI:
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
@@ -105,39 +128,46 @@ make dev
 
 1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive.
 2.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
-3.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos.
+3.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
 4.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
 5.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
+6.  **Trim Videos**: Select a video, set trim start/end in the viewer. Only the trimmed segment is exported (lossless fast-seek).
 7.  **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
 8.  **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
-9.  **Export**: Click **Export (N)**. You'll be prompted for a destination directory name to keep your sessions organized. CullSnap will copy all full-resolution originals (and trimmed videos) to the new folder.
+9.  **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
+10. **Settings**: Click the gear icon to view system info (OS, CPU, RAM, Storage, FFmpeg) and adjust performance tuning sliders.
 
 ## 📁 Project Structure
 
 ```
 CullSnap/
-├── main.go                      # Wails app entry + Dedicated Port 34342 Media Server
+├── main.go                         # Wails entry, media server, panic recovery
 ├── internal/
-│   ├── app/app.go              # Core app logic, all Wails-bound methods
+│   ├── app/
+│   │   ├── app.go                  # Core app logic, all Wails-bound methods
+│   │   ├── config.go               # SystemProbe, AppConfig, DeriveDefaults
+│   │   ├── config_unix.go          # FD limit detection (Unix)
+│   │   ├── config_windows.go       # FD limit detection (Windows)
+│   │   └── config_ram.go           # RAM detection (gopsutil)
 │   ├── video/
-│   │   ├── ffmpeg.go           # Native FFmpeg provisioning & thumbnail extraction
-│   │   └── ffprobe.go          # Native FFprobe metadata (duration) extraction
+│   │   └── ffmpeg.go               # FFmpeg/FFprobe provisioning, trim, thumbnails
 │   ├── image/
-│   │   ├── thumbnail.go        # EXIF thumbnail extraction + resize fallback
-│   │   └── thumbcache.go       # Disk-based thumbnail cache (parallel workers)
-│   ├── scanner/scanner.go      # Directory walker with video/photo detection
-│   ├── dedupe/                 # Perceptual hashing + quality scoring
-│   ├── export/                 # File copier & lossless video clipper
-│   ├── model/photo.go          # Unified Media struct (IsVideo, Duration, Path, etc.)
-│   ├── storage/                # SQLite persistence
-│   └── logger/                 # Structured logging
+│   │   ├── thumbnail.go            # EXIF thumbnail extraction + resize fallback
+│   │   └── thumbcache.go           # Disk cache with parallel batch generation
+│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png + video)
+│   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
+│   ├── export/copier.go            # File copy with flush-error checking + video trim
+│   ├── model/photo.go              # Unified Photo struct
+│   ├── storage/                    # SQLite (selections, ratings, exported, config)
+│   └── logger/                     # Structured logging (slog)
 └── frontend/src/
-    ├── App.tsx                 # Main app with 2-phase loading
+    ├── App.tsx                      # 2-phase loading, event listeners, state
     ├── components/
-    │   ├── Grid.tsx            # Media grid with badges & lazy loading
-    │   ├── Viewer.tsx          # Hybrid Image/Video viewer + Clipping tools
-    │   └── Sidebar.tsx         # Controls, folders, dedup status
-    └── index.css               # Dark theme, glassmorphism, animations
+    │   ├── Grid.tsx                 # Virtualized grid (TanStack Virtual)
+    │   ├── Viewer.tsx               # Image/Video viewer + trim controls
+    │   ├── Sidebar.tsx              # Folder nav, export dialog, dedup trigger
+    │   └── SettingsModal.tsx        # System info + performance sliders
+    └── index.css                    # Navy/violet theme, glassmorphism, animations
 ```
 
 ## 🤝 Contributing
