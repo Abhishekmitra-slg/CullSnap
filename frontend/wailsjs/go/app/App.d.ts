@@ -9,6 +9,8 @@ export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
 
+export function GetAppConfig():Promise<app.AppConfig>;
+
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;
 
 export function GetPhotoEXIF(arg1:string):Promise<app.PhotoEXIF>;
@@ -25,6 +27,10 @@ export function OpenLog():Promise<void>;
 
 export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
 
+export function ResetAppConfig():Promise<app.AppConfig>;
+
+export function SaveAppConfig(arg1:app.AppConfig):Promise<void>;
+
 export function ScanAndDeduplicate(arg1:string,arg2:number):Promise<app.DedupeResult>;
 
 export function ScanDirectory(arg1:string):Promise<Array<model.Photo>>;
@@ -36,7 +42,3 @@ export function SelectExportDirectory():Promise<string>;
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;
-
-export function GetAppConfig():Promise<app.AppConfig>;
-export function SaveAppConfig(cfg:app.AppConfig):Promise<void>;
-export function ResetAppConfig():Promise<app.AppConfig>;
