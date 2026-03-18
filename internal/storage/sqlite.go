@@ -53,6 +53,10 @@ func (s *SQLiteStore) initSchema() error {
 			rating INTEGER DEFAULT 0,
 			updated_at DATETIME
 		);`,
+		`CREATE TABLE IF NOT EXISTS app_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);`,
 	}
 
 	for _, query := range queries {
@@ -151,36 +155,6 @@ func (s *SQLiteStore) MarkExported(path string) error {
 	query := `INSERT OR REPLACE INTO exported (path, exported_at) VALUES (?, ?)`
 	_, err := s.db.Exec(query, path, time.Now())
 	return err
-}
-
-func (s *SQLiteStore) GetExportedStatus(paths []string) (map[string]bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Just get all exported for simplicity and check in memory?
-	// Or query specific?
-	// For "Loading directory", checking all exported files is cleaner if we just load all exported paths that match current dir?
-	// But paths are absolute.
-	// Better: Select * from exported where path IN (...)
-	// SQLite has limit on variables.
-	// If loading 10,000 photos, `IN (...)` is bad.
-	// Maybe just return all exported paths? Or cache?
-	// Or check one by one?
-	// Let's assume user works on one folder.
-	// Why not just `SELECT path FROM exported`? If user exported 100k files, that's heavy.
-	// Let's iterate `paths` and check? No, N queries.
-	// Best: Create temporary table?
-	// Simple approach: `SELECT path FROM exported` is fine if < 100k items.
-	// Or `SELECT path FROM exported WHERE path GLOB 'dir/*'`?
-	// `path LIKE 'dir/%'`?
-	// Since paths are absolute, we can filter by prefix if we know the directory.
-	// But `GetExportedStatus` signature here takes `paths`.
-	// Let's change signature or logic.
-	// New signature: `GetExportedInDirectory(dir string)`.
-	// Assuming paths start with `dir`.
-
-	// I'll implement `GetExportedInDirectory(dir string)`.
-	return nil, nil
 }
 
 func (s *SQLiteStore) GetExportedInDirectory(dirPath string) (map[string]bool, error) {

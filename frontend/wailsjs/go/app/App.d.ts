@@ -7,7 +7,9 @@ export function CancelDeduplicate():Promise<void>;
 
 export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
-export function ExportPhotos(arg1:Array<model.Photo>,arg2:string):Promise<number>;
+export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
+
+export function GetAppConfig():Promise<app.AppConfig>;
 
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;
 
@@ -19,13 +21,15 @@ export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 
-export function GetSystemResources():Promise<app.SystemResources>;
-
 export function OpenFolderInFinder(arg1:string):Promise<void>;
 
 export function OpenLog():Promise<void>;
 
 export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
+
+export function ResetAppConfig():Promise<app.AppConfig>;
+
+export function SaveAppConfig(arg1:app.AppConfig):Promise<void>;
 
 export function ScanAndDeduplicate(arg1:string,arg2:number):Promise<app.DedupeResult>;
 

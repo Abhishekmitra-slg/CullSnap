@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestScanDirectory(t *testing.T) {
@@ -51,5 +52,30 @@ func TestScanDirectory(t *testing.T) {
 
 	if !found["test1.jpg"] || !found["test2.png"] || !found["test3.jpeg"] {
 		t.Error("Missing expected files in scan results")
+	}
+}
+
+func TestScanDirectory_ReturnsBeforeFFprobe(t *testing.T) {
+	dir := t.TempDir()
+	fakeMp4 := filepath.Join(dir, "test.mp4")
+	if err := os.WriteFile(fakeMp4, []byte("fake"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	photos, err := ScanDirectory(dir)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("ScanDirectory returned error: %v", err)
+	}
+	if len(photos) != 1 {
+		t.Fatalf("Expected 1 photo, got %d", len(photos))
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("ScanDirectory took %v — expected < 500ms (ffprobe should not be called inline)", elapsed)
+	}
+	if photos[0].Duration != 0 {
+		t.Errorf("Expected Duration=0 (not yet enriched), got %f", photos[0].Duration)
 	}
 }

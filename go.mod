@@ -3,7 +3,6 @@ module cullsnap
 go 1.25.0
 
 require (
-	fyne.io/fyne/v2 v2.7.3
 	github.com/corona10/goimagehash v1.1.0
 	github.com/disintegration/imaging v1.6.2
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd

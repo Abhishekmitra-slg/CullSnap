@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Image, FolderInput, Star, Trash2, Sun, Moon } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Sun, Moon, Settings } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -18,6 +18,7 @@ interface SidebarProps {
     onThemeChange: (theme: string) => void;
     dedupCompleted: boolean;
     duplicateCount: number;
+    onOpenSettings: () => void;
 }
 
 export function Sidebar({
@@ -34,12 +35,13 @@ export function Sidebar({
     theme,
     onThemeChange,
     dedupCompleted,
-    duplicateCount
+    duplicateCount,
+    onOpenSettings
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
-    const [activeNav, setActiveNav] = useState('library');
+    const [exportDialog, setExportDialog] = useState<{ destDir: string; folderName: string } | null>(null);
 
     useEffect(() => {
         loadRecents();
@@ -59,11 +61,23 @@ export function Sidebar({
         try {
             const destDir = await SelectExportDirectory();
             if (!destDir) return;
-            setIsExporting(true);
+            const defaultName = "Session_" + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            setExportDialog({ destDir, folderName: defaultName });
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleExportConfirm = async () => {
+        if (!exportDialog) return;
+        const { destDir, folderName } = exportDialog;
+        setExportDialog(null);
+        setIsExporting(true);
+        try {
             const selectedPhotos = photos.filter(p => selectedPaths.has(p.Path));
-            await ExportPhotos(selectedPhotos, destDir);
+            await ExportPhotos(selectedPhotos, destDir, folderName);
             if (currentDir) onLoadDir(currentDir);
-            onExportSuccess(`Successfully exported ${selectedCount} photos!`);
+            onExportSuccess(`Successfully exported ${selectedCount} items!`);
         } catch (e) {
             console.error(e);
             alert(`Export failed: ${e}`);
@@ -88,29 +102,6 @@ export function Sidebar({
                     {theme === 'dark' ? <Sun size={14} color="var(--text-secondary)" /> : <Moon size={14} color="var(--text-secondary)" />}
                 </button>
             </div>
-
-            {/* Navigation */}
-            <div className="sidebar-group">
-                <button className={`btn-nav ${activeNav === 'library' ? 'active' : ''}`} onClick={() => setActiveNav('library')}>
-                    <Image size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Library
-                </button>
-                <button className={`btn-nav ${activeNav === 'imports' ? 'active' : ''}`} onClick={() => setActiveNav('imports')}>
-                    <FolderInput size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Imports
-                </button>
-                <button className={`btn-nav ${activeNav === 'starred' ? 'active' : ''}`} onClick={() => setActiveNav('starred')}>
-                    <Star size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Starred
-                </button>
-                <button className={`btn-nav ${activeNav === 'rejected' ? 'active' : ''}`} onClick={() => setActiveNav('rejected')}>
-                    <Trash2 size={14} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-                    Rejected
-                </button>
-            </div>
-
-            {/* Divider */}
-            <div style={{ height: 1, background: 'var(--border-color)', margin: '8px 0' }} />
 
             {/* Action Buttons */}
             <div className="sidebar-group">
@@ -194,16 +185,39 @@ export function Sidebar({
                 </button>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs" style={{ fontSize: '0.75rem' }}>
-                        <FileText size={13} />
-                        Logs
+                    <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs">
+                        <FileText size={14} />
                     </button>
-                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help" style={{ fontSize: '0.75rem' }}>
-                        <HelpCircle size={13} />
-                        Help
+                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help">
+                        <HelpCircle size={14} />
+                    </button>
+                    <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings">
+                        <Settings size={14} />
                     </button>
                 </div>
             </div>
+
+            {/* Export Name Dialog */}
+            {exportDialog && (
+                <div className="export-name-dialog" onClick={() => setExportDialog(null)}>
+                    <div className="export-name-dialog-box" onClick={e => e.stopPropagation()}>
+                        <h3>Name Export Folder</h3>
+                        <input
+                            type="text"
+                            value={exportDialog.folderName}
+                            onChange={e => setExportDialog({ ...exportDialog, folderName: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') handleExportConfirm(); if (e.key === 'Escape') setExportDialog(null); }}
+                            autoFocus
+                        />
+                        <div className="export-name-dialog-actions">
+                            <button className="btn" onClick={() => setExportDialog(null)}>Cancel</button>
+                            <button className="btn btn-gradient" onClick={handleExportConfirm} disabled={!exportDialog.folderName.trim()}>
+                                Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Help Modal */}
             {showHelp && (

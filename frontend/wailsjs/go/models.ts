@@ -1,5 +1,69 @@
 export namespace app {
 	
+	export class SystemProbe {
+	    OS: string;
+	    Arch: string;
+	    CPUs: number;
+	    RAMMB: number;
+	    FDSoftLimit: number;
+	    FFmpegReady: boolean;
+	    StorageHint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SystemProbe(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.OS = source["OS"];
+	        this.Arch = source["Arch"];
+	        this.CPUs = source["CPUs"];
+	        this.RAMMB = source["RAMMB"];
+	        this.FDSoftLimit = source["FDSoftLimit"];
+	        this.FFmpegReady = source["FFmpegReady"];
+	        this.StorageHint = source["StorageHint"];
+	    }
+	}
+	export class AppConfig {
+	    maxConnections: number;
+	    thumbnailWorkers: number;
+	    scannerWorkers: number;
+	    serverIdleTimeoutSec: number;
+	    cacheDir: string;
+	    probe: SystemProbe;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.maxConnections = source["maxConnections"];
+	        this.thumbnailWorkers = source["thumbnailWorkers"];
+	        this.scannerWorkers = source["scannerWorkers"];
+	        this.serverIdleTimeoutSec = source["serverIdleTimeoutSec"];
+	        this.cacheDir = source["cacheDir"];
+	        this.probe = this.convertValues(source["probe"], SystemProbe);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DedupStatus {
 	    hasDuplicates: boolean;
 	    duplicateCount: number;
@@ -88,28 +152,6 @@ export namespace app {
 	        this.dateTaken = source["dateTaken"];
 	    }
 	}
-	export class SystemResources {
-	    cpu: number;
-	    ram: number;
-	    diskRead: number;
-	    diskWrite: number;
-	    netSent: number;
-	    netRecv: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new SystemResources(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cpu = source["cpu"];
-	        this.ram = source["ram"];
-	        this.diskRead = source["diskRead"];
-	        this.diskWrite = source["diskWrite"];
-	        this.netSent = source["netSent"];
-	        this.netRecv = source["netRecv"];
-	    }
-	}
 
 }
 
@@ -123,6 +165,10 @@ export namespace model {
 	    Size: number;
 	    // Go type: time
 	    TakenAt: any;
+	    IsVideo: boolean;
+	    Duration: number;
+	    TrimStart: number;
+	    TrimEnd: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Photo(source);
@@ -136,6 +182,10 @@ export namespace model {
 	        this.Height = source["Height"];
 	        this.Size = source["Size"];
 	        this.TakenAt = this.convertValues(source["TakenAt"], null);
+	        this.IsVideo = source["IsVideo"];
+	        this.Duration = source["Duration"];
+	        this.TrimStart = source["TrimStart"];
+	        this.TrimEnd = source["TrimEnd"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

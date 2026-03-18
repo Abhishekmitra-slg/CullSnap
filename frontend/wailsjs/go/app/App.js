@@ -10,8 +10,12 @@ export function CheckDedupStatus(arg1) {
   return window['go']['app']['App']['CheckDedupStatus'](arg1);
 }
 
-export function ExportPhotos(arg1, arg2) {
-  return window['go']['app']['App']['ExportPhotos'](arg1, arg2);
+export function ExportPhotos(arg1, arg2, arg3) {
+  return window['go']['app']['App']['ExportPhotos'](arg1, arg2, arg3);
+}
+
+export function GetAppConfig() {
+  return window['go']['app']['App']['GetAppConfig']();
 }
 
 export function GetExportedStatus(arg1) {
@@ -34,10 +38,6 @@ export function GetSelections(arg1) {
   return window['go']['app']['App']['GetSelections'](arg1);
 }
 
-export function GetSystemResources() {
-  return window['go']['app']['App']['GetSystemResources']();
-}
-
 export function OpenFolderInFinder(arg1) {
   return window['go']['app']['App']['OpenFolderInFinder'](arg1);
 }
@@ -48,6 +48,14 @@ export function OpenLog() {
 
 export function PreloadThumbnails(arg1) {
   return window['go']['app']['App']['PreloadThumbnails'](arg1);
+}
+
+export function ResetAppConfig() {
+  return window['go']['app']['App']['ResetAppConfig']();
+}
+
+export function SaveAppConfig(arg1) {
+  return window['go']['app']['App']['SaveAppConfig'](arg1);
 }
 
 export function ScanAndDeduplicate(arg1, arg2) {

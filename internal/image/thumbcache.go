@@ -6,10 +6,12 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"cullsnap/internal/logger"
+	"cullsnap/internal/video"
 )
 
 // ThumbCache manages a disk-based thumbnail cache.
@@ -19,25 +21,12 @@ type ThumbCache struct {
 	mu       sync.Mutex
 }
 
-// NewThumbCache creates a ThumbCache at ~/.cullsnap/thumbs/ with 0700 permissions.
-// Only the owner can read/write/list the cache directory.
-func NewThumbCache() (*ThumbCache, error) {
-	cacheBase, err := os.UserCacheDir()
-	if err != nil {
-		// Fallback to home dir
-		home, err2 := os.UserHomeDir()
-		if err2 != nil {
-			return nil, fmt.Errorf("cannot determine cache directory: %w", err)
-		}
-		cacheBase = home
-	}
-
-	cacheDir := filepath.Join(cacheBase, "CullSnap", "thumbs")
-	// 0700 = owner read/write/execute only — no other users can access
+// NewThumbCache creates a ThumbCache at the given directory with 0700 permissions.
+// Pass AppConfig.CacheDir to ensure the cache location matches what the media server uses.
+func NewThumbCache(cacheDir string) (*ThumbCache, error) {
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create thumbnail cache: %w", err)
 	}
-
 	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir)
 	return &ThumbCache{cacheDir: cacheDir}, nil
 }
@@ -70,34 +59,56 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 		return thumbPath, nil
 	}
 
-	// Generate thumbnail using existing GetThumbnail (EXIF extraction → fallback resize)
-	thumb, err := GetThumbnail(path)
-	if err != nil {
-		return "", fmt.Errorf("thumbnail generation failed for %s: %w", filepath.Base(path), err)
+	ext := strings.ToLower(filepath.Ext(path))
+	isVideo := false
+	switch ext {
+	case ".mp4", ".mov", ".webm", ".mkv", ".avi":
+		isVideo = true
 	}
 
-	// Write to temp file then rename for atomicity (no partial files visible)
-	tmpPath := thumbPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return "", fmt.Errorf("failed to create thumbnail file: %w", err)
-	}
+	if isVideo {
+		// Extract thumbnail directly to the cache file (atomic rename not as easy with external commands, 
+		// but we can extract to temp and rename)
+		tmpPath := thumbPath + ".tmp"
+		if err := video.ExtractThumbnail(path, tmpPath); err != nil {
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("video thumbnail extraction failed for %s: %w", filepath.Base(path), err)
+		}
 
-	if err := jpeg.Encode(f, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to encode thumbnail: %w", err)
-	}
+		if err := os.Rename(tmpPath, thumbPath); err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
+	} else {
+		// Generate photo thumbnail using existing GetThumbnail (EXIF extraction → fallback resize)
+		thumb, err := GetThumbnail(path)
+		if err != nil {
+			return "", fmt.Errorf("thumbnail generation failed for %s: %w", filepath.Base(path), err)
+		}
 
-	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to close thumbnail file: %w", err)
-	}
+		// Write to temp file then rename for atomicity (no partial files visible)
+		tmpPath := thumbPath + ".tmp"
+		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+		if err != nil {
+			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
+		}
 
-	// Atomic rename
-	if err := os.Rename(tmpPath, thumbPath); err != nil {
-		os.Remove(tmpPath)
-		return "", err
+		if err := jpeg.Encode(f, thumb, &jpeg.Options{Quality: 80}); err != nil {
+			f.Close()
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to encode thumbnail: %w", err)
+		}
+
+		if err := f.Close(); err != nil {
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to close thumbnail file: %w", err)
+		}
+
+		// Atomic rename
+		if err := os.Rename(tmpPath, thumbPath); err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
 	}
 
 	logger.Log.Debug("Thumbnail generated", "file", filepath.Base(path), "thumb", filepath.Base(thumbPath))

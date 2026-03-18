@@ -1,16 +1,25 @@
 import { Check, Star } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 interface GridProps {
     photos: model.Photo[];
     duplicateGroups?: model.Photo[][];
     selectedPaths: Set<string>;
     exportedPaths: Set<string>;
-    activePhoto: model.Photo | null;
+    activePhotoPath: string;
     onPhotoClick: (photo: model.Photo) => void;
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+    const result: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+        result.push(arr.slice(i, i + size));
+    }
+    return result;
 }
 
 export function Grid({
@@ -18,12 +27,45 @@ export function Grid({
     duplicateGroups,
     selectedPaths,
     exportedPaths,
-    activePhoto,
+    activePhotoPath,
     onPhotoClick,
     ratings,
     onRatingChange,
 }: GridProps) {
     const parentRef = useRef<HTMLDivElement>(null);
+
+    const [containerWidth, setContainerWidth] = useState(800);
+
+    useEffect(() => {
+        if (!parentRef.current) return;
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+        observer.observe(parentRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    const CARD_WIDTH = 168; // 160px card + 8px gap
+    const CARD_HEIGHT = 176; // 160px card + 16px gap
+    const columns = Math.max(1, Math.floor(containerWidth / CARD_WIDTH));
+    const rows = chunk(photos, columns);
+
+    const rowVirtualizer = useVirtualizer({
+        count: rows.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => CARD_HEIGHT,
+        overscan: 3,
+    });
+
+    useEffect(() => {
+        if (!activePhotoPath) return;
+        const idx = photos.findIndex(p => p.Path === activePhotoPath);
+        if (idx === -1) return;
+        const rowIndex = Math.floor(idx / columns);
+        rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' });
+    }, [columns, activePhotoPath, photos]);
 
     const handleStarClick = useCallback((e: React.MouseEvent, path: string, star: number) => {
         e.stopPropagation();
@@ -46,58 +88,78 @@ export function Grid({
     }
 
     return (
-        <div className="grid-panel" ref={parentRef}>
-            <div className="photo-grid">
-                {photos.map((photo) => {
-                    const isSelected = selectedPaths.has(photo.Path);
-                    const isExported = exportedPaths.has(photo.Path);
-                    const isActive = activePhoto?.Path === photo.Path;
-                    const rating = ratings[photo.Path] || 0;
-                    // Use cached thumbnail if available, else original path
-                    const imgSrc = photo.ThumbnailPath || photo.Path;
-
+        <div className="grid-panel" ref={parentRef} style={{ overflowY: 'auto' }}>
+            <div
+                style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                }}
+            >
+                {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                    const rowPhotos = rows[virtualRow.index];
                     return (
                         <div
-                            id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
-                            key={photo.Path}
-                            className={`thumbnail-card ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
-                            onClick={() => onPhotoClick(photo)}
+                            key={virtualRow.index}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: `${virtualRow.size}px`,
+                                transform: `translateY(${virtualRow.start}px)`,
+                                display: 'flex',
+                                gap: 8,
+                            }}
                         >
-                            {isSelected && (
-                                <div className="badge badge-selected">
-                                    <Check size={12} />
-                                </div>
-                            )}
-                            {!isSelected && isExported && (
-                                <div className="badge badge-exported">
-                                    <Check size={12} />
-                                </div>
-                            )}
+                            {rowPhotos.map((photo) => {
+                                const isSelected = selectedPaths.has(photo.Path);
+                                const isExported = exportedPaths.has(photo.Path);
+                                const isActive = activePhotoPath === photo.Path;
+                                const rating = ratings[photo.Path] || 0;
+                                const rawSrc = photo.ThumbnailPath || photo.Path;
+                                const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
 
-                            {/* Show image with lazy loading (works with CSS Grid) */}
-                            <img
-                                src={imgSrc}
-                                alt={photo.Path.split('/').pop()}
-                                className="thumbnail-image"
-                                loading="lazy"
-                                decoding="async"
-                                onLoad={(e) => {
-                                    (e.target as HTMLImageElement).closest('.thumbnail-card')?.classList.add('loaded');
-                                }}
-                            />
-
-                            {/* Star rating overlay */}
-                            <div className="star-rating">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                    <Star
-                                        key={star}
-                                        size={18}
-                                        className={`star ${star <= rating ? 'filled' : ''}`}
-                                        fill={star <= rating ? '#fbbf24' : 'none'}
-                                        onClick={(e) => handleStarClick(e, photo.Path, star)}
-                                    />
-                                ))}
-                            </div>
+                                return (
+                                    <div
+                                        id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                                        key={photo.Path}
+                                        className={`thumbnail-card ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+                                        onClick={() => onPhotoClick(photo)}
+                                    >
+                                        {isSelected && <div className="badge badge-selected"><Check size={12} /></div>}
+                                        {!isSelected && isExported && <div className="badge badge-exported"><Check size={12} /></div>}
+                                        {photo.IsVideo && (
+                                            <div className="badge badge-video">
+                                                <span style={{ fontSize: '10px' }}>
+                                                    {Math.floor(photo.Duration / 60)}:{(Math.floor(photo.Duration % 60)).toString().padStart(2, '0')}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <img
+                                            src={imgSrc}
+                                            alt={photo.Path.split('/').pop()}
+                                            className="thumbnail-image"
+                                            loading="lazy"
+                                            decoding="async"
+                                            onLoad={(e) => {
+                                                (e.target as HTMLImageElement).closest('.thumbnail-card')?.classList.add('loaded');
+                                            }}
+                                        />
+                                        <div className="star-rating">
+                                            {[1, 2, 3, 4, 5].map((star) => (
+                                                <Star
+                                                    key={star}
+                                                    size={18}
+                                                    className={`star ${star <= rating ? 'filled' : ''}`}
+                                                    fill={star <= rating ? '#fbbf24' : 'none'}
+                                                    onClick={(e) => handleStarClick(e, photo.Path, star)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     );
                 })}
@@ -111,8 +173,9 @@ export function Grid({
                     </summary>
                     <div className="photo-grid">
                         {duplicateGroups.flat().map((photo) => {
-                            const isActive = activePhoto?.Path === photo.Path;
-                            const imgSrc = photo.ThumbnailPath || photo.Path;
+                            const isActive = activePhotoPath === photo.Path;
+                            const rawSrc = photo.ThumbnailPath || photo.Path;
+                            const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
                             return (
                                 <div
                                     id={`thumb-${photo.Path.replace(/[^a-zA-Z0-9]/g, '-')}`}

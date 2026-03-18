@@ -8,49 +8,67 @@ import (
 	"strings"
 
 	"cullsnap/internal/model"
+	"cullsnap/internal/video"
 )
 
 // ExportSelections copies selected photos to the destination directory.
 // It returns the number of successfully copied files and any error encountered.
 func ExportSelections(photos []model.Photo, destDir string) (int, error) {
-	// Create destination directory if it doesn't exist
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return 0, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
 	count := 0
 	for _, p := range photos {
-		srcFile, err := os.Open(p.Path)
-		if err != nil {
-			// Log error and continue? For now return error to stop.
-			// Or maybe return a list of errors.
-			return count, fmt.Errorf("failed to open source file %s: %w", p.Path, err)
-		}
-		defer srcFile.Close()
-
-		filename := filepath.Base(p.Path)
-		destPath := filepath.Join(destDir, filename)
-
-		// Handle duplicates
-		destPath = uniquePath(destPath)
-
-		destFile, err := os.Create(destPath)
-		if err != nil {
-			srcFile.Close()
-			return count, fmt.Errorf("failed to create destination file %s: %w", destPath, err)
-		}
-
-		_, err = io.Copy(destFile, srcFile)
-		destFile.Close()
-		srcFile.Close()
-
-		if err != nil {
-			return count, fmt.Errorf("failed to copy content to %s: %w", destPath, err)
+		if err := exportSingleFile(p, destDir); err != nil {
+			return count, err
 		}
 		count++
 	}
 
 	return count, nil
+}
+
+// exportSingleFile handles exporting a single photo/video so defer runs per-file.
+func exportSingleFile(p model.Photo, destDir string) error {
+	filename := filepath.Base(p.Path)
+	destPath := uniquePath(filepath.Join(destDir, filename))
+
+	isClippedVideo := p.IsVideo && (p.TrimStart > 0 || p.TrimEnd > 0)
+	if isClippedVideo {
+		if p.TrimEnd == 0 {
+			p.TrimEnd = p.Duration
+		}
+		// If both start and end are 0, or end <= start, skip trimming and copy as-is.
+		// This guards against Duration not being enriched yet.
+		if p.TrimEnd > p.TrimStart {
+			if err := video.TrimVideo(p.Path, destPath, p.TrimStart, p.TrimEnd); err != nil {
+				return fmt.Errorf("failed to trim video %s: %w", p.Path, err)
+			}
+			return nil
+		}
+		// Fall through to plain copy if trim range is invalid
+	}
+
+	srcFile, err := os.Open(p.Path)
+	if err != nil {
+		return fmt.Errorf("failed to open source file %s: %w", p.Path, err)
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file %s: %w", destPath, err)
+	}
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		destFile.Close()
+		return fmt.Errorf("failed to copy content to %s: %w", destPath, err)
+	}
+	if err := destFile.Close(); err != nil {
+		return fmt.Errorf("failed to flush %s: %w", destPath, err)
+	}
+	return nil
 }
 
 // uniquePath appends a counter to the filename if it already exists.

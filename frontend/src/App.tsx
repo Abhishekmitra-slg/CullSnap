@@ -2,8 +2,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, ToggleSelection, ExportPhotos, GetSystemResources, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
-import { app as appMain, model as appModel } from '../wailsjs/go/models';
+import { SettingsModal } from './components/SettingsModal';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
+import { model as appModel } from '../wailsjs/go/models';
+
+interface SystemMetrics {
+    cpu: number;
+    ram: number;
+    diskRead: number;
+    diskWrite: number;
+    netSent: number;
+    netRecv: number;
+}
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
@@ -13,26 +23,31 @@ function App() {
     const [exportedPaths, setExportedPaths] = useState<Set<string>>(new Set());
     const [currentDir, setCurrentDir] = useState<string>('');
     const [activePhoto, setActivePhoto] = useState<appModel.Photo | null>(null);
+    const [activePhotoPath, setActivePhotoPath] = useState<string>('');
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [loading, setLoading] = useState(false);
     const [isDeduplicating, setIsDeduplicating] = useState(false);
     const [dedupeProgress, setDedupeProgress] = useState<{current: number, total: number, message: string} | null>(null);
     const [theme, setTheme] = useState<string>('dark');
-    const [sysMetrics, setSysMetrics] = useState<appMain.SystemResources | null>(null);
+    const [sysMetrics, setSysMetrics] = useState<SystemMetrics | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     useEffect(() => {
-        const interval = setInterval(async () => {
-            try {
-                const metrics = await GetSystemResources();
-                setSysMetrics(metrics);
-            } catch (e) {
-                console.error("Failed to fetch metrics", e);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
+        EventsOn('sys-metrics', (data: any) => {
+            setSysMetrics(data);
+        });
+        return () => { EventsOff('sys-metrics'); };
+    }, []);
+
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        };
     }, []);
 
     // Listen to deduplication progress events
@@ -76,39 +91,49 @@ function App() {
         };
     }, []);
 
+    const setActivePhotoDebounced = useCallback((photo: appModel.Photo) => {
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+            setActivePhoto(photo);
+        }, 80);
+    }, []);
+
     // Keyboard shortcut listener
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 's' || e.key === 'S') {
-                if (activePhoto) {
-                    handleToggleSelection(activePhoto.Path);
+                if (activePhotoPath) {
+                    handleToggleSelection(activePhotoPath);
                 }
             } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (photos.length > 0) {
-                    const currentIndex = activePhoto ? photos.findIndex(p => p.Path === activePhoto.Path) : -1;
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex < photos.length - 1) {
-                        setActivePhoto(photos[currentIndex + 1]);
-                        // Try to scroll the thumbnail into view if possible
-                        const id = photos[currentIndex + 1].Path.replace(/[^a-zA-Z0-9]/g, '-');
-                        document.getElementById(`thumb-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        const nextPhoto = photos[currentIndex + 1];
+                        setActivePhotoPath(nextPhoto.Path);          // immediate — grid highlight
+                        setActivePhotoDebounced(nextPhoto);           // 80ms — viewer load
+                        document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (photos.length > 0) {
-                    const currentIndex = activePhoto ? photos.findIndex(p => p.Path === activePhoto.Path) : -1;
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex > 0) {
-                        setActivePhoto(photos[currentIndex - 1]);
-                        const id = photos[currentIndex - 1].Path.replace(/[^a-zA-Z0-9]/g, '-');
-                        document.getElementById(`thumb-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        const prevPhoto = photos[currentIndex - 1];
+                        setActivePhotoPath(prevPhoto.Path);
+                        setActivePhotoDebounced(prevPhoto);
+                        document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activePhoto, selectedPaths, photos, currentDir]);
+    }, [activePhotoPath, selectedPaths, photos, currentDir, setActivePhotoDebounced]);
 
     const handleOpenFolder = async () => {
         try {
@@ -131,6 +156,8 @@ function App() {
     };
 
     const loadDirectory = async (dir: string) => {
+        EventsOff('video-duration-ready');
+        EventsOff('video-duration-complete');
         setLoading(true);
         setCurrentDir(dir);
         setThumbProgress(null);
@@ -139,15 +166,37 @@ function App() {
             const quickPhotos = await ScanDirectory(dir);
             setPhotos(quickPhotos || []);
 
+            EventsOn('video-duration-ready', (data: any) => {
+                const { path, duration } = data;
+                setPhotos(prev => prev.map(p =>
+                    p.Path === path ? appModel.Photo.createFrom({ ...p, Duration: duration }) : p
+                ));
+            });
+
+            EventsOn('video-duration-complete', () => {
+                EventsOff('video-duration-ready');
+                EventsOff('video-duration-complete');
+            });
+
             const exportedStatus = await GetExportedStatus(dir);
             setExportedPaths(new Set(Object.keys(exportedStatus || {})));
 
             if (quickPhotos && quickPhotos.length > 0) {
                 setActivePhoto(quickPhotos[0]);
+                setActivePhotoPath(quickPhotos[0].Path);
             } else {
                 setActivePhoto(null);
+                setActivePhotoPath('');
             }
-            setSelectedPaths(new Set());
+
+            // Restore persisted selections from previous session
+            try {
+                const savedSelections = await GetSelections(dir);
+                setSelectedPaths(new Set(Object.keys(savedSelections || {})));
+            } catch {
+                setSelectedPaths(new Set());
+            }
+
             setDuplicateGroups([]);
             setDedupCompleted(false);
 
@@ -208,8 +257,10 @@ function App() {
                 setDuplicateGroups(result.duplicateGroups || []);
                 if (result.uniquePhotos && result.uniquePhotos.length > 0) {
                     setActivePhoto(result.uniquePhotos[0]);
+                    setActivePhotoPath(result.uniquePhotos[0].Path);
                 } else {
                     setActivePhoto(null);
+                    setActivePhotoPath('');
                 }
             }
         } catch (e) {
@@ -250,6 +301,7 @@ function App() {
     };
 
     const handlePhotoClick = (photo: appModel.Photo) => {
+        setActivePhotoPath(photo.Path);
         setActivePhoto(photo);
     };
 
@@ -260,6 +312,11 @@ function App() {
         } catch (e) {
             console.error('Failed to save rating:', e);
         }
+    }, []);
+
+    const handleTrimChange = useCallback((path: string, start: number, end: number) => {
+        setPhotos(prev => prev.map(p => p.Path === path ? appModel.Photo.createFrom({ ...p, TrimStart: start, TrimEnd: end }) : p));
+        setActivePhoto(prev => (prev?.Path === path) ? appModel.Photo.createFrom({ ...prev, TrimStart: start, TrimEnd: end }) : prev);
     }, []);
 
     return (
@@ -314,6 +371,7 @@ function App() {
                 onThemeChange={handleThemeChange}
                 dedupCompleted={dedupCompleted}
                 duplicateCount={duplicateGroups.reduce((acc, g) => acc + g.length, 0)}
+                onOpenSettings={() => setSettingsOpen(true)}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>
@@ -322,13 +380,13 @@ function App() {
                     duplicateGroups={duplicateGroups}
                     selectedPaths={selectedPaths}
                     exportedPaths={exportedPaths}
-                    activePhoto={activePhoto}
+                    activePhotoPath={activePhotoPath}
                     onPhotoClick={handlePhotoClick}
                     ratings={ratings}
                     onRatingChange={handleRatingChange}
                 />
 
-                <Viewer photo={activePhoto} />
+                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} />
             </div>
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>
@@ -356,6 +414,8 @@ function App() {
                     {exportSuccess}
                 </div>
             )}
+
+            {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
         </div>
     );
 }

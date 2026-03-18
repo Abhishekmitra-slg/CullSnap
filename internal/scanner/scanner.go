@@ -9,16 +9,21 @@ import (
 )
 
 var allowedExtensions = map[string]bool{
+	// Photos
 	".jpg":  true,
 	".jpeg": true,
 	".png":  true,
-	// Add RAW formats later if needed, starting with basic support
+	// Videos
+	".mp4":  true,
+	".mov":  true,
+	".webm": true,
+	".mkv":  true,
+	".avi":  true,
 }
 
-// ScanDirectory worker pool implementation could go here,
-// but for the initial list population, we just need to get the file paths fast.
-// The expensive operation is thumbnail generation, which happens in the UI layer (virtualized).
-// So this scanner just finds files quickly.
+// ScanDirectory walks root and returns Photo structs for supported files.
+// This is intentionally fast — it only reads file metadata (no thumbnails, no ffprobe).
+// Thumbnail generation and video duration enrichment happen in app.go after scan completes.
 func ScanDirectory(root string) ([]model.Photo, error) {
 	var photos []model.Photo
 
@@ -39,11 +44,15 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 			if err != nil {
 				return nil // Skip if can't get info
 			}
+			
+			isVideo := isVideoExt(ext)
 
 			p := model.Photo{
 				Path:    path,
 				Size:    info.Size(),
-				TakenAt: info.ModTime(), // Fallback to ModTime, ideally parse EXIF later
+				TakenAt: info.ModTime(),
+				IsVideo: isVideo,
+				// Duration intentionally 0 — enriched asynchronously by app.go
 			}
 
 			photos = append(photos, p)
@@ -52,4 +61,12 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 	})
 
 	return photos, err
+}
+
+func isVideoExt(ext string) bool {
+	switch ext {
+	case ".mp4", ".mov", ".webm", ".mkv", ".avi":
+		return true
+	}
+	return false
 }
