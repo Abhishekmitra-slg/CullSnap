@@ -36,3 +36,7 @@ export function SelectExportDirectory():Promise<string>;
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;
+
+export function GetAppConfig():Promise<app.AppConfig>;
+export function SaveAppConfig(cfg:app.AppConfig):Promise<void>;
+export function ResetAppConfig():Promise<app.AppConfig>;

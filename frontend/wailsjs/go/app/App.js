@@ -69,3 +69,7 @@ export function SetPhotoRating(arg1, arg2) {
 export function ToggleSelection(arg1, arg2, arg3) {
   return window['go']['app']['App']['ToggleSelection'](arg1, arg2, arg3);
 }
+
+export function GetAppConfig() { return window['go']['app']['App']['GetAppConfig'](); }
+export function SaveAppConfig(cfg) { return window['go']['app']['App']['SaveAppConfig'](cfg); }
+export function ResetAppConfig() { return window['go']['app']['App']['ResetAppConfig'](); }

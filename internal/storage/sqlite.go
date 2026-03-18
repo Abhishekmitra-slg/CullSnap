@@ -53,6 +53,10 @@ func (s *SQLiteStore) initSchema() error {
 			rating INTEGER DEFAULT 0,
 			updated_at DATETIME
 		);`,
+		`CREATE TABLE IF NOT EXISTS app_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);`,
 	}
 
 	for _, query := range queries {

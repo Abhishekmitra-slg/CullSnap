@@ -21,25 +21,12 @@ type ThumbCache struct {
 	mu       sync.Mutex
 }
 
-// NewThumbCache creates a ThumbCache at ~/.cullsnap/thumbs/ with 0700 permissions.
-// Only the owner can read/write/list the cache directory.
-func NewThumbCache() (*ThumbCache, error) {
-	cacheBase, err := os.UserCacheDir()
-	if err != nil {
-		// Fallback to home dir
-		home, err2 := os.UserHomeDir()
-		if err2 != nil {
-			return nil, fmt.Errorf("cannot determine cache directory: %w", err)
-		}
-		cacheBase = home
-	}
-
-	cacheDir := filepath.Join(cacheBase, "CullSnap", "thumbs")
-	// 0700 = owner read/write/execute only — no other users can access
+// NewThumbCache creates a ThumbCache at the given directory with 0700 permissions.
+// Pass AppConfig.CacheDir to ensure the cache location matches what the media server uses.
+func NewThumbCache(cacheDir string) (*ThumbCache, error) {
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create thumbnail cache: %w", err)
 	}
-
 	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir)
 	return &ThumbCache{cacheDir: cacheDir}, nil
 }
