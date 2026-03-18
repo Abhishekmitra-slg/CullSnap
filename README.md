@@ -16,11 +16,12 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Install</a> &middot;
+  <a href="#-installation">Install</a> &middot;
   <a href="#-features">Features</a> &middot;
   <a href="#-usage-guide">Usage</a> &middot;
   <a href="#-architecture">Architecture</a> &middot;
-  <a href="#building-from-source">Build</a>
+  <a href="#building-from-source">Build</a> &middot;
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest">Download</a>
 </p>
 
 ---
@@ -84,16 +85,23 @@ graph LR
 
 ## 🛠️ Installation
 
-### 🍎 macOS (Recommended)
-The easiest way to install CullSnap on macOS and bypass Gatekeeper warnings is via Homebrew:
+### Direct Download
+
+Pre-built binaries for all platforms are available on the [Releases](https://github.com/Abhishekmitra-slg/CullSnap/releases/latest) page:
+
+| Platform | File | Notes |
+|----------|------|-------|
+| **macOS** (Intel & Apple Silicon) | `CullSnap-macos-universal.zip` | Universal binary, works on all Macs |
+| **Windows** (64-bit) | `CullSnap-windows-amd64.exe` | Standalone executable |
+| **Linux** (64-bit) | `CullSnap-linux-amd64` | Requires GTK3 + WebKit2GTK |
+
+### 🍎 macOS via Homebrew (Recommended)
+The easiest way to install on macOS and bypass Gatekeeper warnings:
 
 ```bash
 brew tap abhishekmitra-slg/tap
 brew install --cask cullsnap
 ```
-
-### 🪟 Windows & 🐧 Linux
-Download the latest binary from the [Releases](https://github.com/Abhishekmitra-slg/CullSnap/releases/latest) page.
 
 ---
 
