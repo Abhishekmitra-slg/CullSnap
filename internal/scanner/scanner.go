@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"cullsnap/internal/model"
-	"cullsnap/internal/video"
 )
 
 var allowedExtensions = map[string]bool{
@@ -48,21 +47,13 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 			}
 			
 			isVideo := isVideoExt(ext)
-			var duration float64
-			if isVideo {
-				// Using the previously built ffmpeg module to extract duration quickly
-				dur, err := video.GetDuration(path)
-				if err == nil {
-					duration = dur
-				}
-			}
 
 			p := model.Photo{
-				Path:     path,
-				Size:     info.Size(),
-				TakenAt:  info.ModTime(), // Fallback to ModTime, ideally parse EXIF later
-				IsVideo:  isVideo,
-				Duration: duration,
+				Path:    path,
+				Size:    info.Size(),
+				TakenAt: info.ModTime(),
+				IsVideo: isVideo,
+				// Duration intentionally 0 — enriched asynchronously by app.go
 			}
 
 			photos = append(photos, p)

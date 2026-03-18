@@ -20,6 +20,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/video"
 
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
@@ -34,6 +35,8 @@ type App struct {
 	dedupeCancel context.CancelFunc
 	thumbCache   *cullImage.ThumbCache
 	cfg          *AppConfig
+	enrichMu     sync.Mutex
+	enrichCancel context.CancelFunc
 }
 
 // NewApp creates a new App application struct
@@ -172,11 +175,87 @@ func (a *App) SelectExportDirectory() (string, error) {
 	return dir, err
 }
 
+// startEnrichment cancels any running enrichment, then starts a new one.
+// Safe to call multiple times (e.g. when user switches folders).
+func (a *App) startEnrichment(videoPaths []string) {
+	a.enrichMu.Lock()
+	if a.enrichCancel != nil {
+		a.enrichCancel()
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.enrichCancel = cancel
+	a.enrichMu.Unlock()
+
+	go a.enrichVideoDurations(ctx, videoPaths)
+}
+
+// enrichVideoDurations runs a worker pool of cfg.ScannerWorkers goroutines.
+// Each worker calls ffprobe on one video at a time.
+// Results are pushed to the frontend via "video-duration-ready" events.
+// Emits "video-duration-complete" when all workers finish.
+func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
+	if len(videoPaths) == 0 {
+		runtime.EventsEmit(a.ctx, "video-duration-complete")
+		return
+	}
+
+	workers := 2
+	if a.cfg != nil {
+		workers = a.cfg.ScannerWorkers
+	}
+
+	work := make(chan string, len(videoPaths))
+	for _, p := range videoPaths {
+		work <- p
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range work {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				dur, err := video.GetDuration(path)
+				if err != nil {
+					logger.Log.Warn("Duration enrichment failed", "file", filepath.Base(path), "error", err)
+					continue
+				}
+				runtime.EventsEmit(a.ctx, "video-duration-ready", map[string]interface{}{
+					"path":     path,
+					"duration": dur,
+				})
+			}
+		}()
+	}
+
+	wg.Wait()
+	runtime.EventsEmit(a.ctx, "video-duration-complete")
+}
+
 // ScanDirectory returns all photos in the directory
 func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 	logger.Log.Info("Scanning directory", "path", path)
 	a.store.AddRecent(path)
-	return scanner.ScanDirectory(path)
+	photos, err := scanner.ScanDirectory(path)
+	if err != nil {
+		return nil, err
+	}
+	var videoPaths []string
+	for _, p := range photos {
+		if p.IsVideo {
+			videoPaths = append(videoPaths, p.Path)
+		}
+	}
+	if len(videoPaths) > 0 {
+		a.startEnrichment(videoPaths)
+	}
+	return photos, nil
 }
 
 // GetSelections returns map of selections for a session
@@ -250,6 +329,15 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		}
 	}
 
+	var videoPaths []string
+	for _, p := range photos {
+		if p.IsVideo {
+			videoPaths = append(videoPaths, p.Path)
+		}
+	}
+	if len(videoPaths) > 0 {
+		a.startEnrichment(videoPaths)
+	}
 	return photos, nil
 }
 

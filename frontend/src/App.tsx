@@ -156,6 +156,8 @@ function App() {
     };
 
     const loadDirectory = async (dir: string) => {
+        EventsOff('video-duration-ready');
+        EventsOff('video-duration-complete');
         setLoading(true);
         setCurrentDir(dir);
         setThumbProgress(null);
@@ -163,6 +165,18 @@ function App() {
             // Phase 1: Quick scan — show photos immediately with original paths
             const quickPhotos = await ScanDirectory(dir);
             setPhotos(quickPhotos || []);
+
+            EventsOn('video-duration-ready', (data: any) => {
+                const { path, duration } = data;
+                setPhotos(prev => prev.map(p =>
+                    p.Path === path ? appModel.Photo.createFrom({ ...p, Duration: duration }) : p
+                ));
+            });
+
+            EventsOn('video-duration-complete', () => {
+                EventsOff('video-duration-ready');
+                EventsOff('video-duration-complete');
+            });
 
             const exportedStatus = await GetExportedStatus(dir);
             setExportedPaths(new Set(Object.keys(exportedStatus || {})));
