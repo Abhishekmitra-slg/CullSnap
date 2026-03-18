@@ -243,10 +243,16 @@ func ExtractThumbnail(videoPath, outPath string) error {
 
 // TrimVideo losslessly trims a video.
 func TrimVideo(src, dest string, start, end float64) error {
+	if ffmpegPath == "" {
+		return fmt.Errorf("ffmpeg not available — cannot trim video")
+	}
 	startStr := fmt.Sprintf("%.3f", start)
 	endStr := fmt.Sprintf("%.3f", end)
-	
-	cmd := exec.Command(ffmpegPath, "-y", "-i", src, "-ss", startStr, "-to", endStr, "-c", "copy", dest)
+
+	// Place -ss before -i for fast seeking (same as ExtractThumbnail).
+	// With input-side seek, -to is an absolute output timestamp which is correct
+	// since TrimEnd is measured from the start of the file.
+	cmd := exec.Command(ffmpegPath, "-y", "-ss", startStr, "-i", src, "-to", endStr, "-c", "copy", dest)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg trim failed: %s", string(out))
 	}

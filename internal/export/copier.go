@@ -39,10 +39,15 @@ func exportSingleFile(p model.Photo, destDir string) error {
 		if p.TrimEnd == 0 {
 			p.TrimEnd = p.Duration
 		}
-		if err := video.TrimVideo(p.Path, destPath, p.TrimStart, p.TrimEnd); err != nil {
-			return fmt.Errorf("failed to trim video %s: %w", p.Path, err)
+		// If both start and end are 0, or end <= start, skip trimming and copy as-is.
+		// This guards against Duration not being enriched yet.
+		if p.TrimEnd > p.TrimStart {
+			if err := video.TrimVideo(p.Path, destPath, p.TrimStart, p.TrimEnd); err != nil {
+				return fmt.Errorf("failed to trim video %s: %w", p.Path, err)
+			}
+			return nil
 		}
-		return nil
+		// Fall through to plain copy if trim range is invalid
 	}
 
 	srcFile, err := os.Open(p.Path)
@@ -55,10 +60,13 @@ func exportSingleFile(p model.Photo, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create destination file %s: %w", destPath, err)
 	}
-	defer destFile.Close()
 
 	if _, err := io.Copy(destFile, srcFile); err != nil {
+		destFile.Close()
 		return fmt.Errorf("failed to copy content to %s: %w", destPath, err)
+	}
+	if err := destFile.Close(); err != nil {
+		return fmt.Errorf("failed to flush %s: %w", destPath, err)
 	}
 	return nil
 }

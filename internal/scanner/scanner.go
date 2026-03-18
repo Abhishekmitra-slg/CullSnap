@@ -21,10 +21,9 @@ var allowedExtensions = map[string]bool{
 	".avi":  true,
 }
 
-// ScanDirectory worker pool implementation could go here,
-// but for the initial list population, we just need to get the file paths fast.
-// The expensive operation is thumbnail generation, which happens in the UI layer (virtualized).
-// So this scanner just finds files quickly.
+// ScanDirectory walks root and returns Photo structs for supported files.
+// This is intentionally fast — it only reads file metadata (no thumbnails, no ffprobe).
+// Thumbnail generation and video duration enrichment happen in app.go after scan completes.
 func ScanDirectory(root string) ([]model.Photo, error) {
 	var photos []model.Photo
 

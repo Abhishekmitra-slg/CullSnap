@@ -13,7 +13,7 @@
 -   **Native Apple Silicon Support**: Automatically provisions native `arm64` FFmpeg and FFprobe binaries on Apple Silicon Macs, delivering maximum performance without Rosetta 2.
 -   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions.
 -   **Smart Deduplication**: Pure-Go perceptual hashing automatically groups duplicate/burst photos and selects the sharpest image using a Laplacian Variance algorithm.
--   **RAW & JPEG Processing**: High-performance embedded thumbnail extraction for RAW camera files (CR2, CR3, ARW, NEF, DNG).
+-   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
 -   **Stable Media Architecture**: Uses a dedicated high-speed server on port `34342` to serve local assets, ensuring smooth video scrubbing and instant image loading.
 -   **Custom Export Pathing**: Rename the destination folder on-the-fly during export for better session organization.

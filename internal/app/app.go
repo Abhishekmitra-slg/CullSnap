@@ -273,7 +273,7 @@ func (a *App) GetExportedStatus(dirPath string) (map[string]bool, error) {
 }
 
 // PreloadThumbnails generates cached thumbnails for all images in a directory.
-// Uses parallel goroutines (runtime.NumCPU()) for fast generation.
+// Uses parallel goroutines (cfg.ThumbnailWorkers) for fast generation.
 // Emits "thumb-progress" events for the UI loading animation.
 // Returns photos with ThumbnailPath populated.
 func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
@@ -305,13 +305,10 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		}{Path: p.Path, ModTime: p.TakenAt}
 	}
 
-	// Parallel thumbnail generation with progress
-	numWorkers := stdruntime.NumCPU()
-	if numWorkers < 2 {
-		numWorkers = 2
-	}
-	if numWorkers > 8 {
-		numWorkers = 8
+	// Parallel thumbnail generation with progress — use config value
+	numWorkers := 4
+	if a.cfg != nil {
+		numWorkers = a.cfg.ThumbnailWorkers
 	}
 
 	thumbnailMap := a.thumbCache.GenerateBatch(items, numWorkers, func(completed, total int) {
