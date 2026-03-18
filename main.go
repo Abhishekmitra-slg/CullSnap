@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -162,42 +163,6 @@ func main() {
 	mime.AddExtensionType(".mp4", "video/mp4")
 	mime.AddExtensionType(".avi", "video/x-msvideo")
 
-	// serverCtx is cancelled in OnShutdown so semaphore-blocked goroutines exit cleanly.
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-
-	// Semaphore: limits concurrent file-serving goroutines.
-	// Default 20 — overridden by AppConfig after config is loaded (see app.go).
-	const defaultMaxConnections = 20
-	sem := make(chan struct{}, defaultMaxConnections)
-
-	// cacheDir is set from AppConfig after config loads; use OS default for now.
-	// This value is updated once AppConfig is wired in (Chunk 3).
-	userCacheDir, _ := os.UserCacheDir()
-	cacheDir := filepath.Join(userCacheDir, "CullSnap", "thumbs")
-
-	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir}
-
-	go func() {
-		mediaServer := &http.Server{
-			Addr:         ":34342",
-			Handler:      panicRecoveryMiddleware(loader),
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 0, // MUST be 0 — streaming large video files has no fixed deadline
-			IdleTimeout:  30 * time.Second,
-			BaseContext:  func(_ net.Listener) context.Context { return serverCtx },
-		}
-		// Shut down the HTTP server when the app context is cancelled (OnShutdown).
-		// Without this, the goroutine keeps holding port 34342 and the next
-		// hot-reload attempt fails with "address already in use".
-		go func() {
-			<-serverCtx.Done()
-			mediaServer.Close()
-		}()
-		if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Failed to start media server: %v", err)
-		}
-	}()
-
 	// Determine App Data Directory
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -230,6 +195,48 @@ func main() {
 		log.Fatal(err)
 	}
 	defer store.Close()
+
+	// serverCtx is cancelled in OnShutdown so semaphore-blocked goroutines exit cleanly.
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+
+	// Read MaxConnections from persisted config; fall back to 20 if not set.
+	maxConn := 20
+	if val, _ := store.GetConfig("maxConnections"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n >= 10 && n <= 50 {
+			maxConn = n
+		}
+	}
+	sem := make(chan struct{}, maxConn)
+
+	// Read cacheDir from persisted config; fall back to OS default.
+	cacheDir := ""
+	if val, _ := store.GetConfig("cacheDir"); val != "" {
+		cacheDir = val
+	}
+	if cacheDir == "" {
+		userCacheDir, _ := os.UserCacheDir()
+		cacheDir = filepath.Join(userCacheDir, "CullSnap", "thumbs")
+	}
+
+	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir}
+
+	go func() {
+		mediaServer := &http.Server{
+			Addr:         ":34342",
+			Handler:      panicRecoveryMiddleware(loader),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 0, // MUST be 0 — streaming large video files has no fixed deadline
+			IdleTimeout:  30 * time.Second,
+			BaseContext:  func(_ net.Listener) context.Context { return serverCtx },
+		}
+		go func() {
+			<-serverCtx.Done()
+			mediaServer.Close()
+		}()
+		if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Failed to start media server: %v", err)
+		}
+	}()
 
 	// Create an instance of the app structure
 	application := app.NewApp(store)

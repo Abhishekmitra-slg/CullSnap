@@ -65,7 +65,7 @@ export function Grid({
         if (idx === -1) return;
         const rowIndex = Math.floor(idx / columns);
         rowVirtualizer.scrollToIndex(rowIndex, { align: 'auto' });
-    }, [columns]);
+    }, [columns, activePhotoPath, photos]);
 
     const handleStarClick = useCallback((e: React.MouseEvent, path: string, star: number) => {
         e.stopPropagation();
