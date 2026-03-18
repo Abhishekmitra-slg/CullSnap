@@ -115,11 +115,19 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
     const filename = photo.Path.split('/').pop();
     const mbSize = (photo.Size / 1024 / 1024).toFixed(1);
 
+    // Get the effective duration: prefer photo.Duration, fall back to the <video> element's duration.
+    const getEffectiveDuration = () => {
+        if (photo.Duration > 0) return photo.Duration;
+        if (videoRef.current && videoRef.current.duration && isFinite(videoRef.current.duration)) return videoRef.current.duration;
+        return 0;
+    };
+
     const handleSetStart = () => {
         if (videoRef.current && onTrimChange) {
             const currentT = videoRef.current.currentTime;
-            const targetEnd = photo.TrimEnd > 0 ? photo.TrimEnd : photo.Duration;
-            if (currentT < targetEnd) {
+            const dur = getEffectiveDuration();
+            const targetEnd = photo.TrimEnd > 0 ? photo.TrimEnd : dur;
+            if (dur > 0 && currentT < targetEnd) {
                 onTrimChange(photo.Path, currentT, targetEnd);
             }
         }
@@ -138,7 +146,8 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
         if (!onTrimChange) return;
         const val = parseFloat(e.target.value);
         const currentStart = photo.TrimStart;
-        const currentEnd = photo.TrimEnd > 0 ? photo.TrimEnd : photo.Duration;
+        const dur = getEffectiveDuration();
+        const currentEnd = photo.TrimEnd > 0 ? photo.TrimEnd : dur;
 
         if (isStart) {
             if (val < currentEnd) {
@@ -199,49 +208,59 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
                     </div>
                     
                     {/* Dual slider trick using two range inputs overlayed */}
-                    <div style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center', margin: '4px 0' }}>
-                        {/* Background track */}
-                        <div style={{ position: 'absolute', width: '100%', height: 4, background: 'var(--border-color)', borderRadius: 2 }} />
-                        
-                        {/* Selected range highlight */}
-                        <div style={{ 
-                            position: 'absolute', 
-                            height: 4, 
-                            background: 'var(--accent)', 
-                            borderRadius: 2,
-                            left: `${(photo.TrimStart / photo.Duration) * 100}%`,
-                            width: `${((photo.TrimEnd > 0 ? photo.TrimEnd : photo.Duration) - photo.TrimStart) / photo.Duration * 100}%`
-                        }} />
+                    {(() => {
+                        const dur = getEffectiveDuration();
+                        const effectiveEnd = photo.TrimEnd > 0 ? photo.TrimEnd : dur;
+                        return (
+                            <>
+                                <div style={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center', margin: '4px 0' }}>
+                                    {/* Background track */}
+                                    <div style={{ position: 'absolute', width: '100%', height: 4, background: 'var(--border-color)', borderRadius: 2 }} />
 
-                        {/* Start Thumb */}
-                        <input 
-                            type="range" 
-                            min={0} 
-                            max={photo.Duration} 
-                            step={0.1}
-                            value={photo.TrimStart} 
-                            onChange={(e) => handleSliderChange(e, true)}
-                            style={{ position: 'absolute', width: '100%', pointerEvents: 'none', background: 'transparent' }} 
-                            className="trim-slider"
-                        />
-                        
-                        {/* End Thumb */}
-                        <input 
-                            type="range" 
-                            min={0} 
-                            max={photo.Duration} 
-                            step={0.1}
-                            value={photo.TrimEnd > 0 ? photo.TrimEnd : photo.Duration} 
-                            onChange={(e) => handleSliderChange(e, false)}
-                            style={{ position: 'absolute', width: '100%', pointerEvents: 'none', background: 'transparent' }} 
-                            className="trim-slider end-slider"
-                        />
-                    </div>
+                                    {/* Selected range highlight */}
+                                    {dur > 0 && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            height: 4,
+                                            background: 'var(--accent)',
+                                            borderRadius: 2,
+                                            left: `${(photo.TrimStart / dur) * 100}%`,
+                                            width: `${(effectiveEnd - photo.TrimStart) / dur * 100}%`
+                                        }} />
+                                    )}
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        <span>Start: {photo.TrimStart.toFixed(1)}s</span>
-                        <span>End: {(photo.TrimEnd > 0 ? photo.TrimEnd : photo.Duration).toFixed(1)}s</span>
-                    </div>
+                                    {/* Start Thumb */}
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={dur || 1}
+                                        step={0.1}
+                                        value={photo.TrimStart}
+                                        onChange={(e) => handleSliderChange(e, true)}
+                                        style={{ position: 'absolute', width: '100%', background: 'transparent', zIndex: 2 }}
+                                        className="trim-slider"
+                                    />
+
+                                    {/* End Thumb */}
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={dur || 1}
+                                        step={0.1}
+                                        value={effectiveEnd}
+                                        onChange={(e) => handleSliderChange(e, false)}
+                                        style={{ position: 'absolute', width: '100%', background: 'transparent', zIndex: 3 }}
+                                        className="trim-slider end-slider"
+                                    />
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    <span>Start: {photo.TrimStart.toFixed(1)}s</span>
+                                    <span>End: {effectiveEnd.toFixed(1)}s</span>
+                                </div>
+                            </>
+                        );
+                    })()}
                 </div>
             )}
 

@@ -1018,3 +1018,65 @@ h2 {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ═══════════════════════════════════════════════
+   VIDEO TRIM SLIDERS
+   ═══════════════════════════════════════════════ */
+
+.trim-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.trim-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 4px rgba(79, 140, 255, 0.5);
+  cursor: grab;
+}
+
+.trim-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+
+.trim-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 4px rgba(79, 140, 255, 0.5);
+  cursor: grab;
+}
+
+.trim-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.trim-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.end-slider::-webkit-slider-thumb {
+  background: var(--accent-violet);
+  box-shadow: 0 0 4px rgba(167, 139, 250, 0.5);
+}
+
+.end-slider::-moz-range-thumb {
+  background: var(--accent-violet);
+  box-shadow: 0 0 4px rgba(167, 139, 250, 0.5);
+}
