@@ -94,7 +94,7 @@ func downloadFFmpeg() error {
 		if err != nil {
 			return fmt.Errorf("failed to fetch ffbinaries API: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var apiResp ffbinariesResponse
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -142,7 +142,7 @@ func downloadAndExtractGz(url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download %s: %s", url, resp.Status)
@@ -152,13 +152,13 @@ func downloadAndExtractGz(url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer gzReader.Close()
+	defer func() { _ = gzReader.Close() }()
 
 	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	if _, err := io.Copy(outFile, gzReader); err != nil {
 		return err
@@ -171,7 +171,7 @@ func downloadAndExtractZip(url, destPath, binName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -190,13 +190,13 @@ func downloadAndExtractZip(url, destPath, binName string) error {
 			if err != nil {
 				return err
 			}
-			defer zippedFile.Close()
+			defer func() { _ = zippedFile.Close() }()
 
 			outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 			if err != nil {
 				return err
 			}
-			defer outFile.Close()
+			defer func() { _ = outFile.Close() }()
 
 			if _, err := io.Copy(outFile, zippedFile); err != nil {
 				return err

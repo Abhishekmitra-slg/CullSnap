@@ -49,7 +49,7 @@ func DeriveDefaults(probe SystemProbe) AppConfig {
 	}
 	cfg.MaxConnections = maxConn
 
-	// ThumbnailWorkers: clamp(CPUs, 2, 8)
+	// Thumbnail workers: clamp to range [2, 8] based on CPU count
 	tw := probe.CPUs
 	if tw < 2 {
 		tw = 2
@@ -59,7 +59,7 @@ func DeriveDefaults(probe SystemProbe) AppConfig {
 	}
 	cfg.ThumbnailWorkers = tw
 
-	// ScannerWorkers: clamp(CPUs/2, 1, 4)
+	// Scanner workers: clamp to range [1, 4] based on half the CPU count
 	sw := probe.CPUs / 2
 	if sw < 1 {
 		sw = 1
