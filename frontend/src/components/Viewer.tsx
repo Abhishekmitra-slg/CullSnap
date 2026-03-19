@@ -18,7 +18,6 @@ interface ViewerProps {
 export function Viewer({ photo, onTrimChange }: ViewerProps) {
     const [exif, setExif] = useState<PhotoEXIF | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [imageSrc, setImageSrc] = useState<string>('');
 
     useEffect(() => {
         if (!photo || photo.IsVideo) {
@@ -26,11 +25,12 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
             return;
         }
 
+        let cancelled = false;
         const loadExif = async () => {
             try {
                 const { GetPhotoEXIF } = await import('../../wailsjs/go/app/App');
                 const data = await GetPhotoEXIF(photo.Path);
-                if (data) {
+                if (!cancelled && data) {
                     setExif({
                         camera: data.camera || '—',
                         lens: data.lens || '—',
@@ -41,22 +41,17 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
                     });
                 }
             } catch {
-                setExif(null);
+                if (!cancelled) setExif(null);
             }
         };
         loadExif();
+        return () => { cancelled = true; };
     }, [photo?.Path, photo?.IsVideo]);
 
-    useEffect(() => {
-        if (!photo || photo.IsVideo) {
-            setImageSrc('');
-            return;
-        }
-
-        // Use direct URL like the Grid — avoids cross-origin fetch issues in WKWebView
-        const mediaUrl = `http://localhost:34342/wails-media?path=${encodeURIComponent(photo.Path)}`;
-        setImageSrc(mediaUrl);
-    }, [photo?.Path, photo?.IsVideo]);
+    // Compute media URL inline — no state needed, avoids extra render cycle
+    const mediaUrl = photo && !photo.IsVideo
+        ? `http://localhost:34342/wails-media?path=${encodeURIComponent(photo.Path)}`
+        : '';
 
     if (!photo) {
         return (
@@ -75,7 +70,7 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
         );
     }
 
-    const filename = photo.Path.split('/').pop();
+    const filename = photo.Path.split(/[/\\]/).pop();
     const mbSize = (photo.Size / 1024 / 1024).toFixed(1);
 
     // Get the effective duration: prefer photo.Duration, fall back to the <video> element's duration.
@@ -140,7 +135,7 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
                     />
                 ) : (
                     <img
-                        src={imageSrc}
+                        src={mediaUrl}
                         alt={filename}
                         className="viewer-image"
                     />
