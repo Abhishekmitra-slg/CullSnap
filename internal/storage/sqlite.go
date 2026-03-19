@@ -26,7 +26,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 
 	store := &SQLiteStore{db: db}
 	if err := store.initSchema(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -95,7 +95,7 @@ func (s *SQLiteStore) GetSelections(sessionID string) (map[string]bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query selections: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	selections := make(map[string]bool)
 	for rows.Next() {
@@ -135,7 +135,7 @@ func (s *SQLiteStore) GetRecents() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var paths []string
 	for rows.Next() {
@@ -168,7 +168,7 @@ func (s *SQLiteStore) GetExportedInDirectory(dirPath string) (map[string]bool, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	exported := make(map[string]bool)
 	for rows.Next() {
@@ -209,7 +209,7 @@ func (s *SQLiteStore) GetRatingsInDirectory(dirPath string) (map[string]int, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	ratings := make(map[string]int)
 	for rows.Next() {
