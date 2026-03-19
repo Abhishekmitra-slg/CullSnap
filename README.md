@@ -187,14 +187,14 @@ Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-All contributors must sign a [Contributor License Agreement (CLA)](LICENSE-COMMERCIAL.md#contributor-license-agreement-cla) before their first PR can be merged.
+All contributors must sign a [Contributor License Agreement (CLA)](COMMERCIAL-LICENSE.md#contributor-license-agreement-cla) before their first PR can be merged.
 
 ## 📄 License
 
 CullSnap is dual-licensed:
 
 - **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
-- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
+- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for details.
 
 ## ⚖️ Code of Conduct
 
