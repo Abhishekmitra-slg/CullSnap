@@ -139,7 +139,7 @@ jobs:
 
       - name: Push to homebrew-tap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_TOKEN: ${{ secrets.CULLSNAP_HOMEBREW_TAP_TOKEN }}
         run: |
           git clone https://x-access-token:${TAP_TOKEN}@github.com/Abhishekmitra-slg/homebrew-tap.git /tmp/homebrew-tap
           cp cullsnap.rb /tmp/homebrew-tap/Casks/cullsnap.rb
@@ -152,7 +152,7 @@ jobs:
 
       - name: Push to homebrew-cullsnap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_TOKEN: ${{ secrets.CULLSNAP_HOMEBREW_TAP_TOKEN }}
         run: |
           git clone https://x-access-token:${TAP_TOKEN}@github.com/Abhishekmitra-slg/homebrew-cullsnap.git /tmp/homebrew-cullsnap
           cp cullsnap.rb /tmp/homebrew-cullsnap/Casks/cullsnap.rb
