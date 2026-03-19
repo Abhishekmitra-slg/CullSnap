@@ -54,7 +54,7 @@ func exportSingleFile(p model.Photo, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open source file %s: %w", p.Path, err)
 	}
-	defer srcFile.Close() // read-only; Close error is safe to ignore
+	defer func() { _ = srcFile.Close() }() // read-only; Close error is safe to ignore
 
 	destFile, err := os.Create(destPath)
 	if err != nil {

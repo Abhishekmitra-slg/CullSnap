@@ -174,7 +174,7 @@ func (a *App) SelectDirectory() (string, error) {
 		return "", err
 	}
 	if dir != "" {
-		a.store.AddRecent(dir)
+		_ = a.store.AddRecent(dir)
 		if a.OnAllowDir != nil {
 			a.OnAllowDir(dir)
 		}
@@ -256,7 +256,7 @@ func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 // ScanDirectory returns all photos in the directory
 func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 	logger.Log.Info("Scanning directory", "path", path)
-	a.store.AddRecent(path)
+	_ = a.store.AddRecent(path)
 	if a.OnAllowDir != nil {
 		a.OnAllowDir(path)
 	}
@@ -372,9 +372,9 @@ func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName stri
 			srcDir = filepath.Dir(photos[0].Path)
 		}
 		for _, p := range photos {
-			a.store.MarkExported(p.Path)
+			_ = a.store.MarkExported(p.Path)
 			if srcDir != "" {
-				a.store.SaveSelection(p.Path, srcDir, false)
+				_ = a.store.SaveSelection(p.Path, srcDir, false)
 			}
 		}
 	}
@@ -393,11 +393,11 @@ func (a *App) OpenLog() {
 	// Fallback to exec.Command as BrowserOpenURL can struggle with file:// on mac
 	switch stdruntime.GOOS {
 	case "darwin":
-		exec.Command("open", logPath).Start()
+		_ = exec.Command("open", logPath).Start()
 	case "windows":
-		exec.Command("cmd", "/c", "start", logPath).Start()
+		_ = exec.Command("cmd", "/c", "start", logPath).Start()
 	default:
-		exec.Command("xdg-open", logPath).Start()
+		_ = exec.Command("xdg-open", logPath).Start()
 	}
 }
 
@@ -405,11 +405,11 @@ func (a *App) OpenLog() {
 func (a *App) OpenFolderInFinder(path string) {
 	switch stdruntime.GOOS {
 	case "darwin":
-		exec.Command("open", path).Start()
+		_ = exec.Command("open", path).Start()
 	case "windows":
-		exec.Command("explorer", path).Start()
+		_ = exec.Command("explorer", path).Start()
 	default:
-		exec.Command("xdg-open", path).Start()
+		_ = exec.Command("xdg-open", path).Start()
 	}
 }
 
@@ -607,7 +607,7 @@ func (a *App) CheckDedupStatus(dirPath string) (*DedupStatus, error) {
 // ScanAndDeduplicate runs perceptual hashing, quality scoring, sorting, and relocation.
 func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeResult, error) {
 	logger.Log.Info("Scanning and deduplicating directory", "path", path)
-	a.store.AddRecent(path)
+	_ = a.store.AddRecent(path)
 
 	// 1. Find explicit duplicates
 	// 8 is a good default threshold for dHash.
