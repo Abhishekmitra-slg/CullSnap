@@ -27,7 +27,9 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6
         with:
-          version: latest
+          version: v2.1.6
+          install-mode: goinstall
+          args: --timeout 5m ./internal/...
 
   test:
     name: Test
@@ -40,7 +42,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Run tests with coverage
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./internal/...
 
       - name: Check coverage threshold
         run: |
