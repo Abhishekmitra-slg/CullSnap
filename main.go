@@ -67,7 +67,10 @@ func (h *FileLoader) isPathAllowed(filePath string) bool {
 }
 
 func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	res.Header().Set("Access-Control-Allow-Origin", "http://localhost:34342")
+	// Allow any origin — the media server is bound to 127.0.0.1 and validates
+	// paths against an explicit allowlist, so CORS adds no meaningful protection.
+	// The Wails webview origin varies by platform and mode.
+	res.Header().Set("Access-Control-Allow-Origin", "*")
 	res.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	res.Header().Set("Access-Control-Allow-Headers", "Range")
 	res.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
