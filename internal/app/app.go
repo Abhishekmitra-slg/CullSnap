@@ -29,15 +29,15 @@ import (
 
 // App struct
 type App struct {
-	ctx            context.Context
-	store          *storage.SQLiteStore
-	dedupeMutex    sync.Mutex
-	dedupeCancel   context.CancelFunc
-	thumbCache     *cullImage.ThumbCache
-	cfg            *AppConfig
-	enrichMu       sync.Mutex
-	enrichCancel   context.CancelFunc
-	OnAllowDir     func(dir string) // called to register a directory with the media server allowlist
+	ctx          context.Context
+	store        *storage.SQLiteStore
+	dedupeMutex  sync.Mutex
+	dedupeCancel context.CancelFunc
+	thumbCache   *cullImage.ThumbCache
+	cfg          *AppConfig
+	enrichMu     sync.Mutex
+	enrichCancel context.CancelFunc
+	OnAllowDir   func(dir string) // called to register a directory with the media server allowlist
 }
 
 // NewApp creates a new App application struct
@@ -413,8 +413,6 @@ func (a *App) OpenFolderInFinder(path string) {
 	}
 }
 
-
-
 // SystemResources represents the current system resource usage
 type SystemResources struct {
 	CPU       float64 `json:"cpu"`
@@ -552,9 +550,9 @@ func (a *App) GetRatingsForDirectory(dirPath string) (map[string]int, error) {
 
 // DedupStatus holds information about existing dedup results for a directory.
 type DedupStatus struct {
-	HasDuplicates  bool            `json:"hasDuplicates"`
-	DuplicateCount int             `json:"duplicateCount"`
-	Duplicates     []model.Photo   `json:"duplicates"`
+	HasDuplicates  bool          `json:"hasDuplicates"`
+	DuplicateCount int           `json:"duplicateCount"`
+	Duplicates     []model.Photo `json:"duplicates"`
 }
 
 // CheckDedupStatus checks if a directory has an existing "duplicates" subfolder
