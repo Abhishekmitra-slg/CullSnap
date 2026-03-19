@@ -31,12 +31,16 @@ type DuplicateGroup struct {
 }
 
 // hashImage concurrently loads a downscaled image and computes its difference hash safely.
-func hashImage(path string) (*goimagehash.ImageHash, error) {
+func hashImage(path string) (result *goimagehash.ImageHash, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open image %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	// Decoding the full image might take huge memory.
 	// Since hashes only need a tiny downscaled matrix, we use decodeConfig to check dimensions

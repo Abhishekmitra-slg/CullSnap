@@ -13,12 +13,16 @@ import (
 // CalculateLaplacianVariance computes the variance of the laplacian for an image.
 // High variance = sharp edges (in-focus). Low variance = smooth (blurry).
 // A common pure-Go implementation of OpenCV's Laplacian Variance.
-func CalculateLaplacianVariance(imgPath string) (float64, error) {
+func CalculateLaplacianVariance(imgPath string) (variance float64, err error) {
 	file, err := os.Open(imgPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to open image: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	img, _, err := image.Decode(file)
 	if err != nil {
@@ -77,7 +81,7 @@ func CalculateLaplacianVariance(imgPath string) (float64, error) {
 		sqDiffSum += diff * diff
 	}
 
-	variance := sqDiffSum / pixelCount
+	variance = sqDiffSum / pixelCount
 	return variance, nil
 }
 

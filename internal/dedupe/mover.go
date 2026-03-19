@@ -79,12 +79,16 @@ func RelocateGroupDuplicates(ctx context.Context, groups []*DuplicateGroup, prog
 }
 
 // copyFile is a utility for cross-device fallback.
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() {
+		if cerr := in.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	out, err := os.Create(dst)
 	if err != nil {

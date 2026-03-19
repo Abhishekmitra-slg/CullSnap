@@ -25,7 +25,7 @@ func ExtractDateTaken(path string) (time.Time, bool) {
 	if err != nil {
 		return time.Time{}, false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Parse EXIF fast
 	e, err := exif.Decode(file)
@@ -52,12 +52,16 @@ type FullEXIF struct {
 }
 
 // ExtractFullEXIF extracts comprehensive EXIF metadata from a photo.
-func ExtractFullEXIF(path string) (*FullEXIF, error) {
+func ExtractFullEXIF(path string) (_ *FullEXIF, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	e, err := exif.Decode(file)
 	if err != nil {

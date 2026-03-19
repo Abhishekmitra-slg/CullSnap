@@ -110,13 +110,25 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 }
 
 func (a *App) persistConfig(cfg *AppConfig) {
-	a.store.SetConfig("maxConnections", strconv.Itoa(cfg.MaxConnections))
-	a.store.SetConfig("thumbnailWorkers", strconv.Itoa(cfg.ThumbnailWorkers))
-	a.store.SetConfig("scannerWorkers", strconv.Itoa(cfg.ScannerWorkers))
-	a.store.SetConfig("serverIdleTimeoutSec", strconv.Itoa(cfg.ServerIdleTimeoutSec))
-	a.store.SetConfig("cacheDir", cfg.CacheDir)
+	if err := a.store.SetConfig("maxConnections", strconv.Itoa(cfg.MaxConnections)); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save maxConnections: %v", err)
+	}
+	if err := a.store.SetConfig("thumbnailWorkers", strconv.Itoa(cfg.ThumbnailWorkers)); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save thumbnailWorkers: %v", err)
+	}
+	if err := a.store.SetConfig("scannerWorkers", strconv.Itoa(cfg.ScannerWorkers)); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save scannerWorkers: %v", err)
+	}
+	if err := a.store.SetConfig("serverIdleTimeoutSec", strconv.Itoa(cfg.ServerIdleTimeoutSec)); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save serverIdleTimeoutSec: %v", err)
+	}
+	if err := a.store.SetConfig("cacheDir", cfg.CacheDir); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save cacheDir: %v", err)
+	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
-		a.store.SetConfig("probe", string(probeJSON))
+		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {
+			runtime.LogWarningf(a.ctx, "persistConfig: failed to save probe: %v", err)
+		}
 	}
 }
 
