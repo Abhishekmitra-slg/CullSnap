@@ -1,11 +1,10 @@
 package app
 
 import (
+	"cullsnap/internal/storage"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"cullsnap/internal/storage"
 )
 
 func newTestStore(t *testing.T) (*storage.SQLiteStore, error) {
