@@ -1,14 +1,13 @@
 package export
 
 import (
+	"cullsnap/internal/model"
+	"cullsnap/internal/video"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"cullsnap/internal/model"
-	"cullsnap/internal/video"
 )
 
 // ExportSelections copies selected photos to the destination directory.

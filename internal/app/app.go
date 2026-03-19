@@ -2,6 +2,13 @@ package app
 
 import (
 	"context"
+	"cullsnap/internal/dedupe"
+	"cullsnap/internal/export"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
+	"cullsnap/internal/scanner"
+	"cullsnap/internal/storage"
+	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,14 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"cullsnap/internal/dedupe"
-	"cullsnap/internal/export"
 	cullImage "cullsnap/internal/image"
-	"cullsnap/internal/logger"
-	"cullsnap/internal/model"
-	"cullsnap/internal/scanner"
-	"cullsnap/internal/storage"
-	"cullsnap/internal/video"
 
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"

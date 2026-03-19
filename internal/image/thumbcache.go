@@ -2,6 +2,8 @@ package image
 
 import (
 	"crypto/md5"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/video"
 	"fmt"
 	"image/jpeg"
 	"os"
@@ -9,9 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"cullsnap/internal/logger"
-	"cullsnap/internal/video"
 )
 
 // ThumbCache manages a disk-based thumbnail cache.

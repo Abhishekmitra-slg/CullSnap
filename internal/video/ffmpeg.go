@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,8 +15,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-
-	"cullsnap/internal/logger"
 )
 
 var (

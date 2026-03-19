@@ -1,11 +1,10 @@
 package scanner
 
 import (
+	"cullsnap/internal/model"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"cullsnap/internal/model"
 )
 
 var allowedExtensions = map[string]bool{
