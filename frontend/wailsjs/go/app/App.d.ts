@@ -9,6 +9,8 @@ export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
 
+export function GetAboutInfo():Promise<app.AboutInfo>;
+
 export function GetAppConfig():Promise<app.AppConfig>;
 
 export function GetExportedStatus(arg1:string):Promise<Record<string, boolean>>;

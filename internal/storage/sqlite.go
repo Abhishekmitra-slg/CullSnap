@@ -222,3 +222,10 @@ func (s *SQLiteStore) GetRatingsInDirectory(dirPath string) (map[string]int, err
 	}
 	return ratings, nil
 }
+
+// GetSQLiteVersion returns the SQLite library version.
+func (s *SQLiteStore) GetSQLiteVersion() (string, error) {
+	var ver string
+	err := s.db.QueryRow("SELECT sqlite_version()").Scan(&ver)
+	return ver, err
+}

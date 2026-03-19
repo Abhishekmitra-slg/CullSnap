@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
 import { SettingsModal } from './components/SettingsModal';
+import { AboutModal } from './components/AboutModal';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
 
@@ -35,6 +36,7 @@ function App() {
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [aboutOpen, setAboutOpen] = useState(false);
 
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
@@ -372,6 +374,7 @@ function App() {
                 dedupCompleted={dedupCompleted}
                 duplicateCount={duplicateGroups.reduce((acc, g) => acc + g.length, 0)}
                 onOpenSettings={() => setSettingsOpen(true)}
+                onOpenAbout={() => setAboutOpen(true)}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>
@@ -416,6 +419,7 @@ function App() {
             )}
 
             {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+            {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
         </div>
     );
 }
