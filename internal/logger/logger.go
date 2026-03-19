@@ -8,8 +8,10 @@ import (
 	"runtime"
 )
 
-var Log *slog.Logger
-var LogPath string
+var (
+	Log     *slog.Logger
+	LogPath string
+)
 
 // Init initializes the global logger to write to the specified file.
 func Init(filename string) error {
@@ -23,7 +25,7 @@ func Init(filename string) error {
 		LogPath = filepath.Join(wd, filename)
 	}
 
-	file, err := os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	file, err := os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 	if err != nil {
 		return err
 	}

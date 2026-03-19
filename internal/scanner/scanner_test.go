@@ -25,10 +25,10 @@ func TestScanDirectory(t *testing.T) {
 
 	for _, f := range files {
 		path := filepath.Join(tempDir, f)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("Failed to create subdirectories: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("dummy content"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte("dummy content"), 0o644); err != nil {
 			t.Fatalf("Failed to create file %s: %v", path, err)
 		}
 	}
@@ -58,7 +58,7 @@ func TestScanDirectory(t *testing.T) {
 func TestScanDirectory_ReturnsBeforeFFprobe(t *testing.T) {
 	dir := t.TempDir()
 	fakeMp4 := filepath.Join(dir, "test.mp4")
-	if err := os.WriteFile(fakeMp4, []byte("fake"), 0644); err != nil {
+	if err := os.WriteFile(fakeMp4, []byte("fake"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

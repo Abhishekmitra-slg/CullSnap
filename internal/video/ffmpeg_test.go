@@ -18,7 +18,7 @@ echo "%s"
 exit 0
 `, output)
 
-	if err := os.WriteFile(binPath, []byte(scriptContent), 0755); err != nil {
+	if err := os.WriteFile(binPath, []byte(scriptContent), 0o755); err != nil {
 		t.Fatalf("Failed to create mock bin: %v", err)
 	}
 

@@ -167,4 +167,3 @@ func TestRatings(t *testing.T) {
 		t.Errorf("Expected 1 rating after deletion, got %d", len(ratings))
 	}
 }
-
