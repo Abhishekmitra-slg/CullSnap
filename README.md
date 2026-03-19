@@ -181,11 +181,11 @@ CullSnap/
 
 ## 🔒 Security
 
-Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for our responsible disclosure policy. **Do not open public issues for security bugs.**
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 All contributors must sign a [Contributor License Agreement (CLA)](LICENSE-COMMERCIAL.md#contributor-license-agreement-cla) before their first PR can be merged.
 
