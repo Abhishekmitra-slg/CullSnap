@@ -23,7 +23,7 @@ type ThumbCache struct {
 // NewThumbCache creates a ThumbCache at the given directory with 0700 permissions.
 // Pass AppConfig.CacheDir to ensure the cache location matches what the media server uses.
 func NewThumbCache(cacheDir string) (*ThumbCache, error) {
-	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create thumbnail cache: %w", err)
 	}
 	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir)
@@ -66,7 +66,7 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 	}
 
 	if isVideo {
-		// Extract thumbnail directly to the cache file (atomic rename not as easy with external commands, 
+		// Extract thumbnail directly to the cache file (atomic rename not as easy with external commands,
 		// but we can extract to temp and rename)
 		tmpPath := thumbPath + ".tmp"
 		if err := video.ExtractThumbnail(path, tmpPath); err != nil {
@@ -87,7 +87,7 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 
 		// Write to temp file then rename for atomicity (no partial files visible)
 		tmpPath := thumbPath + ".tmp"
-		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
 		}

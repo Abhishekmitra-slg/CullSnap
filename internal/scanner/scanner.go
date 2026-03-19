@@ -44,7 +44,7 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 			if err != nil {
 				return nil // Skip if can't get info
 			}
-			
+
 			isVideo := isVideoExt(ext)
 
 			p := model.Photo{

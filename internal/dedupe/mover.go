@@ -17,7 +17,7 @@ func MoveDuplicate(originalPath string) (string, error) {
 	dupeDir := filepath.Join(dir, "duplicates")
 
 	// Ensure duplicates directory exists
-	err := os.MkdirAll(dupeDir, 0755)
+	err := os.MkdirAll(dupeDir, 0o755)
 	if err != nil {
 		return "", fmt.Errorf("failed to create duplicates dir: %w", err)
 	}

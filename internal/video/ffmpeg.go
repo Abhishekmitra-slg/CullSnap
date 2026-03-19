@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	binDir     string
-	ffmpegPath string
+	binDir      string
+	ffmpegPath  string
 	ffprobePath string
 )
 
@@ -31,7 +31,7 @@ func Init() error {
 		return err
 	}
 	binDir = filepath.Join(home, ".cullsnap", "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return err
 	}
 
@@ -154,7 +154,7 @@ func downloadAndExtractGz(url, destPath string) error {
 	}
 	defer func() { _ = gzReader.Close() }()
 
-	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return err
 	}
@@ -201,7 +201,7 @@ func extractZipEntry(file *zip.File, destPath string) error {
 	}
 	defer func() { _ = zippedFile.Close() }()
 
-	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return err
 	}
