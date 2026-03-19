@@ -7,18 +7,17 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cullsnap/internal/app"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/video"
-
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -30,13 +29,45 @@ import (
 var assets embed.FS
 
 type FileLoader struct {
-	sem       chan struct{}    // limits concurrent file-serving goroutines
-	serverCtx context.Context // cancelled on app shutdown
-	cacheDir  string          // for Cache-Control header detection
+	sem        chan struct{}    // limits concurrent file-serving goroutines
+	serverCtx  context.Context // cancelled on app shutdown
+	cacheDir   string          // for Cache-Control header detection
+	allowedMu  sync.RWMutex   // protects allowedDirs
+	allowedDirs []string       // directories the user has explicitly opened
+}
+
+// AllowDirectory adds a directory to the allowlist of paths the media server may serve.
+func (h *FileLoader) AllowDirectory(dir string) {
+	cleaned := filepath.Clean(dir)
+	h.allowedMu.Lock()
+	defer h.allowedMu.Unlock()
+	for _, d := range h.allowedDirs {
+		if d == cleaned {
+			return
+		}
+	}
+	h.allowedDirs = append(h.allowedDirs, cleaned)
+}
+
+// isPathAllowed checks whether filePath falls inside any allowed directory or the cache dir.
+func (h *FileLoader) isPathAllowed(filePath string) bool {
+	cleaned := filepath.Clean(filePath)
+	// Always allow serving from the thumbnail cache
+	if strings.HasPrefix(cleaned, h.cacheDir) {
+		return true
+	}
+	h.allowedMu.RLock()
+	defer h.allowedMu.RUnlock()
+	for _, dir := range h.allowedDirs {
+		if strings.HasPrefix(cleaned, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	res.Header().Set("Access-Control-Allow-Origin", "*")
+	res.Header().Set("Access-Control-Allow-Origin", "http://localhost:34342")
 	res.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	res.Header().Set("Access-Control-Allow-Headers", "Range")
 	res.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
@@ -65,29 +96,22 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			return
 		}
 
+		// Path traversal protection: only serve files within user-opened directories or cache
+		if !h.isPathAllowed(filePath) {
+			logger.Log.Warn("MediaServer blocked request for path outside allowed directories", "path", filePath)
+			http.Error(res, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		logger.Log.Debug("MediaServer serving media", "path", filePath)
 
-		// Set Cache-Control based on content type:
-		// - thumbnails (in cache dir): long-lived public cache
-		// - videos: no-store (range requests go to server; browser cache unsuitable for large files)
-		// - full-res photos: short private cache (avoids re-fetching 40MB images in the viewer)
 		setCacheControl(res, filePath, h.cacheDir)
-
 		http.ServeFile(res, req, filePath)
 		return
 	}
 
-	logger.Log.Debug("MediaServer fallback", "path", requestedPath)
-
-	requestedFilename, err := url.PathUnescape(requestedPath)
-	if err != nil {
-		requestedFilename = requestedPath
-	}
-	if !strings.HasPrefix(requestedFilename, "/") {
-		requestedFilename = "/" + requestedFilename
-	}
-	setCacheControl(res, requestedFilename, h.cacheDir)
-	http.ServeFile(res, req, requestedFilename)
+	// Reject fallback path — only /wails-media with validated paths is allowed
+	http.Error(res, "Not found", http.StatusNotFound)
 }
 
 var videoExtensions = map[string]bool{
@@ -222,7 +246,7 @@ func main() {
 
 	go func() {
 		mediaServer := &http.Server{
-			Addr:         ":34342",
+			Addr:         "127.0.0.1:34342",
 			Handler:      panicRecoveryMiddleware(loader),
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 0, // MUST be 0 — streaming large video files has no fixed deadline
@@ -240,6 +264,7 @@ func main() {
 
 	// Create an instance of the app structure
 	application := app.NewApp(store)
+	application.OnAllowDir = loader.AllowDirectory
 
 	// Create application with options
 	err = wails.Run(&options.App{

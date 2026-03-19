@@ -12,7 +12,7 @@
   <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go" alt="Go Version" /></a>
   <a href="wails.json"><img src="https://img.shields.io/badge/Wails-v2.11-E34F26?style=flat-square" alt="Wails Version" /></a>
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest"><img src="https://img.shields.io/github/v/release/Abhishekmitra-slg/CullSnap?style=flat-square&color=blue" alt="Latest Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
 </p>
 
 <p align="center">
@@ -20,7 +20,8 @@
   <a href="#-features">Features</a> &middot;
   <a href="#-usage-guide">Usage</a> &middot;
   <a href="#-architecture">Architecture</a> &middot;
-  <a href="#building-from-source">Build</a> &middot;
+  <a href="#-contributing">Contributing</a> &middot;
+  <a href="#-license">License</a> &middot;
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest">Download</a>
 </p>
 
@@ -178,8 +179,23 @@ CullSnap/
     └── index.css                    # Navy/violet theme, glassmorphism, animations
 ```
 
+## 🔒 Security
+
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for our responsible disclosure policy. **Do not open public issues for security bugs.**
+
 ## 🤝 Contributing
+
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
+All contributors must sign a [Contributor License Agreement (CLA)](LICENSE-COMMERCIAL.md#contributor-license-agreement-cla) before their first PR can be merged.
+
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+CullSnap is dual-licensed:
+
+- **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
+- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
+
+## ⚖️ Code of Conduct
+
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). Please read it before participating.

@@ -1,20 +1,25 @@
-## Description
-Provide a brief description of the PR's purpose here.
+## Summary
 
-## Related Issue
-If this PR addresses an existing issue, please link it (e.g., "Fixes #123").
+**What** does this PR do and **why**?
 
-## Explanation of Changes
-- Briefly list the changes you have made.
-- Note any new dependencies or architectural shifts.
+## Type of Change
 
-## Testing Instructions
-- What OS was this tested on?
-- What test data (e.g. types of RAW files / Folder size) did you test this against?
-- Provide instructions so reviewers can verify your changes locally.
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to change)
+- [ ] Documentation update
 
 ## Checklist
-- [ ] I have read the `CONTRIBUTING.md` document.
-- [ ] My code follows the code style of this project.
-- [ ] I have tested my changes locally using `make dev` or `make build`.
-- [ ] I have updated the documentation accordingly (if applicable).
+
+- [ ] `wails build` succeeds without errors
+- [ ] Lint is clean (`go vet ./...` and frontend lint)
+- [ ] No secrets or credentials committed
+- [ ] Tested on: <!-- e.g., macOS 15, Windows 11 -->
+
+## Related Issues
+
+Closes #
+
+## Screenshots
+
+<!-- If this includes UI changes, add before/after screenshots. -->

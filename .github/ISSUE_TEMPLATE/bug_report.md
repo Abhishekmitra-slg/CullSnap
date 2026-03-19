@@ -1,31 +1,34 @@
 ---
-name: Bug report
-about: Create a report to help us improve CullSnap
-title: '[BUG] '
-labels: bug
-assignees: ''
+name: Bug Report
+description: Report a bug in CullSnap
+title: "[Bug]: "
+labels: ["bug"]
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Description
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Open folder '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+A clear and concise description of the bug.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Steps to Reproduce
 
-**Screenshots**
-If applicable, add screenshots or recordings to help explain your problem.
+1. Open CullSnap and load a folder with ...
+2. Click on ...
+3. Observe ...
 
-**Desktop (please complete the following information):**
- - OS: [e.g. macOS Sonoma]
- - Version [e.g. 14.5]
- - CPU/RAM Specs if performance related:
+## Expected Behavior
 
-**Additional context**
-Add any other context about the problem here (e.g. types of raw files used).
+What you expected to happen.
+
+## Actual Behavior
+
+What actually happened.
+
+## Environment
+
+- **OS**: (e.g., macOS 15.2, Windows 11, Ubuntu 24.04)
+- **CullSnap version**: (e.g., v1.1.0)
+- **FFmpeg version**: (e.g., 7.1 -- run `ffmpeg -version`)
+
+## Screenshots / Logs
+
+If applicable, add screenshots or paste relevant log output.

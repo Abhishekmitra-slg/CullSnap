@@ -29,14 +29,15 @@ import (
 
 // App struct
 type App struct {
-	ctx          context.Context
-	store        *storage.SQLiteStore
-	dedupeMutex  sync.Mutex
-	dedupeCancel context.CancelFunc
-	thumbCache   *cullImage.ThumbCache
-	cfg          *AppConfig
-	enrichMu     sync.Mutex
-	enrichCancel context.CancelFunc
+	ctx            context.Context
+	store          *storage.SQLiteStore
+	dedupeMutex    sync.Mutex
+	dedupeCancel   context.CancelFunc
+	thumbCache     *cullImage.ThumbCache
+	cfg            *AppConfig
+	enrichMu       sync.Mutex
+	enrichCancel   context.CancelFunc
+	OnAllowDir     func(dir string) // called to register a directory with the media server allowlist
 }
 
 // NewApp creates a new App application struct
@@ -162,6 +163,9 @@ func (a *App) SelectDirectory() (string, error) {
 	}
 	if dir != "" {
 		a.store.AddRecent(dir)
+		if a.OnAllowDir != nil {
+			a.OnAllowDir(dir)
+		}
 	}
 	return dir, nil
 }
@@ -241,6 +245,9 @@ func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 	logger.Log.Info("Scanning directory", "path", path)
 	a.store.AddRecent(path)
+	if a.OnAllowDir != nil {
+		a.OnAllowDir(path)
+	}
 	photos, err := scanner.ScanDirectory(path)
 	if err != nil {
 		return nil, err
