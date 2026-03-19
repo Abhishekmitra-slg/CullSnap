@@ -211,11 +211,12 @@ func parseContributors(raw string) []Contributor {
 			}
 			current = &Contributor{Name: strings.TrimSpace(strings.TrimPrefix(trimmed, "- name:"))}
 		} else if current != nil {
-			if strings.HasPrefix(trimmed, "github:") {
+			switch {
+			case strings.HasPrefix(trimmed, "github:"):
 				current.GitHub = strings.TrimSpace(strings.TrimPrefix(trimmed, "github:"))
-			} else if strings.HasPrefix(trimmed, "role:") {
+			case strings.HasPrefix(trimmed, "role:"):
 				current.Role = strings.TrimSpace(strings.TrimPrefix(trimmed, "role:"))
-			} else if strings.HasPrefix(trimmed, "bio:") {
+			case strings.HasPrefix(trimmed, "bio:"):
 				current.Bio = strings.TrimSpace(strings.TrimPrefix(trimmed, "bio:"))
 			}
 		}
