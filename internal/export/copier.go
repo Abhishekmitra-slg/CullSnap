@@ -14,7 +14,7 @@ import (
 // ExportSelections copies selected photos to the destination directory.
 // It returns the number of successfully copied files and any error encountered.
 func ExportSelections(photos []model.Photo, destDir string) (int, error) {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return 0, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 

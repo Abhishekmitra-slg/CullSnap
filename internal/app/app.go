@@ -308,10 +308,6 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	}
 
 	// Build item list with mod times
-	type thumbItem struct {
-		Path    string
-		ModTime time.Time
-	}
 	items := make([]struct {
 		Path    string
 		ModTime time.Time
