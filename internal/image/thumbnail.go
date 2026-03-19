@@ -19,7 +19,7 @@ func GetThumbnail(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() // read-only; Close error is safe to ignore
 
 	// 1. Try to extract embedded thumbnail from EXIF
 	x, err := exif.Decode(f)

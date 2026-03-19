@@ -71,12 +71,12 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 		// but we can extract to temp and rename)
 		tmpPath := thumbPath + ".tmp"
 		if err := video.ExtractThumbnail(path, tmpPath); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath) // best-effort cleanup
 			return "", fmt.Errorf("video thumbnail extraction failed for %s: %w", filepath.Base(path), err)
 		}
 
 		if err := os.Rename(tmpPath, thumbPath); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath) // best-effort cleanup
 			return "", err
 		}
 	} else {
@@ -94,19 +94,19 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 		}
 
 		if err := jpeg.Encode(f, thumb, &jpeg.Options{Quality: 80}); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
+			_ = f.Close()          // best-effort close on encode failure
+			_ = os.Remove(tmpPath) // best-effort cleanup
 			return "", fmt.Errorf("failed to encode thumbnail: %w", err)
 		}
 
 		if err := f.Close(); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath) // best-effort cleanup
 			return "", fmt.Errorf("failed to close thumbnail file: %w", err)
 		}
 
 		// Atomic rename
 		if err := os.Rename(tmpPath, thumbPath); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath) // best-effort cleanup
 			return "", err
 		}
 	}
