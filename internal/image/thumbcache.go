@@ -18,7 +18,6 @@ import (
 // Thumbnails are stored in a user-private directory with restricted permissions.
 type ThumbCache struct {
 	cacheDir string
-	mu       sync.Mutex
 }
 
 // NewThumbCache creates a ThumbCache at the given directory with 0700 permissions.

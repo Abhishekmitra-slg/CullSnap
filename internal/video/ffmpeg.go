@@ -186,26 +186,31 @@ func downloadAndExtractZip(url, destPath, binName string) error {
 
 	for _, file := range zipReader.File {
 		if strings.HasPrefix(file.Name, binName) {
-			zippedFile, err := file.Open()
-			if err != nil {
-				return err
-			}
-			defer func() { _ = zippedFile.Close() }()
-
-			outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = outFile.Close() }()
-
-			if _, err := io.Copy(outFile, zippedFile); err != nil {
-				return err
-			}
-			return nil
+			return extractZipEntry(file, destPath)
 		}
 	}
 
 	return fmt.Errorf("executable %s not found in zip", binName)
+}
+
+// extractZipEntry extracts a single zip file entry to destPath.
+func extractZipEntry(file *zip.File, destPath string) error {
+	zippedFile, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = zippedFile.Close() }()
+
+	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = outFile.Close() }()
+
+	if _, err := io.Copy(outFile, zippedFile); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetDuration returns the duration of a video in seconds.

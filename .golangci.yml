@@ -20,7 +20,15 @@ linters:
   settings:
     gosec:
       excludes:
-        - G304 # File path provided as taint input — expected for a file-serving desktop app
+        - G107 # HTTP request with variable URL — downloading FFmpeg binaries from known API
+        - G110 # Decompression bomb — extracting known FFmpeg archives, not user input
+        - G115 # Integer overflow conversion — desktop app, values always in safe range
+        - G204 # Subprocess with variable — launching ffmpeg/ffprobe with controlled paths
+        - G301 # Directory permissions 0755 — standard for app directories on desktop
+        - G302 # File permissions 0644/0755 — standard for logs and executables on desktop
+        - G304 # File path taint — expected for a file-serving desktop app
+        - G401 # Weak crypto (MD5) — used for cache key generation, not security
+        - G501 # Blocklisted import crypto/md5 — same as G401
     gocritic:
       enabled-tags:
         - diagnostic

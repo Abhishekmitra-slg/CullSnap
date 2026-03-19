@@ -1,10 +1,11 @@
 package export
 
 import (
-	"cullsnap/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"cullsnap/internal/model"
 )
 
 func TestExportSelections(t *testing.T) {
@@ -28,7 +29,7 @@ func TestExportSelections(t *testing.T) {
 
 	for _, f := range srcFiles {
 		path := filepath.Join(srcDir, f)
-		if err := os.WriteFile(path, []byte("test data"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte("test data"), 0o644); err != nil {
 			t.Fatalf("Failed to create source file: %v", err)
 		}
 		photos = append(photos, model.Photo{Path: path})
@@ -62,7 +63,7 @@ func TestUniquePath(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	baseFile := filepath.Join(tempDir, "test.jpg")
-	os.WriteFile(baseFile, []byte{}, 0644)
+	os.WriteFile(baseFile, []byte{}, 0o644)
 
 	// First collision
 	newPath := uniquePath(baseFile)
@@ -72,7 +73,7 @@ func TestUniquePath(t *testing.T) {
 	}
 
 	// Create the colliding file
-	os.WriteFile(expected1, []byte{}, 0644)
+	os.WriteFile(expected1, []byte{}, 0o644)
 
 	// Second collision
 	newPath2 := uniquePath(baseFile)
