@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
 
@@ -12,17 +14,16 @@ linters:
     - gofumpt
     - gocritic
     - misspell
-
-linters-settings:
-  gosec:
-    excludes:
-      - G304 # File path provided as taint input — expected for a file-serving desktop app
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-    disabled-checks:
-      - hugeParam # Desktop app, not a hot path concern
+  settings:
+    gosec:
+      excludes:
+        - G304 # File path provided as taint input — expected for a file-serving desktop app
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - hugeParam
 
 issues:
   exclude-rules:
