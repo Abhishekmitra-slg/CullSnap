@@ -57,11 +57,13 @@ jobs:
 
       - name: Build Wails App
         shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            wails build -platform ${{ matrix.platform }} -clean -m -tags webkit2_41
+            wails build -platform ${{ matrix.platform }} -clean -m -tags webkit2_41 -ldflags "-X main.version=$VERSION"
           else
-            wails build -platform ${{ matrix.platform }} -clean -m
+            wails build -platform ${{ matrix.platform }} -clean -m -ldflags "-X main.version=$VERSION"
           fi
 
       - name: Compress macOS Binary

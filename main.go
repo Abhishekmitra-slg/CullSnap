@@ -28,6 +28,12 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed CONTRIBUTORS.yml
+var contributorsYML string
+
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
+
 type FileLoader struct {
 	sem        chan struct{}    // limits concurrent file-serving goroutines
 	serverCtx  context.Context // cancelled on app shutdown
@@ -268,6 +274,8 @@ func main() {
 	// Create an instance of the app structure
 	application := app.NewApp(store)
 	application.OnAllowDir = loader.AllowDirectory
+	application.Version = version
+	application.ContributorsRaw = contributorsYML
 
 	// Create application with options
 	err = wails.Run(&options.App{

@@ -27,17 +27,40 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// Contributor represents a project contributor parsed from CONTRIBUTORS.yml.
+type Contributor struct {
+	Name   string `json:"name"`
+	GitHub string `json:"github"`
+	Role   string `json:"role"`
+	Bio    string `json:"bio"`
+	Avatar string `json:"avatar"`
+}
+
+// AboutInfo contains app metadata returned by GetAboutInfo.
+type AboutInfo struct {
+	Version       string        `json:"version"`
+	GoVersion     string        `json:"goVersion"`
+	WailsVersion  string        `json:"wailsVersion"`
+	SQLiteVersion string        `json:"sqliteVersion"`
+	FFmpegVersion string        `json:"ffmpegVersion"`
+	License       string        `json:"license"`
+	Repo          string        `json:"repo"`
+	Contributors  []Contributor `json:"contributors"`
+}
+
 // App struct
 type App struct {
-	ctx          context.Context
-	store        *storage.SQLiteStore
-	dedupeMutex  sync.Mutex
-	dedupeCancel context.CancelFunc
-	thumbCache   *cullImage.ThumbCache
-	cfg          *AppConfig
-	enrichMu     sync.Mutex
-	enrichCancel context.CancelFunc
-	OnAllowDir   func(dir string) // called to register a directory with the media server allowlist
+	ctx             context.Context
+	store           *storage.SQLiteStore
+	dedupeMutex     sync.Mutex
+	dedupeCancel    context.CancelFunc
+	thumbCache      *cullImage.ThumbCache
+	cfg             *AppConfig
+	enrichMu        sync.Mutex
+	enrichCancel    context.CancelFunc
+	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
+	Version         string           // set from main.version (build-time ldflags)
+	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
 }
 
 // NewApp creates a new App application struct
@@ -146,6 +169,62 @@ func (a *App) SaveAppConfig(cfg AppConfig) error {
 	a.cfg = &cfg
 	a.persistConfig(&cfg)
 	return nil
+}
+
+// GetAboutInfo returns app metadata, tech stack versions, and contributors.
+func (a *App) GetAboutInfo() *AboutInfo {
+	info := &AboutInfo{
+		Version:       a.Version,
+		GoVersion:     stdruntime.Version(),
+		WailsVersion:  "v2.11.0",
+		SQLiteVersion: a.getSQLiteVersion(),
+		FFmpegVersion: video.GetFFmpegVersion(),
+		License:       "AGPL-3.0",
+		Repo:          "https://github.com/Abhishekmitra-slg/CullSnap",
+		Contributors:  parseContributors(a.ContributorsRaw),
+	}
+	return info
+}
+
+func (a *App) getSQLiteVersion() string {
+	ver, err := a.store.GetSQLiteVersion()
+	if err != nil {
+		return "unknown"
+	}
+	return ver
+}
+
+// parseContributors parses the simple YAML list format from CONTRIBUTORS.yml.
+func parseContributors(raw string) []Contributor {
+	var contributors []Contributor
+	var current *Contributor
+
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "---" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "- name:") {
+			if current != nil {
+				current.Avatar = fmt.Sprintf("https://github.com/%s.png", current.GitHub)
+				contributors = append(contributors, *current)
+			}
+			current = &Contributor{Name: strings.TrimSpace(strings.TrimPrefix(trimmed, "- name:"))}
+		} else if current != nil {
+			if strings.HasPrefix(trimmed, "github:") {
+				current.GitHub = strings.TrimSpace(strings.TrimPrefix(trimmed, "github:"))
+			} else if strings.HasPrefix(trimmed, "role:") {
+				current.Role = strings.TrimSpace(strings.TrimPrefix(trimmed, "role:"))
+			} else if strings.HasPrefix(trimmed, "bio:") {
+				current.Bio = strings.TrimSpace(strings.TrimPrefix(trimmed, "bio:"))
+			}
+		}
+	}
+	if current != nil {
+		current.Avatar = fmt.Sprintf("https://github.com/%s.png", current.GitHub)
+		contributors = append(contributors, *current)
+	}
+	return contributors
 }
 
 // ResetAppConfig re-runs the system probe and resets config to derived defaults.

@@ -262,3 +262,22 @@ func TrimVideo(src, dest string, start, end float64) error {
 	}
 	return nil
 }
+
+// GetFFmpegVersion returns the FFmpeg version string, or "not installed" if unavailable.
+func GetFFmpegVersion() string {
+	if ffmpegPath == "" {
+		return "not installed"
+	}
+	cmd := exec.Command(ffmpegPath, "-version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "not installed"
+	}
+	// First line: "ffmpeg version N.N.N ..."
+	firstLine := strings.SplitN(string(out), "\n", 2)[0]
+	parts := strings.Fields(firstLine)
+	if len(parts) >= 3 {
+		return parts[2]
+	}
+	return firstLine
+}

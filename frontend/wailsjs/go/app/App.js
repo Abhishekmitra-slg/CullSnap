@@ -14,6 +14,10 @@ export function ExportPhotos(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportPhotos'](arg1, arg2, arg3);
 }
 
+export function GetAboutInfo() {
+  return window['go']['app']['App']['GetAboutInfo']();
+}
+
 export function GetAppConfig() {
   return window['go']['app']['App']['GetAppConfig']();
 }
