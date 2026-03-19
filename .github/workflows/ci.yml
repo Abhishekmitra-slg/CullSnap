@@ -24,11 +24,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Install golangci-lint from source
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
-        with:
-          version: v2.1.6
-          args: --timeout 5m ./internal/...
+        run: golangci-lint run --timeout 5m ./internal/...
 
   test:
     name: Test
