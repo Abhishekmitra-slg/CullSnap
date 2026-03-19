@@ -5,7 +5,7 @@ run:
 
 formatters:
   enable:
-    - gofmt
+    - gofumpt
 
 linters:
   enable:

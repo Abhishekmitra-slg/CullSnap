@@ -1,6 +1,7 @@
 package image
 
 import (
+	"cullsnap/internal/logger"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"cullsnap/internal/logger"
 )
 
 func createTestJpeg(path string) error {

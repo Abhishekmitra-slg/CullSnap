@@ -1,11 +1,10 @@
 package export
 
 import (
+	"cullsnap/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"cullsnap/internal/model"
 )
 
 func TestExportSelections(t *testing.T) {
