@@ -43,7 +43,6 @@ node_modules/
 
 # Wails build artifacts
 frontend/package.json.md5
-frontend/wailsjs/runtime/
 
 # Test output
 *.out
