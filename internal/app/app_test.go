@@ -13,13 +13,14 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("failed to create temp dir for logger: " + err.Error())
 	}
-	defer os.RemoveAll(tmpDir)
 
 	logPath := filepath.Join(tmpDir, "test.log")
 	if err := logger.Init(logPath); err != nil {
 		panic("failed to init logger: " + err.Error())
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
 func TestNewApp(t *testing.T) {
@@ -405,7 +406,7 @@ func TestCheckDedupStatus_WithDuplicateFiles(t *testing.T) {
 			t.Fatalf("failed to create test file %s: %v", name, err)
 		}
 		// Write some bytes so size > 0
-		_, _ = f.Write([]byte("fake image data"))
+		_, _ = f.WriteString("fake image data")
 		f.Close()
 	}
 
@@ -457,7 +458,7 @@ func TestCheckDedupStatus_AllSupportedExtensions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create test file with ext %s: %v", ext, err)
 		}
-		_, _ = f.Write([]byte("data"))
+		_, _ = f.WriteString("data")
 		f.Close()
 	}
 
