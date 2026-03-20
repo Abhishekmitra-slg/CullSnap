@@ -4,6 +4,7 @@ import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AboutModal } from './components/AboutModal';
+import { HelpModal } from './components/HelpModal';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
 
@@ -37,6 +38,7 @@ function App() {
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
+    const [helpOpen, setHelpOpen] = useState(false);
 
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
@@ -131,11 +133,21 @@ function App() {
                             ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
+            } else if (e.key >= '1' && e.key <= '5') {
+                if (activePhotoPath) {
+                    const star = parseInt(e.key, 10);
+                    const current = ratings[activePhotoPath] || 0;
+                    const newRating = current === star ? 0 : star;
+                    setRatings(prev => ({ ...prev, [activePhotoPath]: newRating }));
+                    SetPhotoRating(activePhotoPath, newRating).catch(err =>
+                        console.error('Failed to save rating:', err)
+                    );
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activePhotoPath, selectedPaths, photos, currentDir, setActivePhotoDebounced]);
+    }, [activePhotoPath, selectedPaths, photos, currentDir, ratings, setActivePhotoDebounced]);
 
     const handleOpenFolder = async () => {
         try {
@@ -375,6 +387,7 @@ function App() {
                 duplicateCount={duplicateGroups.reduce((acc, g) => acc + g.length, 0)}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onOpenAbout={() => setAboutOpen(true)}
+                onOpenHelp={() => setHelpOpen(true)}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>
@@ -420,6 +433,7 @@ function App() {
 
             {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+            {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
         </div>
     );
 }

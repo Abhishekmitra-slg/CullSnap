@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, X, Sun, Moon, Settings, Info } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -20,6 +20,7 @@ interface SidebarProps {
     duplicateCount: number;
     onOpenSettings: () => void;
     onOpenAbout: () => void;
+    onOpenHelp: () => void;
 }
 
 export function Sidebar({
@@ -38,11 +39,11 @@ export function Sidebar({
     dedupCompleted,
     duplicateCount,
     onOpenSettings,
-    onOpenAbout
+    onOpenAbout,
+    onOpenHelp
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
-    const [showHelp, setShowHelp] = useState(false);
     const [exportDialog, setExportDialog] = useState<{ destDir: string; folderName: string } | null>(null);
 
     useEffect(() => {
@@ -190,7 +191,7 @@ export function Sidebar({
                     <button className="btn w-full justify-center" onClick={OpenLog} title="Open Logs">
                         <FileText size={14} />
                     </button>
-                    <button className="btn w-full justify-center" onClick={() => setShowHelp(true)} title="Help">
+                    <button className="btn w-full justify-center" onClick={onOpenHelp} title="Help">
                         <HelpCircle size={14} />
                     </button>
                     <button className="btn w-full justify-center" onClick={onOpenAbout} title="About">
@@ -224,37 +225,6 @@ export function Sidebar({
                 </div>
             )}
 
-            {/* Help Modal */}
-            {showHelp && (
-                <div className="modal-overlay" onClick={() => setShowHelp(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-3">
-                            <h2 style={{ margin: 0 }}>Help & Shortcuts</h2>
-                            <button className="btn" onClick={() => setShowHelp(false)} style={{ padding: '4px 8px' }}>
-                                <X size={16} />
-                            </button>
-                        </div>
-
-                        <div className="text-small" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', lineHeight: '1.6' }}>
-                            <section>
-                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Getting Started</h3>
-                                <p>CullSnap is a high-performance photo culling tool. Click <strong>Open Folder</strong> to load a directory of images.</p>
-                            </section>
-                            <section>
-                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Keyboard Shortcuts</h3>
-                                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>S</kbd> — Toggle selection</li>
-                                    <li><kbd style={{ background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>← →</kbd> — Navigate photos</li>
-                                </ul>
-                            </section>
-                            <section>
-                                <h3 style={{ color: 'var(--accent)', fontSize: '0.8125rem', marginBottom: 6 }}>Exporting</h3>
-                                <p>Select photos with <strong>S</strong>, then click <strong>Export</strong>.</p>
-                            </section>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
