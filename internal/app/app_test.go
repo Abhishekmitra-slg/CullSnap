@@ -1,11 +1,10 @@
 package app
 
 import (
+	"cullsnap/internal/logger"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"cullsnap/internal/logger"
 )
 
 func TestMain(m *testing.M) {
