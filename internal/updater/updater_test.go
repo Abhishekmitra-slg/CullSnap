@@ -101,6 +101,27 @@ func TestCheckNow_Cooldown(t *testing.T) {
 	}
 }
 
+func TestDownloadUpdate_HomebrewNoop(t *testing.T) {
+	u := NewUpdater(context.Background(), "v1.0.0", nil, "notify")
+	u.isHomebrew = true
+
+	err := u.DownloadUpdate()
+	if err == nil {
+		t.Error("expected error for Homebrew download attempt")
+	}
+	if !strings.Contains(err.Error(), "Homebrew") {
+		t.Errorf("expected Homebrew error, got: %v", err)
+	}
+}
+
+func TestDownloadUpdate_NoRelease(t *testing.T) {
+	u := NewUpdater(context.Background(), "v1.0.0", nil, "notify")
+	err := u.DownloadUpdate()
+	if err == nil {
+		t.Error("expected error when no release cached")
+	}
+}
+
 func TestStateTransitions(t *testing.T) {
 	u := NewUpdater(nil, "v1.0.0", nil, "notify")
 

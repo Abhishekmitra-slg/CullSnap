@@ -25,11 +25,6 @@ const (
 	cooldownSec   = 60
 )
 
-// Ensure unused imports are referenced to satisfy the compiler during
-// incremental development; they are consumed in later tasks.
-var (
-	_ = exec.Command
-)
 
 // State represents the update lifecycle state machine.
 type State int
@@ -312,5 +307,112 @@ func (u *Updater) handleError(msg string) {
 	}
 }
 
-// download is a placeholder implemented in Task 5.
-func (u *Updater) download() {}
+// DownloadUpdate initiates a background download and application of the
+// latest release. It returns an error immediately if the install is managed
+// by Homebrew or if no update has been cached from a previous check.
+func (u *Updater) DownloadUpdate() error {
+	if u.isHomebrew {
+		return fmt.Errorf("Homebrew-managed install: use 'brew upgrade cullsnap' instead")
+	}
+
+	u.mu.Lock()
+	release := u.latestRelease
+	u.mu.Unlock()
+
+	if release == nil {
+		return fmt.Errorf("no update available to download")
+	}
+
+	go u.download()
+	return nil
+}
+
+// download performs the actual binary replacement using go-selfupdate. It
+// must be called from a goroutine; state transitions and event emission are
+// handled internally.
+func (u *Updater) download() {
+	u.mu.Lock()
+	if !u.canTransitionTo(StateDownloading) {
+		u.mu.Unlock()
+		return
+	}
+	u.state = StateDownloading
+	release := u.latestRelease
+	u.mu.Unlock()
+
+	if u.ctx != nil {
+		runtime.EventsEmit(u.ctx, "update:downloading", map[string]string{
+			"version": release.Version(),
+		})
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		u.handleError(fmt.Sprintf("Failed to locate executable: %v", err))
+		return
+	}
+
+	suUpdater, err := selfupdate.NewUpdater(u.config)
+	if err != nil {
+		u.handleError(fmt.Sprintf("Failed to create updater: %v", err))
+		return
+	}
+
+	err = suUpdater.UpdateTo(u.ctx, release, exe)
+	if err != nil {
+		u.handleError(fmt.Sprintf("Update failed: %v", err))
+		return
+	}
+
+	logger.Log.Info("Update applied", "version", release.Version())
+
+	u.mu.Lock()
+	u.state = StateReady
+	u.mu.Unlock()
+
+	if u.ctx != nil {
+		runtime.EventsEmit(u.ctx, "update:ready", map[string]string{
+			"version": release.Version(),
+		})
+	}
+}
+
+// RestartForUpdate launches a new instance of the running binary and then
+// quits the current process via the Wails runtime.
+//
+// The executable path is obtained from os.Executable (the running process
+// itself), resolved through any symlinks, and validated to be absolute before
+// use — it is never derived from user input.
+func (u *Updater) RestartForUpdate() error {
+	raw, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to locate executable: %w", err)
+	}
+
+	// Resolve symlinks so we always exec the real binary, not a wrapper.
+	exe, err := filepath.EvalSymlinks(raw)
+	if err != nil {
+		return fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+
+	// Require an absolute path as a safety invariant — os.Executable should
+	// always return one, but reject anything unexpected before passing it to
+	// exec.Command.
+	if !filepath.IsAbs(exe) {
+		return fmt.Errorf("executable path is not absolute: %q", exe)
+	}
+
+	// exe is the resolved, absolute path of the running process binary
+	// obtained from os.Executable — it is never user-supplied input.
+	cmd := exec.Command(exe) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to restart: %w", err)
+	}
+
+	if u.ctx != nil {
+		runtime.Quit(u.ctx)
+	}
+	return nil
+}
