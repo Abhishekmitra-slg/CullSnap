@@ -1,11 +1,16 @@
 package dedupe
 
 import (
+	"bytes"
 	"context"
+	"cullsnap/internal/raw"
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/disintegration/imaging"
 )
@@ -14,19 +19,35 @@ import (
 // High variance = sharp edges (in-focus). Low variance = smooth (blurry).
 // A common pure-Go implementation of OpenCV's Laplacian Variance.
 func CalculateLaplacianVariance(imgPath string) (variance float64, err error) {
-	file, err := os.Open(imgPath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to open image: %w", err)
-	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
+	ext := strings.ToLower(filepath.Ext(imgPath))
+	var img image.Image
 
-	img, _, err := image.Decode(file)
-	if err != nil {
-		return 0, fmt.Errorf("failed to decode image: %w", err)
+	if raw.IsRAWExt(ext) {
+		previewBytes, extractErr := raw.ExtractPreview(imgPath)
+		if extractErr != nil {
+			return 0, fmt.Errorf("RAW preview extraction failed: %w", extractErr)
+		}
+		decoded, decErr := jpeg.Decode(bytes.NewReader(previewBytes))
+		if decErr != nil {
+			return 0, fmt.Errorf("failed to decode RAW preview: %w", decErr)
+		}
+		img = decoded
+	} else {
+		file, openErr := os.Open(imgPath)
+		if openErr != nil {
+			return 0, fmt.Errorf("failed to open image: %w", openErr)
+		}
+		defer func() {
+			if cerr := file.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
+		}()
+
+		decoded, _, decErr := image.Decode(file)
+		if decErr != nil {
+			return 0, fmt.Errorf("failed to decode image: %w", decErr)
+		}
+		img = decoded
 	}
 
 	// 1. Resize/Downscale to speed up processing substantially.
