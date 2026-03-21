@@ -427,7 +427,50 @@ dcraw is GPL-2.0. CullSnap is AGPL-3.0 (GPL-compatible). The bundled dcraw binar
   - Windows: `dcraw.exe`
   - Linux: `dcraw` amd64
 
-## 19. Known Limitations
+## 19. Debug Logging
+
+All new code must include comprehensive debug logging so that production issues can be diagnosed without a new release. Use the existing `logger.Log` pattern.
+
+### Required log points:
+
+**`internal/raw/preview.go`:**
+- Format detected (path, format name, detection method)
+- TIFF header parsed (byte order, magic, IFD0 offset)
+- Each IFD visited (IFD index, entry count, compression type, preview size found)
+- Preview selected (offset, byte count, dimensions after decode)
+- Path A success/failure (path, format, duration, preview dimensions)
+- Fallback to Path B triggered (reason: no preview / too small / unsupported format)
+
+**`internal/raw/dcraw.go`:**
+- dcraw binary status on Init (found at path / not found / downloading)
+- dcraw invocation (path, args, timeout)
+- dcraw result (success with byte count / error with stderr output / timeout)
+
+**`internal/raw/pair.go`:**
+- Pairing summary (total files, pairs found, unpaired RAW, unpaired JPEG)
+- Each pair formed (RAW path + JPEG path)
+
+**`internal/image/thumbnail.go` / `thumbcache.go`:**
+- RAW file routed to ExtractPreview (path, format)
+- Preview cache hit/miss for full-res previews
+- Thumbnail generation duration for RAW files
+
+**`internal/app/app.go`:**
+- RAW module initialization result
+- EXIF extraction method chosen per file (direct TIFF / imagemeta / preview JPEG)
+
+**Media server (`main.go`):**
+- RAW preview request received (path)
+- Preview cache hit/miss
+- Preview extraction duration
+
+### Logging level:
+- Use `Debug` level for per-file operations (won't appear in normal usage)
+- Use `Info` level for initialization and summary stats
+- Use `Warn` level for fallback triggers and degraded functionality
+- Use `Error` level for failures
+
+## 20. Known Limitations
 
 - **BigTIFF:** Some Adobe-converted DNG files use BigTIFF (8-byte offsets, magic=43). The TIFF IFD parser detects this and returns an error. These files fall through to dcraw.
 - **dcraw development:** dcraw was last updated in 2018. Very new camera models (post-2018) may not be supported by dcraw. For these, Path A (Pure Go) is the primary path.
