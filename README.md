@@ -31,11 +31,12 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 
 ## ✨ Features
 
--   **Fast Photo & Video Grid**: Virtualized grid layout (TanStack Virtual, ~52 DOM nodes max) with cached disk thumbnails for buttery-smooth scrolling through 1000s of assets.
+-   **Fast Photo & Video Grid**: Virtualized grid layout (TanStack Virtual, ~52 DOM nodes max) with cached disk thumbnails for buttery-smooth scrolling through 1000s of assets. RAW files display format badges (CR3, ARW, NEF, etc.) directly on thumbnails.
 -   **Video Support**: Native support for MP4, MOV, WEBM, MKV, and AVI. Includes background duration extraction, frame-accurate thumbnail generation, and lossless trim-on-export via FFmpeg fast-seek.
 -   **Native Apple Silicon Support**: Automatically provisions native `arm64` FFmpeg and FFprobe binaries on Apple Silicon Macs, delivering maximum performance without Rosetta 2.
 -   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions. Worker count is auto-tuned from hardware and user-configurable.
 -   **Smart Deduplication**: Pure-Go perceptual hashing (dHash) automatically groups duplicate/burst photos and selects the sharpest image using a Laplacian Variance algorithm.
+-   **RAW Image Support**: Native support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Extracts embedded JPEG previews using a Pure Go TIFF IFD parser (Canon/Sony/Nikon/Leica) with dcraw fallback for Fujifilm, Panasonic, Olympus, and others. Includes RAW+JPEG companion pairing and format badges in the UI.
 -   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
 -   **Stable Media Architecture**: Dedicated high-speed server on port `34342` with panic recovery, connection semaphore, structured shutdown, and MIME-correct headers for all video formats.
@@ -66,6 +67,7 @@ graph LR
         Scanner["Directory Scanner\n(internal/scanner)"]
         ThumbCache["Thumbnail Cache\n(internal/image)"]
         FFmpeg["FFmpeg Engine\n(internal/video)"]
+        RAW["RAW Preview Engine\n(internal/raw)"]
         Dedupe["Perceptual Hash\n+ Quality Scoring"]
         Storage["SQLite Persistence\n(internal/storage)"]
         Config["System Probe\n+ AppConfig"]
@@ -135,7 +137,7 @@ make dev
 
 ## 🎮 Usage Guide
 
-1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive.
+1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, RAW, and video files.
 2.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
 3.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
 4.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
@@ -145,6 +147,18 @@ make dev
 8.  **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
 9.  **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
 10. **Settings**: Click the gear icon to view system info (OS, CPU, RAM, Storage, FFmpeg) and adjust performance tuning sliders.
+
+## 📷 Supported Formats
+
+| Category | Formats |
+|----------|---------|
+| **Images** | JPG, JPEG, PNG |
+| **RAW** | CR2 (Canon DSLR), CR3 (Canon mirrorless), ARW (Sony), NEF (Nikon), DNG (Adobe/Leica/Ricoh), RAF (Fujifilm), RW2 (Panasonic), ORF (Olympus/OM System), NRW (Nikon compact), PEF (Pentax), SRW (Samsung) |
+| **Video** | MP4, MOV, WEBM, MKV, AVI (requires FFmpeg) |
+
+RAW files are displayed with format badges in both the grid and viewer. When RAW+JPEG pairs are detected (same filename, same directory), CullSnap automatically links them as companions.
+
+> **Note:** Some RAW formats (RAF, RW2, ORF, NRW, PEF, SRW) require dcraw for preview extraction. CullSnap will attempt to provision dcraw automatically; if unavailable, these formats will be skipped while CR2, ARW, NEF, and DNG continue to work via the built-in Pure Go parser.
 
 ## 📁 Project Structure
 
@@ -163,7 +177,8 @@ CullSnap/
 │   ├── image/
 │   │   ├── thumbnail.go            # EXIF thumbnail extraction + resize fallback
 │   │   └── thumbcache.go           # Disk cache with parallel batch generation
-│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png + video)
+│   ├── raw/                        # RAW image support (TIFF parser, dcraw, preview cache)
+│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png + RAW + video)
 │   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
 │   ├── export/copier.go            # File copy with flush-error checking + video trim
 │   ├── model/photo.go              # Unified Photo struct
