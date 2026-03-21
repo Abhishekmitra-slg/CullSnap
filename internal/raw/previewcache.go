@@ -31,10 +31,14 @@ func GetCachedPreview(path string) ([]byte, error) {
 	return data, nil
 }
 
-// CachePreview writes a preview JPEG to the disk cache.
+// CachePreview writes a preview JPEG to the disk cache atomically (temp + rename).
 func CachePreview(path string, data []byte) error {
 	cachePath := previewCachePath(path)
-	return os.WriteFile(cachePath, data, 0o644)
+	tmpPath := cachePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, cachePath)
 }
 
 func previewCachePath(path string) string {
