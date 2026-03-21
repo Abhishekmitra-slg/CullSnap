@@ -53,7 +53,7 @@ func TestFindDuplicates(t *testing.T) {
 	}
 
 	// Find duplicates with a similarity threshold of 5
-	groups, err := FindDuplicates(context.Background(), tmpDir, 5, nil)
+	groups, err := FindDuplicates(context.Background(), tmpDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("FindDuplicates failed: %v", err)
 	}

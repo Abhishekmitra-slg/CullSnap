@@ -33,6 +33,11 @@ func NewThumbCache(cacheDir string) (*ThumbCache, error) {
 	return &ThumbCache{cacheDir: cacheDir}, nil
 }
 
+// CacheDir returns the directory where thumbnails are stored.
+func (tc *ThumbCache) CacheDir() string {
+	return tc.cacheDir
+}
+
 // cacheKey generates a unique filename for a given image path and modification time.
 // Uses MD5 of path+modTime to ensure cache invalidation when files change.
 func (tc *ThumbCache) cacheKey(path string, modTime time.Time) string {

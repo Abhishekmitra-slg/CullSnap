@@ -774,13 +774,18 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		}
 	}
 
-	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, emitProgress)
+	thumbnailDir := ""
+	if a.thumbCache != nil {
+		thumbnailDir = a.thumbCache.CacheDir()
+	}
+
+	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, thumbnailDir, emitProgress)
 	if err != nil {
 		return nil, err
 	}
 
 	// 2. Select the best quality photo in each group to represent the unique
-	err = dedupe.FindBestPhotos(appCtx, groups, emitProgress)
+	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress)
 	if err != nil {
 		return nil, err
 	}
