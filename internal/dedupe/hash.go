@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 
 	"github.com/corona10/goimagehash"
-	"github.com/disintegration/imaging"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -65,11 +64,7 @@ func hashImage(path string) (result *goimagehash.ImageHash, err error) {
 		img = decoded
 	}
 
-	// Downscale heavily before hashing to save matrix overhead inside hashing func
-	// a simple 256x256 is plenty for perceptual hashes.
-	thumb := imaging.Resize(img, 256, 0, imaging.NearestNeighbor)
-
-	hash, err := goimagehash.DifferenceHash(thumb)
+	hash, err := goimagehash.DifferenceHash(img)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute dHash for %s: %w", path, err)
 	}
