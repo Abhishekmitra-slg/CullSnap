@@ -103,6 +103,7 @@ export function AboutModal({ onClose }: AboutModalProps) {
                 <section className="settings-section">
                     <div style={{ textAlign: 'center', marginBottom: 16 }}>
                         <h3 style={{ fontSize: '1.25rem', margin: '0 0 4px' }}>CullSnap</h3>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 4px', fontStyle: 'italic' }}>Fast photo culling, simplified.</p>
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                             {about.version}
                         </span>
