@@ -3,6 +3,7 @@ package dedupe
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"cullsnap/internal/raw"
 	"fmt"
 	"image"
@@ -18,42 +19,59 @@ import (
 // CalculateLaplacianVariance computes the variance of the laplacian for an image.
 // High variance = sharp edges (in-focus). Low variance = smooth (blurry).
 // A common pure-Go implementation of OpenCV's Laplacian Variance.
-func CalculateLaplacianVariance(imgPath string) (variance float64, err error) {
-	ext := strings.ToLower(filepath.Ext(imgPath))
+func CalculateLaplacianVariance(imgPath string, thumbnailDir string) (variance float64, err error) {
 	var img image.Image
 
-	if raw.IsRAWExt(ext) {
-		previewBytes, extractErr := raw.ExtractPreview(imgPath)
-		if extractErr != nil {
-			return 0, fmt.Errorf("RAW preview extraction failed: %w", extractErr)
-		}
-		decoded, decErr := jpeg.Decode(bytes.NewReader(previewBytes))
-		if decErr != nil {
-			return 0, fmt.Errorf("failed to decode RAW preview: %w", decErr)
-		}
-		img = decoded
-	} else {
-		file, openErr := os.Open(imgPath)
-		if openErr != nil {
-			return 0, fmt.Errorf("failed to open image: %w", openErr)
-		}
-		defer func() {
-			if cerr := file.Close(); cerr != nil && err == nil {
-				err = cerr
+	// Try cached thumbnail first (local SSD, fast)
+	if thumbnailDir != "" {
+		if info, statErr := os.Stat(imgPath); statErr == nil {
+			h := md5.Sum([]byte(fmt.Sprintf("%s_%d", imgPath, info.ModTime().UnixNano())))
+			thumbPath := filepath.Join(thumbnailDir, fmt.Sprintf("%x.jpg", h))
+			if thumbFile, openErr := os.Open(thumbPath); openErr == nil {
+				if decoded, decErr := jpeg.Decode(thumbFile); decErr == nil {
+					img = decoded
+				}
+				_ = thumbFile.Close()
 			}
-		}()
-
-		decoded, _, decErr := image.Decode(file)
-		if decErr != nil {
-			return 0, fmt.Errorf("failed to decode image: %w", decErr)
 		}
-		img = decoded
+	}
+
+	// Fallback: read original file (RAW/JPEG)
+	if img == nil {
+		ext := strings.ToLower(filepath.Ext(imgPath))
+
+		if raw.IsRAWExt(ext) {
+			previewBytes, extractErr := raw.ExtractPreview(imgPath)
+			if extractErr != nil {
+				return 0, fmt.Errorf("RAW preview extraction failed: %w", extractErr)
+			}
+			decoded, decErr := jpeg.Decode(bytes.NewReader(previewBytes))
+			if decErr != nil {
+				return 0, fmt.Errorf("failed to decode RAW preview: %w", decErr)
+			}
+			img = decoded
+		} else {
+			file, openErr := os.Open(imgPath)
+			if openErr != nil {
+				return 0, fmt.Errorf("failed to open image: %w", openErr)
+			}
+			defer func() {
+				if cerr := file.Close(); cerr != nil && err == nil {
+					err = cerr
+				}
+			}()
+
+			decoded, _, decErr := image.Decode(file)
+			if decErr != nil {
+				return 0, fmt.Errorf("failed to decode image: %w", decErr)
+			}
+			img = decoded
+		}
 	}
 
 	// 1. Resize/Downscale to speed up processing substantially.
-	// Sharpness is largely retained at medium resolutions (e.g., 500x500).
-	// We do not need 24-megapixel calculations for relative sharpness grouping.
-	thumb := imaging.Resize(img, 500, 0, imaging.NearestNeighbor)
+	// Thumbnails are already 300px; originals benefit from the same target.
+	thumb := imaging.Resize(img, 300, 0, imaging.NearestNeighbor)
 
 	// 2. Grayscale conversion via imaging library
 	grayImg := imaging.Grayscale(thumb)
@@ -116,7 +134,7 @@ func colorToLuminance(c color.Color) float64 {
 }
 
 // FindBestPhoto updates the duplicate group by selecting the one with highest sharpness variance.
-func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, progressCallback func(current, total int, message string)) error {
+func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir string, progressCallback func(current, total int, message string)) error {
 	totalGroups := len(groups)
 	for i, group := range groups {
 		select {
@@ -145,7 +163,7 @@ func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, progressCallb
 				continue
 			}
 
-			variance, err := CalculateLaplacianVariance(photo.Path)
+			variance, err := CalculateLaplacianVariance(photo.Path, thumbnailDir)
 			if err != nil {
 				continue // Skip gracefully
 			}

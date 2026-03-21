@@ -62,12 +62,12 @@ func TestCalculateLaplacianVariance(t *testing.T) {
 		t.Fatalf("Failed to create sharp image: %v", err)
 	}
 
-	blurryVar, err := CalculateLaplacianVariance(blurryPath)
+	blurryVar, err := CalculateLaplacianVariance(blurryPath, "")
 	if err != nil {
 		t.Fatalf("CalculateLaplacianVariance failed for blurry: %v", err)
 	}
 
-	sharpVar, err := CalculateLaplacianVariance(sharpPath)
+	sharpVar, err := CalculateLaplacianVariance(sharpPath, "")
 	if err != nil {
 		t.Fatalf("CalculateLaplacianVariance failed for sharp: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestFindBestPhotos(t *testing.T) {
 		},
 	}
 
-	err = FindBestPhotos(context.Background(), []*DuplicateGroup{group}, nil)
+	err = FindBestPhotos(context.Background(), []*DuplicateGroup{group}, "", nil)
 	if err != nil {
 		t.Fatalf("FindBestPhotos failed: %v", err)
 	}
