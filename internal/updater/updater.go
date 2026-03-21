@@ -29,7 +29,6 @@ const (
 // incremental development; they are consumed in later tasks.
 var (
 	_ = exec.Command
-	_ = runtime.EventsEmit
 )
 
 // State represents the update lifecycle state machine.
@@ -190,3 +189,128 @@ func parseECDSAPublicKey(pemData []byte) (*ecdsa.PublicKey, error) {
 	}
 	return ecdsaKey, nil
 }
+
+// Start begins the background update check loop if update checks are enabled.
+func (u *Updater) Start() {
+	if !u.shouldRun {
+		return
+	}
+	go u.backgroundLoop()
+}
+
+// backgroundLoop runs an immediate check then rechecks on each interval tick
+// until the context is cancelled.
+func (u *Updater) backgroundLoop() {
+	u.check()
+
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			u.check()
+		case <-u.ctx.Done():
+			return
+		}
+	}
+}
+
+// CheckNow triggers an immediate update check. It returns an error if update
+// checks are disabled or if the cooldown period has not elapsed since the last
+// check.
+func (u *Updater) CheckNow() error {
+	if !u.shouldRun {
+		return fmt.Errorf("update checks disabled")
+	}
+
+	u.mu.Lock()
+	elapsed := time.Since(u.lastCheck)
+	u.mu.Unlock()
+
+	if elapsed < time.Duration(cooldownSec)*time.Second {
+		return fmt.Errorf("cooldown: please wait %d seconds", cooldownSec-int(elapsed.Seconds()))
+	}
+
+	go u.check()
+	return nil
+}
+
+// check performs a single update check: queries GitHub for the latest release,
+// compares it to the running version, and emits Wails events as appropriate.
+func (u *Updater) check() {
+	u.mu.Lock()
+	if !u.canTransitionTo(StateChecking) {
+		u.mu.Unlock()
+		return
+	}
+	u.state = StateChecking
+	u.lastCheck = time.Now()
+	u.mu.Unlock()
+
+	suUpdater, err := selfupdate.NewUpdater(u.config)
+	if err != nil {
+		u.handleError(fmt.Sprintf("Failed to create updater: %v", err))
+		return
+	}
+
+	latest, found, err := suUpdater.DetectLatest(u.ctx, selfupdate.ParseSlug(repoSlug))
+	if err != nil {
+		u.handleError(fmt.Sprintf("Update check failed: %v", err))
+		return
+	}
+
+	if !found {
+		u.mu.Lock()
+		u.state = StateIdle
+		u.mu.Unlock()
+		return
+	}
+
+	v := strings.TrimPrefix(u.currentVersion, "v")
+	if !latest.GreaterThan(v) {
+		logger.Log.Info("Already up to date", "current", u.currentVersion, "latest", latest.Version())
+		u.mu.Lock()
+		u.state = StateIdle
+		u.mu.Unlock()
+		return
+	}
+
+	logger.Log.Info("Update available", "current", u.currentVersion, "latest", latest.Version())
+	u.mu.Lock()
+	u.latestRelease = latest
+	u.mu.Unlock()
+
+	releaseURL := fmt.Sprintf("https://github.com/%s/releases/tag/v%s", repoSlug, latest.Version())
+	if u.ctx != nil {
+		runtime.EventsEmit(u.ctx, "update:available", map[string]interface{}{
+			"version":    latest.Version(),
+			"releaseURL": releaseURL,
+			"homebrew":   u.isHomebrew,
+		})
+	}
+
+	// In auto mode (non-Homebrew), proceed to download immediately.
+	if u.mode == "auto" && !u.isHomebrew {
+		u.download()
+	} else {
+		u.mu.Lock()
+		u.state = StateIdle
+		u.mu.Unlock()
+	}
+}
+
+// handleError logs an error, transitions the state machine to StateError, and
+// emits a Wails event if a context is available.
+func (u *Updater) handleError(msg string) {
+	logger.Log.Error("Update error", "message", msg)
+	u.mu.Lock()
+	u.state = StateError
+	u.mu.Unlock()
+	if u.ctx != nil {
+		runtime.EventsEmit(u.ctx, "update:error", map[string]string{"message": msg})
+	}
+}
+
+// download is a placeholder implemented in Task 5.
+func (u *Updater) download() {}

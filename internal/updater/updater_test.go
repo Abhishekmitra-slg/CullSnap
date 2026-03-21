@@ -1,10 +1,13 @@
 package updater
 
 import (
+	"context"
 	"cullsnap/internal/logger"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestMain(m *testing.M) {
@@ -82,6 +85,19 @@ func TestNewUpdater_NotifyMode(t *testing.T) {
 	}
 	if u.mode != "notify" {
 		t.Errorf("expected mode 'notify', got %q", u.mode)
+	}
+}
+
+func TestCheckNow_Cooldown(t *testing.T) {
+	u := NewUpdater(context.Background(), "v1.0.0", nil, "notify")
+	u.lastCheck = time.Now()
+
+	err := u.CheckNow()
+	if err == nil {
+		t.Error("expected cooldown error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cooldown") {
+		t.Errorf("expected cooldown error, got: %v", err)
 	}
 }
 
