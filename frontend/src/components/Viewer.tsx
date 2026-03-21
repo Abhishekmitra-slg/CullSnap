@@ -124,9 +124,9 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
         <div className="viewer-panel" style={{ position: 'relative' }}>
             {/* Main media */}
             <div className="viewer-image-container" style={{ position: 'relative' }}>
-                {photo.IsRAW && photo.RAWFormat && (
+                {photo.isRAW && photo.rawFormat && (
                     <div className="viewer-raw-badge">
-                        {photo.RAWFormat}{photo.CompanionPath ? ' + JPG' : ''}
+                        {photo.rawFormat}{photo.companionPath ? ' + JPG' : ''}
                     </div>
                 )}
                 {photo.IsVideo ? (

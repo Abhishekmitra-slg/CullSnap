@@ -136,9 +136,9 @@ export function Grid({
                                                 </span>
                                             </div>
                                         )}
-                                        {photo.IsRAW && photo.RAWFormat && (
+                                        {photo.isRAW && photo.rawFormat && (
                                             <div className="badge-raw">
-                                                {photo.RAWFormat}
+                                                {photo.rawFormat}
                                             </div>
                                         )}
                                         <img
