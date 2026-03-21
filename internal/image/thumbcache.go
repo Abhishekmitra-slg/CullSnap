@@ -1,8 +1,10 @@
 package image
 
 import (
+	"bytes"
 	"crypto/md5"
 	"cullsnap/internal/logger"
+	"cullsnap/internal/raw"
 	"cullsnap/internal/video"
 	"fmt"
 	"image/jpeg"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/disintegration/imaging"
 )
 
 // ThumbCache manages a disk-based thumbnail cache.
@@ -62,6 +66,49 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 	switch ext {
 	case ".mp4", ".mov", ".webm", ".mkv", ".avi":
 		isVideo = true
+	}
+
+	isRAW := raw.IsRAWExt(ext)
+
+	if isRAW {
+		logger.Log.Debug("thumbcache: generating RAW thumbnail", "path", path, "format", raw.FormatName(ext))
+		previewBytes, err := raw.ExtractPreview(path)
+		if err != nil {
+			return "", fmt.Errorf("RAW preview extraction failed for %s: %w", filepath.Base(path), err)
+		}
+
+		img, err := jpeg.Decode(bytes.NewReader(previewBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to decode RAW preview JPEG: %w", err)
+		}
+
+		thumb := imaging.Resize(img, 300, 0, imaging.Box)
+
+		// Atomic write: temp file → rename (same pattern as existing photo thumbnails)
+		tmpPath := thumbPath + ".tmp"
+		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
+		}
+
+		if err := jpeg.Encode(f, thumb, &jpeg.Options{Quality: 80}); err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to encode thumbnail: %w", err)
+		}
+
+		if err := f.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to close thumbnail file: %w", err)
+		}
+
+		if err := os.Rename(tmpPath, thumbPath); err != nil {
+			_ = os.Remove(tmpPath)
+			return "", err
+		}
+
+		logger.Log.Debug("thumbcache: RAW thumbnail generated", "path", path)
+		return thumbPath, nil
 	}
 
 	if isVideo {
