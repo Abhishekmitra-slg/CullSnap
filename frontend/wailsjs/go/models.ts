@@ -236,11 +236,15 @@ export namespace model {
 	    Duration: number;
 	    TrimStart: number;
 	    TrimEnd: number;
-	
+	    IsRAW: boolean;
+	    RAWFormat: string;
+	    CompanionPath: string;
+	    IsRAWCompanion: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new Photo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Path = source["Path"];
@@ -253,6 +257,10 @@ export namespace model {
 	        this.Duration = source["Duration"];
 	        this.TrimStart = source["TrimStart"];
 	        this.TrimEnd = source["TrimEnd"];
+	        this.IsRAW = source["IsRAW"];
+	        this.RAWFormat = source["RAWFormat"];
+	        this.CompanionPath = source["CompanionPath"];
+	        this.IsRAWCompanion = source["IsRAWCompanion"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

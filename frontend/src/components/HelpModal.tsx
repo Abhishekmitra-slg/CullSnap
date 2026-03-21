@@ -187,7 +187,7 @@ function ExportingTab() {
                     Supported formats
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Images: JPG, JPEG, PNG. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
+                    Images: JPG, JPEG, PNG, CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
                 </div>
             </div>
         </div>
