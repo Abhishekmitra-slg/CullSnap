@@ -24,8 +24,9 @@ Thumbs.db
 # Claude Code
 .claude/
 
-# Planning docs (brainstorm sessions, not specs)
+# Planning docs, specs, design docs (local working documents only)
 .superpowers/
+docs/superpowers/
 
 # Security & Secrets
 .env
