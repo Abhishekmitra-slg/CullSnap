@@ -1,0 +1,15 @@
+This file lists third-party components bundled with CullSnap.
+
+================================================================================
+dcraw — Raw Image Decoder
+================================================================================
+Author: Dave Coffin
+License: GPL-2.0
+Source: https://www.dechifro.org/dcraw/
+
+dcraw is distributed under the terms of the GNU General Public License
+version 2. A copy of the license is available at:
+https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+dcraw is used as a fallback binary for extracting embedded JPEG previews
+from camera RAW files (RAF, RW2, ORF, NRW, PEF, SRW formats).
