@@ -6,6 +6,7 @@ import (
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/model"
+	"cullsnap/internal/raw"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/updater"
@@ -96,6 +97,12 @@ func (a *App) Startup(ctx context.Context) {
 	// Start auto-update checker
 	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
 	a.updater.Start()
+
+	// Initialize RAW module (dcraw provisioning)
+	if err := raw.Init(); err != nil {
+		logger.Log.Error("Failed to initialize RAW module", "error", err)
+	}
+	logger.Log.Info("app: RAW module initialized")
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -691,7 +698,8 @@ func (a *App) CheckDedupStatus(dirPath string) (*DedupStatus, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".cr2" || ext == ".cr3" || ext == ".arw" || ext == ".nef" || ext == ".dng" {
+		isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || raw.IsRAWExt(ext)
+		if isImage {
 			fInfo, err := entry.Info()
 			if err != nil {
 				continue
@@ -748,6 +756,26 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		})
 	}
 
+	// Pre-scan for RAW+JPEG pairing
+	scannedPhotos, scanErr := scanner.ScanDirectory(path)
+	if scanErr != nil {
+		logger.Log.Warn("raw: pre-scan failed, proceeding without pairing", "error", scanErr)
+		scannedPhotos = nil
+	}
+	if scannedPhotos != nil {
+		scannedPhotos = raw.PairRAWJPEG(scannedPhotos)
+	}
+
+	// Build RAW metadata lookup map
+	rawMeta := make(map[string]model.Photo)
+	if scannedPhotos != nil {
+		for _, p := range scannedPhotos {
+			if p.IsRAW || p.IsRAWCompanion {
+				rawMeta[p.Path] = p
+			}
+		}
+	}
+
 	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, emitProgress)
 	if err != nil {
 		return nil, err
@@ -796,6 +824,14 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 				Path:    p.Path,
 				Size:    info.Size(),
 				TakenAt: date,
+			}
+
+			// Propagate RAW metadata from pre-scan pairing
+			if meta, ok := rawMeta[p.Path]; ok {
+				photoModel.IsRAW = meta.IsRAW
+				photoModel.RAWFormat = meta.RAWFormat
+				photoModel.CompanionPath = meta.CompanionPath
+				photoModel.IsRAWCompanion = meta.IsRAWCompanion
 			}
 
 			if p.IsUnique {
