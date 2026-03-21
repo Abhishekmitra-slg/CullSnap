@@ -31,6 +31,8 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [isDeduplicating, setIsDeduplicating] = useState(false);
     const [dedupeProgress, setDedupeProgress] = useState<{current: number, total: number, message: string} | null>(null);
+    const [dedupeStartTime, setDedupeStartTime] = useState<number | null>(null);
+    const [elapsedTime, setElapsedTime] = useState('');
     const [theme, setTheme] = useState<string>('dark');
     const [sysMetrics, setSysMetrics] = useState<SystemMetrics | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
@@ -95,6 +97,31 @@ function App() {
             }
         };
     }, []);
+
+    // Track elapsed time while deduplicating
+    useEffect(() => {
+        if (isDeduplicating) {
+            setDedupeStartTime(Date.now());
+            const interval = setInterval(() => {
+                setDedupeStartTime(prev => {
+                    if (!prev) return prev;
+                    const secs = Math.floor((Date.now() - prev) / 1000);
+                    if (secs < 60) {
+                        setElapsedTime(`${secs}s elapsed`);
+                    } else {
+                        const mins = Math.floor(secs / 60);
+                        const s = secs % 60;
+                        setElapsedTime(`${mins}m ${s}s elapsed`);
+                    }
+                    return prev;
+                });
+            }, 1000);
+            return () => clearInterval(interval);
+        } else {
+            setDedupeStartTime(null);
+            setElapsedTime('');
+        }
+    }, [isDeduplicating]);
 
     const setActivePhotoDebounced = useCallback((photo: appModel.Photo) => {
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -340,33 +367,53 @@ function App() {
 
             {/* FULL SCREEN DEDUPE MODAL OVERLAY */}
             {isDeduplicating && (
-                <div className="dedupe-progress-overlay glass-panel flex flex-col items-center justify-center p-4 rounded-none border-0" 
+                <div className="dedupe-progress-overlay glass-panel flex flex-col items-center justify-center p-4 rounded-none border-0"
                      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+
+                    {/* Animated scanner */}
                     <div className="scanner-animation">
                         <div className="scanner-beam"></div>
                     </div>
-                    <h2 className="text-xl mb-2" style={{ color: 'var(--text-primary)', textTransform: 'none', letterSpacing: 'normal', fontSize: '1.25rem' }}>
-                        {dedupeProgress ? dedupeProgress.message : 'Initializing...'}
-                    </h2>
-                    
+
+                    {/* Stage message with pulsing indicator */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <div style={{
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: 'var(--accent)',
+                            animation: 'pulse 1.5s ease-in-out infinite',
+                        }} />
+                        <h2 style={{
+                            color: 'var(--text-primary)',
+                            fontSize: '1.1rem',
+                            fontWeight: 600,
+                            margin: 0,
+                        }}>
+                            {dedupeProgress?.message || 'Preparing...'}
+                        </h2>
+                    </div>
+
+                    {/* Progress bar */}
                     {dedupeProgress && dedupeProgress.total > 0 && (
                         <>
                             <div className="progress-bar-container-large">
-                                <div className="progress-bar-fill-large" style={{ width: `${(dedupeProgress.current / dedupeProgress.total) * 100}%` }}></div>
+                                <div className="progress-bar-fill-large" style={{
+                                    width: `${Math.min(100, (dedupeProgress.current / dedupeProgress.total) * 100)}%`,
+                                    transition: 'width 0.3s ease-out',
+                                }} />
                             </div>
-                            <p className="text-small mt-2" style={{ color: 'var(--text-secondary)' }}>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '6px 0 0' }}>
                                 {dedupeProgress.current} / {dedupeProgress.total}
                             </p>
-                            {eta && (
-                                <p className="text-small mt-1 mb-4" style={{ color: 'var(--text-muted, var(--text-secondary))', fontStyle: 'italic' }}>
-                                    {eta}
-                                </p>
-                            )}
                         </>
                     )}
 
-                    <button className="btn btn-primary mt-4" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleCancelDeduplicate}>
-                        Abort Process
+                    {/* Elapsed time + ETA */}
+                    <p style={{ color: 'var(--text-muted, var(--text-secondary))', fontSize: '0.75rem', margin: '4px 0 16px', fontStyle: 'italic' }}>
+                        {elapsedTime}{eta ? ` · ${eta}` : ''}
+                    </p>
+
+                    <button className="btn btn-primary" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)', padding: '8px 24px' }} onClick={handleCancelDeduplicate}>
+                        Cancel
                     </button>
                 </div>
             )}

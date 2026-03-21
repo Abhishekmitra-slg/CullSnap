@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cullImage "cullsnap/internal/image"
@@ -759,6 +760,7 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	}
 
 	// Pre-scan for RAW+JPEG pairing
+	emitProgress(0, 0, "Scanning directory...")
 	scannedPhotos, scanErr := scanner.ScanDirectory(path)
 	if scanErr != nil {
 		logger.Log.Warn("raw: pre-scan failed, proceeding without pairing", "error", scanErr)
@@ -777,9 +779,11 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	}
 
 	// Pre-extract EXIF dates in parallel to avoid repeated file reads later
+	emitProgress(0, len(scannedPhotos), "Extracting photo dates...")
 	var dateMu sync.Mutex
 	dateCache := make(map[string]time.Time)
 
+	var dateCount int32
 	eg := new(errgroup.Group)
 	eg.SetLimit(stdruntime.NumCPU())
 	for i := range scannedPhotos {
@@ -790,6 +794,10 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 				dateMu.Lock()
 				dateCache[photoPath] = date
 				dateMu.Unlock()
+			}
+			count := atomic.AddInt32(&dateCount, 1)
+			if int(count)%10 == 0 || int(count) == len(scannedPhotos) {
+				emitProgress(int(count), len(scannedPhotos), "Extracting photo dates...")
 			}
 			return nil
 		})
@@ -828,6 +836,7 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	}
 
 	// 5. Structure data for the frontend
+	emitProgress(0, 0, "Building results...")
 	res := &DedupeResult{
 		UniquePhotos:    make([]model.Photo, 0, len(groups)),
 		DuplicateGroups: make([][]model.Photo, 0),
