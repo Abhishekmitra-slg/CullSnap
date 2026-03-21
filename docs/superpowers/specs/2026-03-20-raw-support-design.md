@@ -62,11 +62,12 @@ Embedded preview pixels are NOT pre-rotated in any major camera brand. The EXIF 
 
 ### Path B — dcraw fallback (~400KB bundled binary)
 
-- `dcraw -e <file>` extracts embedded JPEG preview from 700+ camera models
+- `dcraw -e -c <file>` extracts embedded JPEG preview to stdout from 700+ camera models
 - Same bundling pattern as FFmpeg (`internal/video/ffmpeg.go`)
 - Triggered when Path A returns no preview, preview too small (<400px), or unsupported format
 - Covers: RAF, RW2, ORF, NRW, PEF, SRW, and edge cases in TIFF-based formats
 - dcraw is a single ~400KB C binary, compiles on all platforms
+- Subprocess timeout: 30 seconds via `context.WithTimeout` to prevent zombie processes on corrupt files
 
 ### Why both paths
 
@@ -90,27 +91,53 @@ Embedded preview pixels are NOT pre-rotated in any major camera brand. The EXIF 
 | PEF | .pef | Pentax | — | Primary |
 | SRW | .srw | Samsung | — | Primary |
 
-## 5. Files to Create/Modify
+## 5. Shared Extension Registry
+
+All RAW extension checks must use a single shared source of truth to prevent drift:
+
+```go
+// internal/raw/extensions.go
+package raw
+
+var Extensions = map[string]bool{
+    ".cr2": true, ".cr3": true, ".arw": true, ".nef": true, ".dng": true,
+    ".raf": true, ".rw2": true, ".orf": true, ".nrw": true, ".pef": true, ".srw": true,
+}
+
+func IsRAWExt(ext string) bool {
+    return Extensions[strings.ToLower(ext)]
+}
+
+func FormatName(ext string) string {
+    return strings.ToUpper(strings.TrimPrefix(ext, "."))
+}
+```
+
+All consumers (scanner, dedup hash, CheckDedupStatus, media server, thumbnail cache) import from this single registry.
+
+## 6. Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `internal/raw/preview.go` | New | TIFF IFD parser + CR3 preview via imagemeta. Exports `ExtractPreview(path) (image.Image, error)` |
-| `internal/raw/dcraw.go` | New | dcraw binary provisioning + `dcraw -e` fallback |
+| `internal/raw/extensions.go` | New | Shared RAW extension registry — single source of truth |
+| `internal/raw/preview.go` | New | TIFF IFD parser + CR3 preview via imagemeta. Exports `ExtractPreview(path) ([]byte, error)` returning JPEG bytes |
+| `internal/raw/dcraw.go` | New | dcraw binary provisioning + `dcraw -e -c` fallback with 30s timeout |
 | `internal/raw/pair.go` | New | `PairRAWJPEG()` companion detection by base filename |
-| `internal/scanner/scanner.go` | Modify | Add RAW extensions to walk filter, set IsRAW/RAWFormat |
+| `internal/scanner/scanner.go` | Modify | Use `raw.Extensions` for walk filter, set IsRAW/RAWFormat |
 | `internal/model/photo.go` | Modify | Add IsRAW, RAWFormat, CompanionPath, IsRAWCompanion fields |
-| `internal/image/thumbnail.go` | Modify | Route RAW files through raw.ExtractPreview() |
-| `internal/image/thumbcache.go` | Modify | Handle RAW format in GenerateThumbnail() |
-| `internal/dedupe/hash.go` | Modify | Add RAW extensions, use extracted preview for hashing |
-| `internal/dedupe/quality.go` | Modify | Use extracted preview for Laplacian Variance on RAW |
-| `internal/app/app.go` | Modify | Wire RAW+JPEG pairing into ScanAndDeduplicate() |
-| `main.go` | Modify | Add RAW extensions to media server allowlist, serve extracted previews for RAW files |
+| `internal/image/thumbnail.go` | Modify | For RAW files: skip EXIF thumbnail path, go directly to `raw.ExtractPreview()` → decode → resize to 300px |
+| `internal/image/thumbcache.go` | Modify | Detect RAW ext via `raw.IsRAWExt()`, route to `raw.ExtractPreview()` |
+| `internal/dedupe/hash.go` | Modify | Use `raw.IsRAWExt()` in extensions + call `raw.ExtractPreview()` → `jpeg.Decode()` → then hash. Do NOT call `image.Decode()` on RAW files directly |
+| `internal/dedupe/quality.go` | Modify | Same pattern: `raw.ExtractPreview()` → `jpeg.Decode()` → Laplacian Variance. Do NOT call `image.Decode()` on RAW files directly |
+| `internal/dedupe/sorter.go` | Modify | Handle EXIF extraction for RAW files: for TIFF-based RAW, `exif.Decode()` works on file stream; for CR3/RAF/RW2/ORF, extract from embedded JPEG preview or use imagemeta |
+| `internal/app/app.go` | Modify | Wire RAW+JPEG pairing into ScanAndDeduplicate(), call `raw.Init()` in Startup(), update `CheckDedupStatus()` to use `raw.Extensions`, update `GetPhotoEXIF()` for RAW files |
+| `main.go` | Modify | Add RAW extensions to media server allowlist via `raw.Extensions`, serve extracted previews for RAW files |
 | `frontend/src/components/Grid.tsx` | Modify | Add RAW format badge on thumbnails |
 | `frontend/src/components/Viewer.tsx` | Modify | Add RAW format badge overlay on viewer |
-| `frontend/src/index.css` | Modify | Add `.badge-raw` styles |
+| `frontend/src/index.css` | Modify | Add `.badge-raw` styles (explicit CSS, not relying on nonexistent `.badge-video`) |
 | `frontend/src/components/HelpModal.tsx` | Modify | Update supported formats list |
 
-## 6. RAW+JPEG Companion Pairing
+## 7. RAW+JPEG Companion Pairing
 
 ```
 Scan directory → collect all photos (JPEG + RAW)
@@ -122,7 +149,7 @@ PairRAWJPEG() → group by base filename in same directory
         ↓
 For pairs:
   - RAW is always the keeper (more data)
-  - JPEG companion marked as redundant but NOT auto-deleted
+  - JPEG companion marked as IsRAWCompanion=true, left in place (NOT moved to duplicates/)
   - User decides what to do with companions
 For singles:
   - Normal dHash + Laplacian Variance flow
@@ -133,8 +160,14 @@ For singles:
 - Same base name + different directories → NOT paired
 - RAW without JPEG companion → single, normal dedup
 - Case-insensitive matching (IMG_0042.cr3 == IMG_0042.JPG)
+- JPEG companions are NOT moved to duplicates/ folder — they stay in place with the `IsRAWCompanion` flag
 
-## 7. Model Changes
+### Export behavior for pairs:
+- When user exports a RAW file, only the RAW file is exported
+- The JPEG companion is not auto-exported (user can select it independently if desired)
+- This keeps export behavior simple and predictable
+
+## 8. Model Changes
 
 ```go
 type Photo struct {
@@ -147,29 +180,37 @@ type Photo struct {
 }
 ```
 
-## 8. TIFF IFD Parser Algorithm
+## 9. TIFF IFD Parser Algorithm
 
 ```
-1. Read 8-byte TIFF header:
+1. Stat file to get fileSize (for bounds validation)
+
+2. Read 8-byte TIFF header:
    - Bytes 0-1: byte order ("II"=little-endian, "MM"=big-endian)
-   - Bytes 2-3: magic number (42)
+   - Bytes 2-3: magic number (42 for classic TIFF, 43 for BigTIFF)
+   - If magic=43: return error "BigTIFF not supported" (known limitation, rare in practice)
    - Bytes 4-7: offset to IFD0
 
-2. Walk IFD chain starting at IFD0:
+3. Walk IFD chain starting at IFD0:
+   - Maintain visited-offsets set to detect circular IFD chains
+   - Hard cap: max 20 IFDs to prevent runaway parsing on malformed files
    - Read 2-byte entry count
    - For each 12-byte entry: tag ID, type, count, value/offset
    - Read 4-byte next-IFD offset (0 = end of chain)
+   - If next-IFD offset already in visited set → break (circular chain)
 
-3. For each IFD, collect:
+4. For each IFD, collect:
    - Compression (tag 0x0103): if 6 or 7, it's JPEG
    - StripOffsets (tag 0x0111) + StripByteCounts (tag 0x0117)
    - OR: JPEGInterchangeFormat (0x0201) + JPEGInterchangeFormatLength (0x0202)
    - NewSubFileType (tag 0x00FE): value 1 = preview image
-   - SubIFDs (tag 0x014a): recurse into child IFDs
+   - SubIFDs (tag 0x014a): recurse into child IFDs (same visited set + depth cap)
 
-4. Select the largest JPEG preview found across all IFDs
+5. Validate all offsets: offset + byteCount <= fileSize
 
-5. Seek to offset, read bytes, validate JPEG SOI marker (0xFFD8)
+6. Select the largest JPEG preview found across all IFDs
+
+7. Seek to offset, read bytes, validate JPEG SOI marker (0xFFD8)
 ```
 
 ### Edge cases handled:
@@ -181,8 +222,25 @@ type Photo struct {
 - OJPEG (Compression=6) vs JPEG (Compression=7)
 - Both StripOffsets and JPEGInterchangeFormat paths
 - JPEG SOI validation before returning data
+- **Circular IFD chain detection** via visited-offsets set
+- **Offset bounds validation** against file size
+- **BigTIFF detection** (magic=43) with graceful rejection
 
-## 9. Memory Efficiency
+## 10. `ExtractPreview` Return Type
+
+```go
+// ExtractPreview returns the embedded JPEG preview bytes from a RAW file.
+// Returns raw JPEG bytes (not decoded image.Image) for efficiency:
+// - Media server can serve bytes directly without decode→re-encode round trip
+// - Thumbnail pipeline decodes from bytes only when needed for resize
+// - Dedup pipeline decodes from bytes for hashing
+// - Avoids lossy JPEG re-encoding for full-res Viewer previews
+func ExtractPreview(path string) ([]byte, error)
+```
+
+Consumers that need `image.Image` call `jpeg.Decode(bytes.NewReader(jpegBytes))` after extraction.
+
+## 11. Memory Efficiency
 
 - TIFF IFD parser reads ~500 bytes of headers/tags per IFD
 - Seeks directly to JPEG preview offset, reads only preview bytes
@@ -190,18 +248,19 @@ type Photo struct {
 - For burst of 10 files (~700 MB total), reads ~10 MB of preview data
 - imagemeta reads only EXIF/preview blocks for CR3
 
-## 10. Updated Dedup Flow
+## 12. Updated Dedup Flow
 
 ```
 1. Scan directory → collect all photos (JPEG + PNG + RAW)
 2. PairRAWJPEG() → identify companion pairs by base filename
-3. For each pair: mark JPEG as companion, RAW as primary
+3. For each pair: mark JPEG as companion (left in place), RAW as primary
 4. For unpaired files (singles and RAW-only):
-   a. Extract embedded JPEG preview (Path A → Path B fallback)
-   b. Compute dHash on preview image.Image
-   c. Group by Hamming distance (existing logic, unchanged)
-   d. Within each group: rank by Laplacian Variance
-   e. Surface highest-scoring as keeper
+   a. Extract embedded JPEG preview bytes (Path A → Path B fallback)
+   b. Decode JPEG bytes to image.Image
+   c. Compute dHash on image.Image
+   d. Group by Hamming distance (existing logic, unchanged)
+   e. Within each group: rank by Laplacian Variance
+   f. Surface highest-scoring as keeper
 5. Present paired groups and duplicate groups to UI
 ```
 
@@ -209,32 +268,54 @@ type Photo struct {
 
 The embedded JPEG preview has camera-applied sharpening/NR/tone mapping. Laplacian Variance measures the camera's JPEG rendering, not raw sensor sharpness. This is acceptable because within a burst group (same camera, same session = same processing pipeline), scores are comparable as relative rankings.
 
-## 11. EXIF Orientation Handling
+## 13. EXIF Handling for RAW Files
+
+### EXIF Extraction Strategy
+
+| Format | EXIF Source | Method |
+|--------|-----------|--------|
+| CR2, NEF, ARW, DNG | RAW file's TIFF IFD0 | `rwcarlsen/goexif` `exif.Decode()` works directly on file stream (these are TIFF-based) |
+| CR3 | BMFF container | Use `imagemeta` library to extract EXIF from BMFF structure |
+| RAF, RW2, ORF | Embedded JPEG preview | Extract preview bytes, then `exif.Decode()` on the JPEG preview |
+
+### Orientation Handling
 
 1. Extract JPEG preview bytes from RAW
-2. Read EXIF Orientation from the preview JPEG (or parent RAW's IFD0)
-3. Apply orientation transform using `imaging.Decode()` with AutoOrientation
+2. Read EXIF Orientation from the preview JPEG (or parent RAW's IFD0 for TIFF-based formats)
+3. Apply orientation transform after decoding
 4. Then resize for thumbnail cache
 
-## 12. Media Server — RAW Preview Serving
+### Files affected:
+- `internal/dedupe/sorter.go` — `ExtractDateTaken()` must handle CR3/RAF/RW2/ORF via preview JPEG EXIF
+- `internal/app/app.go` — `GetPhotoEXIF()` must return EXIF data for all RAW formats
+- `internal/app/app.go` — `ExtractFullEXIF()` must route RAW files through appropriate EXIF extraction path
+
+## 14. Media Server — RAW Preview Serving
 
 The media server at `127.0.0.1:34342` must serve extracted RAW previews to the frontend Viewer.
 
 **Current pattern:** For JPEG/PNG, the server reads the file and serves it directly with the appropriate Content-Type.
 
 **RAW integration:** When the requested file has a RAW extension:
-1. Extract JPEG preview via `raw.ExtractPreview()` (returns `image.Image`)
-2. Encode to JPEG bytes
-3. Serve with `Content-Type: image/jpeg`
-4. Cache the extracted preview bytes in memory or on disk to avoid re-extraction on subsequent requests (the thumbnail cache already handles this for grid thumbnails, but the Viewer needs full-resolution previews)
+1. Check preview cache first (see caching below)
+2. If not cached: extract JPEG preview bytes via `raw.ExtractPreview()`
+3. Write to cache file
+4. Serve with `Content-Type: image/jpeg`
 
-**Performance consideration:** RAW preview extraction takes ~10-50ms per file. For the Viewer (single file at a time), this is imperceptible. For the Grid, thumbnails are pre-cached by `GenerateBatch()`.
+### Full-Resolution Preview Cache
 
-## 13. UI — RAW Format Badges
+The existing `ThumbCache` generates 300px thumbnails for the Grid. The Viewer needs full-resolution previews (3000px+), which are a different asset.
+
+- **Cache location:** `~/.cullsnap/previews/` (separate from `~/.cullsnap/thumbs/`)
+- **Cache key:** Same scheme as thumbnails — MD5(path + modTime) + `.jpg`
+- **No eviction during session:** Previews are session-scoped. Cache is cleared on next scan of a different directory, matching how thumbnails work.
+- **Size estimate:** ~5MB per preview × 500 RAW files = ~2.5GB max. Acceptable for a session working with a single shoot.
+
+## 15. UI — RAW Format Badges
 
 ### Grid Thumbnails — RAW Format Badge
 
-Add a format badge to RAW file thumbnails in the grid, using the existing badge pattern:
+Add a format badge to RAW file thumbnails in the grid:
 
 ```
 ┌──────────────┐
@@ -246,43 +327,45 @@ Add a format badge to RAW file thumbnails in the grid, using the existing badge 
 ```
 
 - **Position:** Bottom-left corner of the thumbnail card
-- **Content:** Dynamic format text from `photo.RAWFormat` — shows "CR3", "ARW", "NEF", "DNG", "RAF", etc.
-- **Style:** `.badge-raw` — warm amber/orange background to visually distinguish from selected (blue) and exported (green) badges
-- **Size:** Auto-width pill shape to accommodate varying format name lengths (e.g., "CR3" vs "DNG")
+- **Content:** Dynamic format text from `photo.RAWFormat` — shows the actual format: "CR3", "ARW", "NEF", "DNG", "RAF", "RW2", "ORF", "NRW", "PEF", "SRW"
+- **Style:** `.badge-raw` — warm amber/orange background (`#D97706` / amber-600) to visually distinguish from selected (accent blue) and exported (green) badges. White text, rounded pill shape, ~10px font.
+- **Size:** Auto-width pill shape to accommodate varying format name lengths
 
 ### Viewer — RAW Format Overlay Badge
 
 Add a format indicator overlay on the Viewer image for RAW files:
 
 - **Position:** Top-left corner of the image container
-- **Content:** Format name from `photo.RAWFormat` (e.g., "NEF", "CR3", "ARW")
-- **For paired files:** Show "CR3 + JPG" to indicate the companion relationship
+- **Content:** Format name from `photo.RAWFormat` (e.g., "NEF", "ARW", "DNG")
+- **For paired files:** Show format + " + JPG" (e.g., "CR3 + JPG") to indicate the companion relationship
 - **Style:** Semi-transparent glass-panel pill, consistent with existing UI aesthetic
 - **Visibility:** Only shown when `photo.IsRAW` is true
 
 ### RAW+JPEG Companion Indicator
 
 When a JPEG is paired with a RAW companion:
-- Grid badge shows nothing extra (the RAW file's badge is sufficient)
+- Grid badge shows nothing extra on the JPEG (the RAW file's badge is sufficient)
 - Viewer shows companion info in the EXIF bar or as a subtle indicator
 
-## 14. Testing Strategy
+## 16. Testing Strategy
 
 ### Test Fixtures — Real Camera RAW Samples
 
 Download real-world RAW sample files from public sources for comprehensive testing:
 - **Source:** raw.pixls.us, raw.samples archive, camera manufacturer sample galleries
 - **One file per format minimum:** CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF
-- **Store in:** `internal/raw/testdata/` (gitignored if >5MB per file, or use small crops)
+- **Storage:** `internal/raw/testdata/` directory, gitignored via `.gitignore` entry
+- **Download script:** `internal/raw/testdata/download.sh` that fetches samples from known URLs on first test run
 - **Validation:** Each test file must have a verifiable embedded JPEG preview
 
 ### internal/raw/preview_test.go
 - Table-driven tests with real RAW samples per format
 - Assert: preview not nil, dimensions >= 200px, no error
-- Assert: JPEG SOI marker validation works
+- Assert: JPEG SOI marker (0xFFD8) present at start of returned bytes
 - Assert: graceful error on corrupt file, truncated file, file with no preview
-- Assert: EXIF orientation is correctly read and applied
+- Assert: EXIF orientation is correctly read from preview
 - Assert: fallback to dcraw when Pure Go path fails
+- Assert: returns error (not panic) for zero-length files, non-RAW files
 
 ### internal/raw/tiff_test.go
 - Edge cases: big-endian/little-endian byte order
@@ -290,13 +373,17 @@ Download real-world RAW sample files from public sources for comprehensive testi
 - Multiple strips (array StripOffsets)
 - SubIFD arrays (multiple child IFDs)
 - Both StripOffsets and JPEGInterchangeFormat paths
-- Corrupt TIFF header handling
+- Corrupt TIFF header handling (bad magic, truncated header)
+- Circular IFD chain detection (must not infinite loop)
+- Offset beyond file size (must return error, not crash)
+- BigTIFF detection and graceful rejection
 
 ### internal/raw/dcraw_test.go
-- Graceful degradation when dcraw binary is absent
+- Graceful degradation when dcraw binary is absent (returns specific error, not crash)
 - Extraction from each dcraw-primary format (RAF, RW2, ORF) when binary available
-- Timeout handling for hung dcraw processes
+- Timeout handling: verify 30s timeout kills hung processes
 - Error handling for corrupt files
+- Proper cleanup of temp files if any
 
 ### internal/raw/pair_test.go
 - Same base name same dir → paired
@@ -305,31 +392,43 @@ Download real-world RAW sample files from public sources for comprehensive testi
 - JPEG without RAW companion → single
 - Case-insensitive matching (IMG_0042.cr3 == IMG_0042.JPG)
 - Multiple RAW formats in same directory
-- Mixed case extensions
+- Mixed case extensions (.CR3, .Cr3, .cr3)
+- Multiple JPEG extensions (.jpg, .jpeg) paired with RAW
 
 ### Integration Tests
 - Full scan → thumbnail → dedup flow with mixed RAW+JPEG test folder
 - RAW+JPEG pairing correctly marks companions in dedup output
-- Media server serves extracted RAW previews correctly
-- Grid displays RAW format badges correctly
+- JPEG companions are NOT moved to duplicates/ folder
+- Media server serves extracted RAW previews with correct Content-Type
+- EXIF data is correctly extracted and displayed for all RAW formats
+- Grid displays correct dynamic format badge text per photo
 
-## 15. Library Dependencies
+## 17. Library Dependencies
 
 | Library | Import Path | Purpose | License |
 |---------|-------------|---------|---------|
 | imagemeta | github.com/evanoberholster/imagemeta | CR3 preview + format detection | MIT |
-| dcraw | Bundled binary | Fallback preview extraction | GPL (binary only) |
+| dcraw | Bundled binary | Fallback preview extraction | GPL-2.0 (binary distribution) |
+
+### dcraw License Compliance
+dcraw is GPL-2.0. CullSnap is AGPL-3.0 (GPL-compatible). The bundled dcraw binary must be distributed with its GPL license notice. Add dcraw's license to a `THIRD_PARTY_LICENSES` file in the project root.
 
 ### Libraries NOT used (with reasons):
-- `rwcarlsen/goexif` — already in project for JPEG EXIF, but cannot extract full-res RAW previews (only IFD1 ~160px thumbnail)
+- `rwcarlsen/goexif` — already in project for JPEG EXIF, but cannot extract full-res RAW previews (only IFD1 ~160px thumbnail). Still used for EXIF metadata extraction from TIFF-based RAW files.
 - `barasher/go-exiftool` — GPL-3.0, requires ExifTool binary (Perl), overkill when dcraw is simpler
 - `seppedelanghe/go-libraw` — CGO required, 6 stars, too early stage
 - `dcraw` shell-out for core path — development stalled 2018, but fine as fallback
 
-## 16. Cross-Platform Build
+## 18. Cross-Platform Build
 
 - Path A (imagemeta + custom parser): Pure Go, zero CGO, cross-compiles freely
 - Path B (dcraw): Bundle platform-specific binaries, same pattern as FFmpeg provisioning
   - macOS: `dcraw` universal binary
   - Windows: `dcraw.exe`
   - Linux: `dcraw` amd64
+
+## 19. Known Limitations
+
+- **BigTIFF:** Some Adobe-converted DNG files use BigTIFF (8-byte offsets, magic=43). The TIFF IFD parser detects this and returns an error. These files fall through to dcraw.
+- **dcraw development:** dcraw was last updated in 2018. Very new camera models (post-2018) may not be supported by dcraw. For these, Path A (Pure Go) is the primary path.
+- **Lossy preview for dedup:** Perceptual hashing and Laplacian Variance operate on camera-rendered JPEG previews, not raw sensor data. This is acceptable for relative ranking within burst groups but means quality scores reflect camera JPEG processing, not true sensor resolution.
