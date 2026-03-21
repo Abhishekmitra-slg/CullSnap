@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var (
@@ -30,11 +31,24 @@ func Init(filename string) error {
 		return err
 	}
 
-	handler := slog.NewJSONHandler(file, &slog.HandlerOptions{Level: slog.LevelInfo})
+	handler := slog.NewJSONHandler(file, &slog.HandlerOptions{Level: logLevel()})
 	Log = slog.New(handler)
 
 	Log.Info("Logger initialized", "path", LogPath)
 	return nil
+}
+
+func logLevel() slog.Level {
+	switch strings.ToLower(os.Getenv("CULLSNAP_LOG_LEVEL")) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // OpenLogFile opens the log file in the default OS application.
