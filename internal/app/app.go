@@ -8,6 +8,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/updater"
 	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
@@ -58,9 +59,11 @@ type App struct {
 	cfg             *AppConfig
 	enrichMu        sync.Mutex
 	enrichCancel    context.CancelFunc
-	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
-	Version         string           // set from main.version (build-time ldflags)
-	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
+	OnAllowDir      func(dir string)  // called to register a directory with the media server allowlist
+	Version         string            // set from main.version (build-time ldflags)
+	ContributorsRaw string            // raw CONTRIBUTORS.yml content embedded at build time
+	UpdatePublicKey []byte            // ECDSA public key for update signature verification
+	updater         *updater.Updater  // manages self-update checks
 }
 
 // NewApp creates a new App application struct
@@ -89,6 +92,10 @@ func (a *App) Startup(ctx context.Context) {
 
 	// Start background goroutine to push system metrics every second
 	go a.emitSystemMetrics()
+
+	// Start auto-update checker
+	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
+	a.updater.Start()
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -250,6 +257,30 @@ func (a *App) ResetAppConfig() (*AppConfig, error) {
 	}
 	a.persistConfig(&cfg)
 	return &cfg, nil
+}
+
+// CheckForUpdate triggers an immediate update check.
+func (a *App) CheckForUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.CheckNow()
+}
+
+// DownloadUpdate downloads the pending update.
+func (a *App) DownloadUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.DownloadUpdate()
+}
+
+// RestartForUpdate applies the downloaded update and restarts the app.
+func (a *App) RestartForUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.RestartForUpdate()
 }
 
 // SelectDirectory opens a native OS dialog to select a folder

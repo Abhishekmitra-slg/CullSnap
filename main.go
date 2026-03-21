@@ -31,6 +31,9 @@ var assets embed.FS
 //go:embed CONTRIBUTORS.yml
 var contributorsYML string
 
+//go:embed keys/update_signing.pub
+var updatePublicKey []byte
+
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z"
 var version = "dev"
 
@@ -276,6 +279,7 @@ func main() {
 	application.OnAllowDir = loader.AllowDirectory
 	application.Version = version
 	application.ContributorsRaw = contributorsYML
+	application.UpdatePublicKey = updatePublicKey
 
 	// Create application with options
 	err = wails.Run(&options.App{
