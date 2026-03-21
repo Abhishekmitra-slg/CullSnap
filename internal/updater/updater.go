@@ -73,7 +73,8 @@ func NewUpdater(ctx context.Context, version string, publicKey []byte, mode stri
 
 	// Configure ECDSA validator + asset filters.
 	u.config = selfupdate.Config{
-		Filters: []string{"CullSnap-"},
+		Filters:       []string{"CullSnap-"},
+		UniversalArch: "universal", // fallback to CullSnap-darwin-universal on macOS
 	}
 	if len(publicKey) > 0 {
 		ecdsaKey, err := parseECDSAPublicKey(publicKey)
