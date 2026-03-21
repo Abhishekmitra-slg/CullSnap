@@ -1,10 +1,12 @@
 package dedupe
 
 import (
+	"bytes"
 	"context"
+	"cullsnap/internal/raw"
 	"fmt"
 	"image"
-	_ "image/jpeg"
+	"image/jpeg"
 	_ "image/png"
 	"os"
 	"path/filepath"
@@ -32,22 +34,35 @@ type DuplicateGroup struct {
 
 // hashImage concurrently loads a downscaled image and computes its difference hash safely.
 func hashImage(path string) (result *goimagehash.ImageHash, err error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open image %s: %w", path, err)
-	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
+	ext := strings.ToLower(filepath.Ext(path))
+	var img image.Image
 
-	// Decoding the full image might take huge memory.
-	// Since hashes only need a tiny downscaled matrix, we use decodeConfig to check dimensions
-	// but we must fully decode it ultimately. disintegration/imaging supports resizing.
-	img, _, err := image.Decode(file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image %s: %w", path, err)
+	if raw.IsRAWExt(ext) {
+		previewBytes, extractErr := raw.ExtractPreview(path)
+		if extractErr != nil {
+			return nil, fmt.Errorf("RAW preview extraction failed: %w", extractErr)
+		}
+		decoded, decErr := jpeg.Decode(bytes.NewReader(previewBytes))
+		if decErr != nil {
+			return nil, fmt.Errorf("failed to decode RAW preview: %w", decErr)
+		}
+		img = decoded
+	} else {
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			return nil, fmt.Errorf("failed to open image %s: %w", path, openErr)
+		}
+		defer func() {
+			if cerr := file.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
+		}()
+
+		decoded, _, decErr := image.Decode(file)
+		if decErr != nil {
+			return nil, fmt.Errorf("failed to decode image %s: %w", path, decErr)
+		}
+		img = decoded
 	}
 
 	// Downscale heavily before hashing to save matrix overhead inside hashing func
@@ -67,9 +82,7 @@ func hashImage(path string) (result *goimagehash.ImageHash, err error) {
 func FindDuplicates(ctx context.Context, dirPath string, similarityThreshold int, progressCallback func(current, total int, message string)) ([]*DuplicateGroup, error) {
 	var paths []string
 
-	extensions := map[string]bool{
-		".jpg": true, ".jpeg": true, ".png": true, // RAW decoding could be added later
-	}
+	extensions := raw.ImageExtensions()
 
 	// 1. Discover all images
 	err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {

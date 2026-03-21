@@ -18,8 +18,8 @@ func ExportSelections(photos []model.Photo, destDir string) (int, error) {
 	}
 
 	count := 0
-	for _, p := range photos {
-		if err := exportSingleFile(p, destDir); err != nil {
+	for i := range photos {
+		if err := exportSingleFile(photos[i], destDir); err != nil {
 			return count, err
 		}
 		count++

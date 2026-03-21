@@ -136,6 +136,11 @@ export function Grid({
                                                 </span>
                                             </div>
                                         )}
+                                        {photo.IsRAW && photo.RAWFormat && (
+                                            <div className="badge-raw">
+                                                {photo.RAWFormat}
+                                            </div>
+                                        )}
                                         <img
                                             src={imgSrc}
                                             alt={photo.Path.split('/').pop()}

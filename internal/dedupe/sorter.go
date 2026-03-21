@@ -1,10 +1,14 @@
 package dedupe
 
 import (
+	"bytes"
 	"context"
+	"cullsnap/internal/raw"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
@@ -19,15 +23,44 @@ type PhotoMeta struct {
 	CameraMake string
 }
 
+// isTIFFBasedRAW returns true for RAW formats whose file structure starts with
+// a TIFF header, meaning exif.Decode can read EXIF directly from the file stream.
+func isTIFFBasedRAW(ext string) bool {
+	switch ext {
+	case ".cr2", ".nef", ".arw", ".dng":
+		return true
+	}
+	return false
+}
+
 // ExtractDateTaken efficiently extracts EXIF metadata without allocating full images into memory.
 func ExtractDateTaken(path string) (time.Time, bool) {
+	ext := strings.ToLower(filepath.Ext(path))
+
+	// Non-TIFF RAW formats: extract EXIF from the embedded JPEG preview.
+	if raw.IsRAWExt(ext) && !isTIFFBasedRAW(ext) {
+		previewBytes, err := raw.ExtractPreview(path)
+		if err != nil {
+			return time.Time{}, false
+		}
+		e, err := exif.Decode(bytes.NewReader(previewBytes))
+		if err != nil {
+			return time.Time{}, false
+		}
+		date, err := e.DateTime()
+		if err != nil || date.IsZero() {
+			return time.Time{}, false
+		}
+		return date, true
+	}
+
+	// TIFF-based RAW and standard JPEG/PNG: exif.Decode works directly on the file.
 	file, err := os.Open(path)
 	if err != nil {
 		return time.Time{}, false
 	}
 	defer func() { _ = file.Close() }()
 
-	// Parse EXIF fast
 	e, err := exif.Decode(file)
 	if err != nil {
 		return time.Time{}, false
@@ -53,19 +86,38 @@ type FullEXIF struct {
 
 // ExtractFullEXIF extracts comprehensive EXIF metadata from a photo.
 func ExtractFullEXIF(path string) (_ *FullEXIF, err error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
+	ext := strings.ToLower(filepath.Ext(path))
 
-	e, err := exif.Decode(file)
-	if err != nil {
-		return nil, fmt.Errorf("no EXIF data: %w", err)
+	var e *exif.Exif
+
+	// Non-TIFF RAW formats: extract EXIF from the embedded JPEG preview.
+	if raw.IsRAWExt(ext) && !isTIFFBasedRAW(ext) {
+		previewBytes, extractErr := raw.ExtractPreview(path)
+		if extractErr != nil {
+			return nil, fmt.Errorf("RAW preview extraction failed: %w", extractErr)
+		}
+		decoded, decErr := exif.Decode(bytes.NewReader(previewBytes))
+		if decErr != nil {
+			return nil, fmt.Errorf("no EXIF data in RAW preview: %w", decErr)
+		}
+		e = decoded
+	} else {
+		// TIFF-based RAW and standard JPEG/PNG: exif.Decode works directly on the file.
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			return nil, openErr
+		}
+		defer func() {
+			if cerr := file.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
+		}()
+
+		decoded, decErr := exif.Decode(file)
+		if decErr != nil {
+			return nil, fmt.Errorf("no EXIF data: %w", decErr)
+		}
+		e = decoded
 	}
 
 	info := &FullEXIF{}

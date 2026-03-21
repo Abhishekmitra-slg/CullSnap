@@ -1,8 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"cullsnap/internal/app"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/raw"
+	"cullsnap/internal/storage"
+	"cullsnap/internal/video"
 	"embed"
+	"io"
 	"log"
 	"mime"
 	"net"
@@ -13,11 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"cullsnap/internal/app"
-	"cullsnap/internal/logger"
-	"cullsnap/internal/storage"
-	"cullsnap/internal/video"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -38,11 +40,11 @@ var updatePublicKey []byte
 var version = "dev"
 
 type FileLoader struct {
-	sem        chan struct{}    // limits concurrent file-serving goroutines
-	serverCtx  context.Context // cancelled on app shutdown
-	cacheDir   string          // for Cache-Control header detection
-	allowedMu  sync.RWMutex   // protects allowedDirs
-	allowedDirs []string       // directories the user has explicitly opened
+	sem         chan struct{}   // limits concurrent file-serving goroutines
+	serverCtx   context.Context // cancelled on app shutdown
+	cacheDir    string          // for Cache-Control header detection
+	allowedMu   sync.RWMutex    // protects allowedDirs
+	allowedDirs []string        // directories the user has explicitly opened
 }
 
 // AllowDirectory adds a directory to the allowlist of paths the media server may serve.
@@ -116,6 +118,37 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		}
 
 		logger.Log.Debug("MediaServer serving media", "path", filePath)
+
+		// RAW files: extract and serve JPEG preview instead of raw binary
+		ext := strings.ToLower(filepath.Ext(filePath))
+		if raw.IsRAWExt(ext) {
+			logger.Log.Debug("media: serving RAW preview", "path", filePath)
+
+			// Try cache first
+			if cached, err := raw.GetCachedPreview(filePath); err == nil {
+				res.Header().Set("Content-Type", "image/jpeg")
+				res.Header().Set("Cache-Control", "private, max-age=3600")
+				io.Copy(res, bytes.NewReader(cached)) //nolint:errcheck // best-effort binary JPEG write
+				return
+			}
+
+			// Extract and cache
+			start := time.Now()
+			previewBytes, err := raw.ExtractPreview(filePath)
+			if err != nil {
+				logger.Log.Error("media: RAW preview extraction failed", "path", filePath, "error", err)
+				http.Error(res, "failed to extract RAW preview", http.StatusInternalServerError)
+				return
+			}
+
+			_ = raw.CachePreview(filePath, previewBytes)
+			logger.Log.Debug("media: RAW preview served", "path", filePath, "bytes", len(previewBytes), "duration", time.Since(start))
+
+			res.Header().Set("Content-Type", "image/jpeg")
+			res.Header().Set("Cache-Control", "private, max-age=3600")
+			io.Copy(res, bytes.NewReader(previewBytes)) //nolint:errcheck // best-effort binary JPEG write
+			return
+		}
 
 		setCacheControl(res, filePath, h.cacheDir)
 		http.ServeFile(res, req, filePath)
@@ -205,7 +238,7 @@ func main() {
 		log.Fatal(err)
 	}
 	appDir := filepath.Join(configDir, "CullSnap")
-	if err := os.MkdirAll(appDir, 0755); err != nil {
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
 
@@ -222,6 +255,11 @@ func main() {
 	if err := video.Init(); err != nil {
 		logger.Log.Error("Failed to init video support (FFmpeg): ", "error", err)
 		// We don't fatal here, as the user can still use CullSnap for photos
+	}
+
+	// Init RAW preview cache
+	if err := raw.InitPreviewCache(); err != nil {
+		logger.Log.Warn("Failed to initialize preview cache", "error", err)
 	}
 
 	// Init Storage
@@ -309,7 +347,6 @@ func main() {
 			WindowIsTranslucent:  true,
 		},
 	})
-
 	if err != nil {
 		logger.Log.Error("Error starting Wails", "error", err)
 	}

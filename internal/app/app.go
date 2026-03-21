@@ -6,6 +6,7 @@ import (
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/model"
+	"cullsnap/internal/raw"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/updater"
@@ -96,6 +97,12 @@ func (a *App) Startup(ctx context.Context) {
 	// Start auto-update checker
 	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
 	a.updater.Start()
+
+	// Initialize RAW module (dcraw provisioning)
+	if err := raw.Init(); err != nil {
+		logger.Log.Error("Failed to initialize RAW module", "error", err)
+	}
+	logger.Log.Info("app: RAW module initialized")
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -383,9 +390,9 @@ func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 		return nil, err
 	}
 	var videoPaths []string
-	for _, p := range photos {
-		if p.IsVideo {
-			videoPaths = append(videoPaths, p.Path)
+	for i := range photos {
+		if photos[i].IsVideo {
+			videoPaths = append(videoPaths, photos[i].Path)
 		}
 	}
 	if len(videoPaths) > 0 {
@@ -431,11 +438,11 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		ModTime time.Time
 	}, len(photos))
 
-	for i, p := range photos {
+	for i := range photos {
 		items[i] = struct {
 			Path    string
 			ModTime time.Time
-		}{Path: p.Path, ModTime: p.TakenAt}
+		}{Path: photos[i].Path, ModTime: photos[i].TakenAt}
 	}
 
 	// Parallel thumbnail generation with progress — use config value
@@ -459,9 +466,9 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	}
 
 	var videoPaths []string
-	for _, p := range photos {
-		if p.IsVideo {
-			videoPaths = append(videoPaths, p.Path)
+	for i := range photos {
+		if photos[i].IsVideo {
+			videoPaths = append(videoPaths, photos[i].Path)
 		}
 	}
 	if len(videoPaths) > 0 {
@@ -485,10 +492,10 @@ func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName stri
 		if len(photos) > 0 {
 			srcDir = filepath.Dir(photos[0].Path)
 		}
-		for _, p := range photos {
-			_ = a.store.MarkExported(p.Path)
+		for i := range photos {
+			_ = a.store.MarkExported(photos[i].Path)
 			if srcDir != "" {
-				_ = a.store.SaveSelection(p.Path, srcDir, false)
+				_ = a.store.SaveSelection(photos[i].Path, srcDir, false)
 			}
 		}
 	}
@@ -691,7 +698,8 @@ func (a *App) CheckDedupStatus(dirPath string) (*DedupStatus, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".cr2" || ext == ".cr3" || ext == ".arw" || ext == ".nef" || ext == ".dng" {
+		isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || raw.IsRAWExt(ext)
+		if isImage {
 			fInfo, err := entry.Info()
 			if err != nil {
 				continue
@@ -748,6 +756,24 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		})
 	}
 
+	// Pre-scan for RAW+JPEG pairing
+	scannedPhotos, scanErr := scanner.ScanDirectory(path)
+	if scanErr != nil {
+		logger.Log.Warn("raw: pre-scan failed, proceeding without pairing", "error", scanErr)
+		scannedPhotos = nil
+	}
+	if scannedPhotos != nil {
+		scannedPhotos = raw.PairRAWJPEG(scannedPhotos)
+	}
+
+	// Build RAW metadata lookup map
+	rawMeta := make(map[string]model.Photo)
+	for i := range scannedPhotos {
+		if scannedPhotos[i].IsRAW || scannedPhotos[i].IsRAWCompanion {
+			rawMeta[scannedPhotos[i].Path] = scannedPhotos[i]
+		}
+	}
+
 	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, emitProgress)
 	if err != nil {
 		return nil, err
@@ -796,6 +822,14 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 				Path:    p.Path,
 				Size:    info.Size(),
 				TakenAt: date,
+			}
+
+			// Propagate RAW metadata from pre-scan pairing
+			if meta, ok := rawMeta[p.Path]; ok {
+				photoModel.IsRAW = meta.IsRAW
+				photoModel.RAWFormat = meta.RAWFormat
+				photoModel.CompanionPath = meta.CompanionPath
+				photoModel.IsRAWCompanion = meta.IsRAWCompanion
 			}
 
 			if p.IsUnique {

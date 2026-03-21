@@ -42,7 +42,7 @@ function GettingStartedTab() {
     const steps = [
         {
             title: '1. Open a folder',
-            text: 'Click Open Folder in the sidebar or drag a folder into the window to load your photos and videos.',
+            text: 'Click Open Folder in the sidebar or drag a folder into the window to load your photos, RAW files, and videos.',
         },
         {
             title: '2. Browse & review',
@@ -125,6 +125,10 @@ function FeaturesTab() {
             text: 'Rate photos from 1 to 5 stars using keyboard shortcuts or by clicking stars on thumbnails. Ratings persist across sessions.',
         },
         {
+            title: 'RAW Image Support',
+            text: 'Native support for 11 camera RAW formats: CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Embedded JPEG previews are extracted directly — no external software needed for Canon, Sony, Nikon, and Leica files. Fujifilm, Panasonic, and Olympus formats use dcraw as a fallback. RAW files show format badges in the grid and viewer. RAW+JPEG pairs shot simultaneously are automatically linked.',
+        },
+        {
             title: 'Video Support',
             text: 'Browse and preview video files alongside photos. Set trim points in the viewer to export only the portion you need. Requires FFmpeg.',
         },
@@ -158,7 +162,7 @@ function ExportingTab() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: 0, lineHeight: 1.6 }}>
-                Export copies your selected photos and videos to a new folder, keeping originals untouched.
+                Export copies your selected photos, RAW files, and videos to a new folder, keeping originals untouched. RAW+JPEG companions are exported independently — select each file you want to keep.
             </p>
 
             <div>
@@ -187,7 +191,7 @@ function ExportingTab() {
                     Supported formats
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Images: JPG, JPEG, PNG. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
+                    Images: JPG, JPEG, PNG, CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
                 </div>
             </div>
         </div>

@@ -497,6 +497,24 @@ h2 {
   color: white;
 }
 
+.badge-raw {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: #D97706;
+  color: white;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  width: auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ═══════════════════════════════════════════════
    VIEWER PANEL
    ═══════════════════════════════════════════════ */
@@ -508,6 +526,22 @@ h2 {
   background-color: #000;
   position: relative;
   overflow: hidden;
+}
+
+.viewer-raw-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(217, 119, 6, 0.85);
+  backdrop-filter: blur(8px);
+  color: white;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .viewer-image-container {

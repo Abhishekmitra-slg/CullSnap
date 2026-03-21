@@ -2,10 +2,17 @@ package scanner
 
 import (
 	"cullsnap/internal/model"
+	"cullsnap/internal/raw"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func init() {
+	for ext := range raw.Extensions {
+		allowedExtensions[ext] = true
+	}
+}
 
 var allowedExtensions = map[string]bool{
 	// Photos
@@ -52,6 +59,11 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 				TakenAt: info.ModTime(),
 				IsVideo: isVideo,
 				// Duration intentionally 0 — enriched asynchronously by app.go
+			}
+
+			if raw.IsRAWExt(ext) {
+				p.IsRAW = true
+				p.RAWFormat = raw.FormatName(ext)
 			}
 
 			photos = append(photos, p)
