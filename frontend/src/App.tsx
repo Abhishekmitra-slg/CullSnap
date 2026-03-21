@@ -5,6 +5,7 @@ import { Viewer } from './components/Viewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AboutModal } from './components/AboutModal';
 import { HelpModal } from './components/HelpModal';
+import { UpdateToast } from './components/UpdateToast';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
 
@@ -434,6 +435,7 @@ function App() {
             {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+            <UpdateToast />
         </div>
     );
 }

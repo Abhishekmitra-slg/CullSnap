@@ -90,6 +90,40 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </label>
                 </section>
 
+                <section className="settings-section">
+                    <h3>Updates</h3>
+                    <label className="settings-label">
+                        Auto-Update
+                        <span className="settings-hint">(how CullSnap handles new versions)</span>
+                        <select
+                            value={config.autoUpdate}
+                            onChange={e => setConfig(app.AppConfig.createFrom({ ...config, autoUpdate: e.target.value }))}
+                            style={{
+                                background: 'rgba(255,255,255,0.1)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                padding: '6px 12px',
+                                color: 'white',
+                                fontSize: '0.85rem',
+                                width: '100%',
+                                marginTop: 4,
+                            }}
+                        >
+                            <option value="off">Off</option>
+                            <option value="notify">Notify Only</option>
+                            <option value="auto">Auto-Update</option>
+                        </select>
+                    </label>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: 8, background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: '8px 10px' }}>
+                        <div><strong>Off</strong> — No update checks, no network calls</div>
+                        <div><strong>Notify Only</strong> — Checks for updates, notifies when available</div>
+                        <div><strong>Auto-Update</strong> — Downloads and applies updates automatically</div>
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 6, fontStyle: 'italic' }}>
+                        Changes take effect after restart.
+                    </div>
+                </section>
+
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>
                         <RotateCcw size={14} /> Reset to Defaults

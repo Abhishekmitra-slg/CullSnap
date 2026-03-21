@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { X, ExternalLink } from 'lucide-react';
-import { GetAboutInfo } from '../../wailsjs/go/app/App';
+import { useState, useEffect, useRef } from 'react';
+import { X, ExternalLink, Loader } from 'lucide-react';
+import { GetAboutInfo, CheckForUpdate } from '../../wailsjs/go/app/App';
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 
 interface Contributor {
     name: string;
@@ -27,9 +28,57 @@ interface AboutModalProps {
 
 export function AboutModal({ onClose }: AboutModalProps) {
     const [about, setAbout] = useState<AboutData | null>(null);
+    const [checking, setChecking] = useState(false);
+    const [checkResult, setCheckResult] = useState<string | null>(null);
+    const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         GetAboutInfo().then(setAbout).catch(console.error);
+    }, []);
+
+    const handleCheckForUpdate = () => {
+        setChecking(true);
+        setCheckResult(null);
+
+        EventsOn('update:available', () => {
+            setChecking(false);
+            setCheckResult(null); // Toast will handle it
+            EventsOff('update:available');
+            EventsOff('update:error');
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+        });
+
+        EventsOn('update:error', (data: { message: string }) => {
+            setChecking(false);
+            setCheckResult(data.message);
+            EventsOff('update:available');
+            EventsOff('update:error');
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+        });
+
+        // Fallback: if no events fire within 8s, assume up to date
+        checkTimerRef.current = setTimeout(() => {
+            setChecking(false);
+            setCheckResult('You\'re up to date!');
+            EventsOff('update:available');
+            EventsOff('update:error');
+        }, 8000);
+
+        CheckForUpdate().catch(err => {
+            setChecking(false);
+            setCheckResult(`Check failed: ${err}`);
+            EventsOff('update:available');
+            EventsOff('update:error');
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+        });
+    };
+
+    useEffect(() => {
+        return () => {
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+            EventsOff('update:available');
+            EventsOff('update:error');
+        };
     }, []);
 
     if (!about) {
@@ -57,6 +106,22 @@ export function AboutModal({ onClose }: AboutModalProps) {
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                             {about.version}
                         </span>
+                        <div style={{ marginTop: 8 }}>
+                            <button
+                                className="btn outline"
+                                style={{ fontSize: '0.75rem', padding: '4px 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                onClick={handleCheckForUpdate}
+                                disabled={checking}
+                            >
+                                {checking && <Loader size={12} className="spin" />}
+                                {checking ? 'Checking…' : 'Check for Updates'}
+                            </button>
+                            {checkResult && (
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '6px 0 0' }}>
+                                    {checkResult}
+                                </p>
+                            )}
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 8 }}>
                         <a
