@@ -94,6 +94,7 @@ export namespace app {
 	    scannerWorkers: number;
 	    serverIdleTimeoutSec: number;
 	    cacheDir: string;
+	    autoUpdate: string;
 	    probe: SystemProbe;
 	
 	    static createFrom(source: any = {}) {
@@ -107,6 +108,7 @@ export namespace app {
 	        this.scannerWorkers = source["scannerWorkers"];
 	        this.serverIdleTimeoutSec = source["serverIdleTimeoutSec"];
 	        this.cacheDir = source["cacheDir"];
+	        this.autoUpdate = source["autoUpdate"];
 	        this.probe = this.convertValues(source["probe"], SystemProbe);
 	    }
 	

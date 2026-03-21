@@ -8,6 +8,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/updater"
 	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,8 @@ type App struct {
 	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
 	Version         string           // set from main.version (build-time ldflags)
 	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
+	UpdatePublicKey []byte           // ECDSA public key for update signature verification
+	updater         *updater.Updater // manages self-update checks
 }
 
 // NewApp creates a new App application struct
@@ -89,6 +92,10 @@ func (a *App) Startup(ctx context.Context) {
 
 	// Start background goroutine to push system metrics every second
 	go a.emitSystemMetrics()
+
+	// Start auto-update checker
+	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
+	a.updater.Start()
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -109,6 +116,10 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	val, _ = a.store.GetConfig("serverIdleTimeoutSec")
 	cfg.ServerIdleTimeoutSec, _ = strconv.Atoi(val)
 	cfg.CacheDir, _ = a.store.GetConfig("cacheDir")
+	cfg.AutoUpdate, _ = a.store.GetConfig("autoUpdate")
+	if cfg.AutoUpdate == "" {
+		cfg.AutoUpdate = "notify"
+	}
 
 	// Always re-run the probe on startup so hardware info stays current.
 	cfg.Probe = RunSystemProbe(ffmpegPath)
@@ -147,6 +158,9 @@ func (a *App) persistConfig(cfg *AppConfig) {
 	}
 	if err := a.store.SetConfig("cacheDir", cfg.CacheDir); err != nil {
 		runtime.LogWarningf(a.ctx, "persistConfig: failed to save cacheDir: %v", err)
+	}
+	if err := a.store.SetConfig("autoUpdate", cfg.AutoUpdate); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save autoUpdate: %v", err)
 	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
 		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {
@@ -243,6 +257,30 @@ func (a *App) ResetAppConfig() (*AppConfig, error) {
 	}
 	a.persistConfig(&cfg)
 	return &cfg, nil
+}
+
+// CheckForUpdate triggers an immediate update check.
+func (a *App) CheckForUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.CheckNow()
+}
+
+// DownloadUpdate downloads the pending update.
+func (a *App) DownloadUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.DownloadUpdate()
+}
+
+// RestartForUpdate applies the downloaded update and restarts the app.
+func (a *App) RestartForUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("updater not initialized")
+	}
+	return a.updater.RestartForUpdate()
 }
 
 // SelectDirectory opens a native OS dialog to select a folder

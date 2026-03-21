@@ -26,6 +26,7 @@ type AppConfig struct {
 	ScannerWorkers       int         `json:"scannerWorkers"`
 	ServerIdleTimeoutSec int         `json:"serverIdleTimeoutSec"`
 	CacheDir             string      `json:"cacheDir"`
+	AutoUpdate           string      `json:"autoUpdate"` // "off", "notify", "auto"
 	Probe                SystemProbe `json:"probe"`
 }
 
@@ -82,6 +83,8 @@ func DeriveDefaults(probe SystemProbe) AppConfig {
 		cacheBase, _ = os.UserHomeDir()
 	}
 	cfg.CacheDir = filepath.Join(cacheBase, "CullSnap", "thumbs")
+
+	cfg.AutoUpdate = "notify"
 
 	return cfg
 }

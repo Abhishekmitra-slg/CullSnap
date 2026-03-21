@@ -72,6 +72,11 @@ jobs:
           cd build/bin
           ditto -c -k --sequesterRsrc --keepParent CullSnap.app CullSnap-macos-universal.zip
 
+      - name: Extract standalone macOS binary
+        if: matrix.os == 'macos-latest'
+        run: |
+          cp build/bin/CullSnap.app/Contents/MacOS/CullSnap build/bin/CullSnap-darwin-universal
+
       - name: Rename Windows/Linux Binaries
         if: matrix.os != 'macos-latest'
         shell: bash
@@ -89,6 +94,7 @@ jobs:
           name: Wails Builds (${{ matrix.build }})
           path: |
             build/bin/CullSnap-macos-universal.zip
+            build/bin/CullSnap-darwin-universal
             build/bin/CullSnap-windows-amd64.exe
             build/bin/CullSnap-linux-amd64
 
@@ -103,11 +109,29 @@ jobs:
         with:
           path: artifacts
 
+      - name: Flatten and generate checksums
+        run: |
+          mkdir -p release_assets
+          find artifacts -name 'CullSnap-*' -type f ! -name '*.zip' -exec cp {} release_assets/ \;
+          cd release_assets
+          sha256sum CullSnap-* | sort > checksums.txt
+          cat checksums.txt
+
+      - name: Sign checksums
+        env:
+          CULLSNAP_UPDATE_SIGNING_KEY: ${{ secrets.CULLSNAP_UPDATE_SIGNING_KEY }}
+        run: |
+          echo "$CULLSNAP_UPDATE_SIGNING_KEY" > /tmp/signing.pem
+          openssl dgst -sha256 -sign /tmp/signing.pem -out release_assets/checksums.txt.sig release_assets/checksums.txt
+          rm /tmp/signing.pem
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           files: |
             artifacts/**/*CullSnap-*
+            release_assets/checksums.txt
+            release_assets/checksums.txt.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
