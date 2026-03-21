@@ -80,9 +80,15 @@ func NewUpdater(ctx context.Context, version string, publicKey []byte, mode stri
 		if err != nil {
 			logger.Log.Error("Failed to parse ECDSA public key", "error", err)
 		} else {
-			u.config.Validator = &selfupdate.ECDSAValidator{
-				PublicKey: ecdsaKey,
-			}
+			// Build the same pattern as NewChecksumWithECDSAValidator but using
+			// a parsed PKIX public key (the library's helper expects a certificate PEM).
+			// This validates:
+			// 1. checksums.txt signature against checksums.txt.sig (ECDSA)
+			// 2. Each asset's SHA256 against checksums.txt
+			u.config.Validator = new(selfupdate.PatternValidator).
+				Add("checksums.txt", &selfupdate.ECDSAValidator{PublicKey: ecdsaKey}).
+				Add("*", &selfupdate.ChecksumValidator{UniqueFilename: "checksums.txt"}).
+				SkipValidation("*.sig")
 		}
 	}
 
