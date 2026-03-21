@@ -1,0 +1,126 @@
+package raw
+
+import (
+	"bytes"
+	"encoding/binary"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// buildValidJPEG creates a valid JPEG image with the given dimensions.
+func buildValidJPEG(t *testing.T, width, height int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			img.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 128, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 50}); err != nil {
+		t.Fatalf("failed to encode test JPEG: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// buildTIFFWithJPEG creates a minimal TIFF file containing a real JPEG preview.
+func buildTIFFWithJPEG(t *testing.T, jpegData []byte) []byte {
+	t.Helper()
+	bo := binary.LittleEndian
+
+	ifdOffset := uint32(8)
+	numEntries := uint16(3)
+	ifdSize := 2 + int(numEntries)*12 + 4
+	jpegDataOffset := uint32(8 + ifdSize)
+
+	totalSize := int(jpegDataOffset) + len(jpegData)
+	buf := make([]byte, totalSize)
+
+	// Header.
+	writeTIFFHeader(buf, bo, tiffMagic, ifdOffset)
+
+	// IFD.
+	pos := int(ifdOffset)
+	bo.PutUint16(buf[pos:pos+2], numEntries)
+	pos += 2
+
+	writeIFDEntryShortInline(buf[pos:pos+12], bo, tagCompression, compressionJPEG)
+	pos += 12
+
+	writeIFDEntry(buf[pos:pos+12], bo, tagStripOffsets, 4, 1, jpegDataOffset)
+	pos += 12
+
+	writeIFDEntry(buf[pos:pos+12], bo, tagStripByteCounts, 4, 1, uint32(len(jpegData)))
+	pos += 12
+
+	bo.PutUint32(buf[pos:pos+4], 0)
+
+	copy(buf[jpegDataOffset:], jpegData)
+	return buf
+}
+
+func TestExtractPreview_NonRAWFile(t *testing.T) {
+	_, err := ExtractPreview("/some/photo.jpg")
+	if err == nil {
+		t.Fatal("expected error for non-RAW extension")
+	}
+}
+
+func TestExtractPreview_EmptyExtension(t *testing.T) {
+	_, err := ExtractPreview("/some/file")
+	if err == nil {
+		t.Fatal("expected error for empty extension")
+	}
+}
+
+func TestExtractPreview_TIFF(t *testing.T) {
+	// Disable dcraw so the test only exercises the TIFF path.
+	origAvailable := dcrawAvailable
+	dcrawAvailable = false
+	defer func() { dcrawAvailable = origAvailable }()
+
+	jpegData := buildValidJPEG(t, 800, 600)
+	tiffData := buildTIFFWithJPEG(t, jpegData)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.cr2")
+	if err := os.WriteFile(path, tiffData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ExtractPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) == 0 {
+		t.Fatal("expected non-empty preview data")
+	}
+	if result[0] != 0xFF || result[1] != 0xD8 {
+		t.Fatal("result does not start with JPEG SOI")
+	}
+}
+
+func TestIsPreviewLargeEnough_Large(t *testing.T) {
+	data := buildValidJPEG(t, 800, 600)
+	if !isPreviewLargeEnough(data, 400) {
+		t.Fatal("800px wide image should be large enough")
+	}
+}
+
+func TestIsPreviewLargeEnough_Small(t *testing.T) {
+	data := buildValidJPEG(t, 160, 120)
+	if isPreviewLargeEnough(data, 400) {
+		t.Fatal("160px wide image should not be large enough")
+	}
+}
+
+func TestIsPreviewLargeEnough_InvalidJPEG(t *testing.T) {
+	// Invalid data should return false (not panic).
+	if isPreviewLargeEnough([]byte{0xFF, 0xD8, 0x00}, 400) {
+		t.Fatal("invalid JPEG should return false")
+	}
+}
