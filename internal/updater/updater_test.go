@@ -6,14 +6,13 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"cullsnap/internal/logger"
 	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"cullsnap/internal/logger"
 )
 
 func TestMain(m *testing.M) {

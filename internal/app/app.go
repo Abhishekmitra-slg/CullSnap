@@ -2,6 +2,14 @@ package app
 
 import (
 	"context"
+	"cullsnap/internal/dedupe"
+	"cullsnap/internal/export"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
+	"cullsnap/internal/scanner"
+	"cullsnap/internal/storage"
+	"cullsnap/internal/updater"
+	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,15 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"cullsnap/internal/dedupe"
-	"cullsnap/internal/export"
-	"cullsnap/internal/logger"
-	"cullsnap/internal/model"
-	"cullsnap/internal/scanner"
-	"cullsnap/internal/storage"
-	"cullsnap/internal/updater"
-	"cullsnap/internal/video"
 
 	cullImage "cullsnap/internal/image"
 
