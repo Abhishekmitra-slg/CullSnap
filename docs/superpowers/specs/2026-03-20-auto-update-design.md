@@ -2,7 +2,7 @@
 
 ## Overview
 
-CullSnap will check for new releases on GitHub and offer seamless in-place updates. Users control behavior via a three-state setting: Off, Notify Only (default), or Auto-Update.
+CullSnap will check for new releases on GitHub and offer seamless in-place updates. Users control behavior via a three-state setting: Off, Notify Only (default), or Auto-Update. On macOS, the updater detects Homebrew-managed installations and defers to `brew upgrade` instead of performing in-app binary replacement, avoiding conflicts between update mechanisms.
 
 ## Architecture
 
@@ -41,6 +41,7 @@ type Updater struct {
     mu             sync.Mutex          // protects state transitions
     state          State               // current update state
     latestRelease  *selfupdate.Release // cached release info after check
+    isHomebrew     bool                // true if running from Homebrew Caskroom path
 }
 ```
 
@@ -123,15 +124,77 @@ This handles the full verification flow internally — no custom verification co
 - **No telemetry:** The only network call is to `api.github.com/repos/Abhishekmitra-slg/CullSnap/releases`. No PII, no analytics.
 - **Rate limit safe:** GitHub allows 60 unauthenticated API requests/hour. At 1 check per 6 hours, usage is minimal.
 
+### Threat Model
+
+| Threat | Risk | Mitigation | Residual Risk |
+|--------|------|------------|---------------|
+| MITM on download | High | HTTPS to GitHub API (TLS) | Very Low |
+| Compromised GitHub Release (malicious binary uploaded) | Medium | ECDSA signature — attacker can't sign without private key | Very Low |
+| Compromised GitHub Actions secret (signing key leaked) | Medium | Key stored as GH secret, scoped to repo. Rotate key if compromised. | Medium — same risk as any CI-signed release |
+| Binary replacement race condition | Low | go-selfupdate uses atomic write-to-temp → rename pattern | Very Low |
+| Privilege escalation via writable binary | Low | App runs as user, binary in user-writable location | Very Low |
+| Downgrade attack | Medium | Semver comparison rejects older versions | Very Low |
+| Update infrastructure redirect (Notepad++ style) | High for custom servers | No custom update server — uses GitHub API directly | Very Low |
+| Supply chain: go-selfupdate library compromised | Low | Pin version in go.mod, audit on upgrade | Low |
+| GitHub API rate limiting as DoS vector | Low | 60-second cooldown on manual checks, 6-hour background interval | Very Low |
+
+**Key insight:** The ECDSA signing model protects against all threats except private key compromise. If an attacker gains access to the GitHub repo or the `CULLSNAP_UPDATE_SIGNING_KEY` secret, they can push signed malicious updates. This is inherent to any CI-signed release model (including Homebrew — an attacker who compromises the tap repo can push malicious cask formulas). The mitigation is strong GitHub account security (2FA, limited collaborators, branch protection).
+
 ## Platform-Specific Considerations
 
-### macOS (.app Bundle)
+### macOS: Homebrew Coexistence
+
+CullSnap is distributed via Homebrew Cask (`brew install --cask cullsnap`) and as a direct `.app` download. These two install methods require different update strategies to avoid conflicts.
+
+**Homebrew detection:** On startup, the updater checks whether the running binary is inside a Homebrew-managed path:
+- `/opt/homebrew/Caskroom/cullsnap/` (Apple Silicon)
+- `/usr/local/Caskroom/cullsnap/` (Intel)
+
+```go
+func isHomebrewManaged() bool {
+    exe, err := os.Executable()
+    if err != nil {
+        return false
+    }
+    resolved, err := filepath.EvalSymlinks(exe)
+    if err != nil {
+        return false
+    }
+    return strings.Contains(resolved, "/Caskroom/cullsnap/") ||
+           strings.Contains(resolved, "/homebrew/")
+}
+```
+
+**Behavior by install method:**
+
+| Install Method | Update Check | Update Action |
+|----------------|-------------|---------------|
+| **Homebrew Cask** | Checks GitHub for new version (same as always) | Shows toast: "Update available: vX.Y.Z — Run `brew upgrade cullsnap` to update" — no in-app download |
+| **Direct .app download** | Checks GitHub for new version | Full in-app update via go-selfupdate (download, verify, replace binary) |
+| **Windows / Linux** | Checks GitHub for new version | Full in-app update via go-selfupdate |
+
+**Why defer to Homebrew:** Homebrew manages the entire `.app` bundle (Info.plist, resources, frameworks). If go-selfupdate replaces just the inner binary while Homebrew thinks it owns the installation, the next `brew upgrade` could conflict or produce inconsistent state. Deferring to `brew upgrade` respects the package manager's ownership.
+
+**Homebrew cask:** The existing `cullsnap.rb` cask does NOT set `auto_updates true` — this is correct. Users who run `brew upgrade` will get CullSnap updates through Homebrew's normal flow (download zip, verify SHA256 from cask formula, replace entire `.app` bundle).
+
+### macOS: .app Bundle & Binary Replacement (Non-Homebrew)
 
 go-selfupdate replaces a single binary at the path returned by `os.Executable()`, which on macOS is `.app/Contents/MacOS/CullSnap`. This works for binary-only updates, but if a new version changes `Info.plist`, icons, or other bundle resources, only replacing the inner binary would leave the app in an inconsistent state.
 
 **Solution:** The CI release pipeline will produce an additional **standalone binary** asset (`CullSnap-darwin-universal`) alongside the existing `.app` zip. The updater targets this standalone binary for self-update. The `.app` zip remains available for fresh installs and Homebrew.
 
 Since CullSnap is not currently code-signed or notarized, replacing the inner binary does not invalidate any signature. When code signing is added in the future, the update strategy must be revisited (options: full bundle replacement, re-signing, or Sparkle framework).
+
+### macOS: Gatekeeper / Quarantine (xattr)
+
+On initial install, users who download the `.app` via a browser must run `xattr -cr /Applications/CullSnap.app` to clear the `com.apple.quarantine` extended attribute that macOS Gatekeeper adds. **This is NOT needed after auto-updates** because:
+
+1. The `com.apple.quarantine` attribute is added only by quarantine-aware apps (Safari, Chrome, Mail, etc.)
+2. Go's `net/http` client is **not** quarantine-aware — files downloaded by go-selfupdate do not receive the quarantine attribute
+3. The parent `.app` bundle already had quarantine cleared during initial install
+4. The replacement binary inherits no quarantine flag
+
+Result: auto-updates are seamless with no manual `xattr` intervention.
 
 ### Windows
 
@@ -176,10 +239,11 @@ Add a "Check for Updates" button next to the version display. Calls `App.CheckFo
 
 New `UpdateToast.tsx` component, rendered in `App.tsx`. Four visual states:
 
-1. **Update Available** (green border) — version number, "Download & Install" button, "Later" button, dismiss X. **Notify mode only.**
-2. **Downloading** (blue border) — version number, indeterminate spinner (no progress bar — go-selfupdate does not expose download progress).
-3. **Update Ready** (green border) — "Applied to disk" message, "Restart Now" button, "Later" button.
-4. **Error** (red border) — error message (e.g., "Signature verification failed. Update skipped for safety.")
+1. **Update Available** (green border) — version number, "Download & Install" button, "Later" button, dismiss X. **Notify mode only, non-Homebrew installs.**
+2. **Update Available — Homebrew** (green border) — version number, "Run `brew upgrade cullsnap` to update" message, dismiss X. **macOS Homebrew installs only.** No download button — defers to Homebrew.
+3. **Downloading** (blue border) — version number, indeterminate spinner (no progress bar — go-selfupdate does not expose download progress).
+4. **Update Ready** (green border) — "Applied to disk" message, "Restart Now" button, "Later" button.
+5. **Error** (red border) — error message (e.g., "Signature verification failed. Update skipped for safety.")
 
 Position: bottom-right of app window. Non-blocking. Dismissable. Reappears on next check cycle if dismissed — **in notify mode only** (in auto mode, the flow progresses from checking directly to downloading to ready, with no dismissable "available" state).
 
@@ -187,8 +251,8 @@ Position: bottom-right of app window. Non-blocking. Dismissable. Reappears on ne
 
 | Event | Payload | When |
 |-------|---------|------|
-| `update:available` | `{ version: string, releaseURL: string }` | New version detected, waiting for user action (notify mode only) |
-| `update:downloading` | `{ version: string }` | Download in progress (indeterminate — no progress tracking) |
+| `update:available` | `{ version: string, releaseURL: string, homebrew: boolean }` | New version detected. If `homebrew: true`, frontend shows Homebrew-specific toast. Otherwise shows download button (notify mode) or auto-downloads (auto mode). |
+| `update:downloading` | `{ version: string }` | Download in progress (indeterminate — no progress tracking). Never emitted for Homebrew installs. |
 | `update:ready` | `{ version: string }` | Binary replaced on disk, ready for restart |
 | `update:error` | `{ message: string }` | Any failure (network, checksum, signature, disk, permissions) |
 
@@ -256,6 +320,8 @@ On macOS, the binary is inside `.app/Contents/MacOS/` — launching it re-opens 
 
 - Version comparison: current >= latest returns no update
 - Dev build guard: `"dev"` version skips all checks
+- Homebrew detection: paths containing `/Caskroom/cullsnap/` or `/homebrew/` detected correctly
+- Homebrew mode: `DownloadUpdate()` is a no-op when `isHomebrew` is true
 - Config parsing: "off" / "notify" / "auto" modes set correctly
 - State machine: invalid transitions are no-ops
 - Checksum verification: valid checksum passes, tampered fails
