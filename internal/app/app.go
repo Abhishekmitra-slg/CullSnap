@@ -390,9 +390,9 @@ func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 		return nil, err
 	}
 	var videoPaths []string
-	for _, p := range photos {
-		if p.IsVideo {
-			videoPaths = append(videoPaths, p.Path)
+	for i := range photos {
+		if photos[i].IsVideo {
+			videoPaths = append(videoPaths, photos[i].Path)
 		}
 	}
 	if len(videoPaths) > 0 {
@@ -438,11 +438,11 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		ModTime time.Time
 	}, len(photos))
 
-	for i, p := range photos {
+	for i := range photos {
 		items[i] = struct {
 			Path    string
 			ModTime time.Time
-		}{Path: p.Path, ModTime: p.TakenAt}
+		}{Path: photos[i].Path, ModTime: photos[i].TakenAt}
 	}
 
 	// Parallel thumbnail generation with progress — use config value
@@ -466,9 +466,9 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	}
 
 	var videoPaths []string
-	for _, p := range photos {
-		if p.IsVideo {
-			videoPaths = append(videoPaths, p.Path)
+	for i := range photos {
+		if photos[i].IsVideo {
+			videoPaths = append(videoPaths, photos[i].Path)
 		}
 	}
 	if len(videoPaths) > 0 {
@@ -768,11 +768,9 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 
 	// Build RAW metadata lookup map
 	rawMeta := make(map[string]model.Photo)
-	if scannedPhotos != nil {
-		for _, p := range scannedPhotos {
-			if p.IsRAW || p.IsRAWCompanion {
-				rawMeta[p.Path] = p
-			}
+	for i := range scannedPhotos {
+		if scannedPhotos[i].IsRAW || scannedPhotos[i].IsRAWCompanion {
+			rawMeta[scannedPhotos[i].Path] = scannedPhotos[i]
 		}
 	}
 

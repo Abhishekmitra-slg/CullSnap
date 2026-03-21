@@ -56,7 +56,7 @@ func extractTIFFPreview(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tiff: open: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {

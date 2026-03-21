@@ -35,7 +35,7 @@ func GetCachedPreview(path string) ([]byte, error) {
 func CachePreview(path string, data []byte) error {
 	cachePath := previewCachePath(path)
 	tmpPath := cachePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, cachePath)
