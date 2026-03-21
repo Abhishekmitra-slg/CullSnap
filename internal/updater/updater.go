@@ -25,7 +25,6 @@ const (
 	cooldownSec   = 60
 )
 
-
 // State represents the update lifecycle state machine.
 type State int
 
@@ -312,7 +311,7 @@ func (u *Updater) handleError(msg string) {
 // by Homebrew or if no update has been cached from a previous check.
 func (u *Updater) DownloadUpdate() error {
 	if u.isHomebrew {
-		return fmt.Errorf("Homebrew-managed install: use 'brew upgrade cullsnap' instead")
+		return fmt.Errorf("homebrew-managed install: use 'brew upgrade cullsnap' instead")
 	}
 
 	u.mu.Lock()

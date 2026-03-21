@@ -10,6 +10,14 @@ export function CheckDedupStatus(arg1) {
   return window['go']['app']['App']['CheckDedupStatus'](arg1);
 }
 
+export function CheckForUpdate() {
+  return window['go']['app']['App']['CheckForUpdate']();
+}
+
+export function DownloadUpdate() {
+  return window['go']['app']['App']['DownloadUpdate']();
+}
+
 export function ExportPhotos(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportPhotos'](arg1, arg2, arg3);
 }
@@ -56,6 +64,10 @@ export function PreloadThumbnails(arg1) {
 
 export function ResetAppConfig() {
   return window['go']['app']['App']['ResetAppConfig']();
+}
+
+export function RestartForUpdate() {
+  return window['go']['app']['App']['RestartForUpdate']();
 }
 
 export function SaveAppConfig(arg1) {

@@ -2,14 +2,6 @@ package app
 
 import (
 	"context"
-	"cullsnap/internal/dedupe"
-	"cullsnap/internal/export"
-	"cullsnap/internal/logger"
-	"cullsnap/internal/model"
-	"cullsnap/internal/scanner"
-	"cullsnap/internal/storage"
-	"cullsnap/internal/updater"
-	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,6 +12,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"cullsnap/internal/dedupe"
+	"cullsnap/internal/export"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
+	"cullsnap/internal/scanner"
+	"cullsnap/internal/storage"
+	"cullsnap/internal/updater"
+	"cullsnap/internal/video"
 
 	cullImage "cullsnap/internal/image"
 
@@ -59,11 +60,11 @@ type App struct {
 	cfg             *AppConfig
 	enrichMu        sync.Mutex
 	enrichCancel    context.CancelFunc
-	OnAllowDir      func(dir string)  // called to register a directory with the media server allowlist
-	Version         string            // set from main.version (build-time ldflags)
-	ContributorsRaw string            // raw CONTRIBUTORS.yml content embedded at build time
-	UpdatePublicKey []byte            // ECDSA public key for update signature verification
-	updater         *updater.Updater  // manages self-update checks
+	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
+	Version         string           // set from main.version (build-time ldflags)
+	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
+	UpdatePublicKey []byte           // ECDSA public key for update signature verification
+	updater         *updater.Updater // manages self-update checks
 }
 
 // NewApp creates a new App application struct

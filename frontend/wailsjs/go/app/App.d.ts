@@ -7,6 +7,10 @@ export function CancelDeduplicate():Promise<void>;
 
 export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
+export function CheckForUpdate():Promise<void>;
+
+export function DownloadUpdate():Promise<void>;
+
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
 
 export function GetAboutInfo():Promise<app.AboutInfo>;
@@ -30,6 +34,8 @@ export function OpenLog():Promise<void>;
 export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
 
 export function ResetAppConfig():Promise<app.AppConfig>;
+
+export function RestartForUpdate():Promise<void>;
 
 export function SaveAppConfig(arg1:app.AppConfig):Promise<void>;
 
