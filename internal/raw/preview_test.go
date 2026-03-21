@@ -124,3 +124,49 @@ func TestIsPreviewLargeEnough_InvalidJPEG(t *testing.T) {
 		t.Fatal("invalid JPEG should return false")
 	}
 }
+
+func TestExtractPreview_RealFiles(t *testing.T) {
+	tests := []struct {
+		file   string
+		format string
+	}{
+		{"sample.cr2", "CR2"},
+		{"sample.nef", "NEF"},
+		{"sample.arw", "ARW"},
+		{"sample.dng", "DNG"},
+		{"sample.raf", "RAF"},
+		{"sample.rw2", "RW2"},
+		{"sample.orf", "ORF"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			path := filepath.Join("testdata", tt.file)
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				t.Skipf("test fixture %s not found — run testdata/download.sh first", tt.file)
+			}
+
+			data, err := ExtractPreview(path)
+			if err != nil {
+				t.Fatalf("ExtractPreview(%s) error: %v", tt.format, err)
+			}
+
+			if len(data) < 2 {
+				t.Fatal("preview too short")
+			}
+			if data[0] != 0xFF || data[1] != 0xD8 {
+				t.Fatal("preview does not start with JPEG SOI marker")
+			}
+
+			cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("failed to decode preview config: %v", err)
+			}
+			if cfg.Width < 200 {
+				t.Errorf("preview too small: %dx%d", cfg.Width, cfg.Height)
+			}
+
+			t.Logf("%s preview: %dx%d, %d bytes", tt.format, cfg.Width, cfg.Height, len(data))
+		})
+	}
+}
