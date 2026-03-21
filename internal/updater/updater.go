@@ -95,6 +95,7 @@ func NewUpdater(ctx context.Context, version string, publicKey []byte, mode stri
 	}
 
 	u.shouldRun = true
+	logger.Log.Info("Updater initialized", "version", version, "mode", mode, "isHomebrew", u.isHomebrew, "hasValidator", u.config.Validator != nil)
 	return u
 }
 
@@ -242,6 +243,8 @@ func (u *Updater) check() {
 	u.lastCheck = time.Now()
 	u.mu.Unlock()
 
+	logger.Log.Info("Update check starting", "currentVersion", u.currentVersion)
+
 	suUpdater, err := selfupdate.NewUpdater(u.config)
 	if err != nil {
 		u.handleError(fmt.Sprintf("Failed to create updater: %v", err))
@@ -249,6 +252,7 @@ func (u *Updater) check() {
 	}
 
 	latest, found, err := suUpdater.DetectLatest(u.ctx, selfupdate.ParseSlug(repoSlug))
+	logger.Log.Info("DetectLatest result", "found", found, "err", err)
 	if err != nil {
 		u.handleError(fmt.Sprintf("Update check failed: %v", err))
 		return
