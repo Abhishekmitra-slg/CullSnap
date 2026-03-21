@@ -109,6 +109,10 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	val, _ = a.store.GetConfig("serverIdleTimeoutSec")
 	cfg.ServerIdleTimeoutSec, _ = strconv.Atoi(val)
 	cfg.CacheDir, _ = a.store.GetConfig("cacheDir")
+	cfg.AutoUpdate, _ = a.store.GetConfig("autoUpdate")
+	if cfg.AutoUpdate == "" {
+		cfg.AutoUpdate = "notify"
+	}
 
 	// Always re-run the probe on startup so hardware info stays current.
 	cfg.Probe = RunSystemProbe(ffmpegPath)
@@ -147,6 +151,9 @@ func (a *App) persistConfig(cfg *AppConfig) {
 	}
 	if err := a.store.SetConfig("cacheDir", cfg.CacheDir); err != nil {
 		runtime.LogWarningf(a.ctx, "persistConfig: failed to save cacheDir: %v", err)
+	}
+	if err := a.store.SetConfig("autoUpdate", cfg.AutoUpdate); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save autoUpdate: %v", err)
 	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
 		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {

@@ -371,6 +371,41 @@ func TestPersistConfig(t *testing.T) {
 	}
 }
 
+func TestAutoUpdateConfigPersistence(t *testing.T) {
+	store, err := newTestStore(t)
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	a := NewApp(store)
+	a.cfg = &AppConfig{AutoUpdate: "auto"}
+	a.ctx = context.Background()
+
+	a.persistConfig(a.cfg)
+
+	val, _ := store.GetConfig("autoUpdate")
+	if val != "auto" {
+		t.Errorf("expected autoUpdate 'auto', got %q", val)
+	}
+}
+
+func TestAutoUpdateConfigDefault(t *testing.T) {
+	store, err := newTestStore(t)
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	a := NewApp(store)
+	cfg := DeriveDefaults(SystemProbe{OS: "darwin", Arch: "arm64", CPUs: 8})
+	if cfg.AutoUpdate != "notify" {
+		t.Errorf("expected default AutoUpdate 'notify', got %q", cfg.AutoUpdate)
+	}
+
+	_ = a // suppress unused variable warning
+}
+
 func TestGetPhotoEXIF_ValidJPEG(t *testing.T) {
 	store, err := newTestStore(t)
 	if err != nil {
