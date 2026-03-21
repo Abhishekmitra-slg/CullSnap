@@ -774,7 +774,12 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		}
 	}
 
-	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, emitProgress)
+	thumbnailDir := ""
+	if a.thumbCache != nil {
+		thumbnailDir = a.thumbCache.CacheDir()
+	}
+
+	groups, err := dedupe.FindDuplicates(appCtx, path, similarityThreshold, thumbnailDir, emitProgress)
 	if err != nil {
 		return nil, err
 	}

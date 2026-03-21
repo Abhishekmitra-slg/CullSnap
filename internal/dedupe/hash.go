@@ -3,6 +3,8 @@ package dedupe
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"cullsnap/internal/logger"
 	"cullsnap/internal/raw"
 	"fmt"
 	"image"
@@ -72,9 +74,45 @@ func hashImage(path string) (result *goimagehash.ImageHash, err error) {
 	return hash, nil
 }
 
+// hashImageFromThumbnail tries to compute a dHash from a cached thumbnail first,
+// falling back to the original file on cache miss or decode error.
+func hashImageFromThumbnail(originalPath string, thumbnailDir string) (*goimagehash.ImageHash, error) {
+	if thumbnailDir == "" {
+		return hashImage(originalPath)
+	}
+
+	info, err := os.Stat(originalPath)
+	if err != nil {
+		return hashImage(originalPath)
+	}
+
+	// Cache key matches ThumbCache.cacheKey: MD5 of "path_modTimeUnixNano"
+	h := md5.Sum([]byte(fmt.Sprintf("%s_%d", originalPath, info.ModTime().UnixNano()))) //nolint:gosec // MD5 used as cache key, not for security
+	thumbPath := filepath.Join(thumbnailDir, fmt.Sprintf("%x.jpg", h))
+
+	thumbFile, err := os.Open(thumbPath)
+	if err != nil {
+		logger.Log.Debug("dedupe: thumbnail cache miss, hashing from original", "path", originalPath)
+		return hashImage(originalPath)
+	}
+	defer func() { _ = thumbFile.Close() }()
+
+	img, err := jpeg.Decode(thumbFile)
+	if err != nil {
+		return hashImage(originalPath)
+	}
+
+	logger.Log.Debug("dedupe: hashing from cached thumbnail", "path", originalPath)
+	hash, err := goimagehash.DifferenceHash(img)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute dHash for %s: %w", originalPath, err)
+	}
+	return hash, nil
+}
+
 // FindDuplicates scans a directory concurrently, hashes them, and groups by similarity.
 // similarityThreshold controls the hamming distance allowed (e.g., 5-10 for dHash)
-func FindDuplicates(ctx context.Context, dirPath string, similarityThreshold int, progressCallback func(current, total int, message string)) ([]*DuplicateGroup, error) {
+func FindDuplicates(ctx context.Context, dirPath string, similarityThreshold int, thumbnailDir string, progressCallback func(current, total int, message string)) ([]*DuplicateGroup, error) {
 	var paths []string
 
 	extensions := raw.ImageExtensions()
@@ -113,7 +151,7 @@ func FindDuplicates(ctx context.Context, dirPath string, similarityThreshold int
 			default:
 			}
 
-			hash, err := hashImage(path)
+			hash, err := hashImageFromThumbnail(path, thumbnailDir)
 			if err != nil {
 				// Skipping corrupted files gracefully instead of failing entire batch
 				photos[i] = &PhotoInfo{Path: path}
