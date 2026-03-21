@@ -23,10 +23,10 @@ func PairRAWJPEG(photos []model.Photo) []model.Photo {
 	rawFiles := make(map[fileKey]int)
 	jpegFiles := make(map[fileKey]int)
 
-	for i, p := range photos {
-		ext := strings.ToLower(filepath.Ext(p.Path))
-		dir := filepath.Dir(p.Path)
-		base := strings.ToLower(strings.TrimSuffix(filepath.Base(p.Path), filepath.Ext(p.Path)))
+	for i := range photos {
+		ext := strings.ToLower(filepath.Ext(photos[i].Path))
+		dir := filepath.Dir(photos[i].Path)
+		base := strings.ToLower(strings.TrimSuffix(filepath.Base(photos[i].Path), filepath.Ext(photos[i].Path)))
 		key := fileKey{dir: dir, base: base}
 
 		if IsRAWExt(ext) {

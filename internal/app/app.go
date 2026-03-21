@@ -492,10 +492,10 @@ func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName stri
 		if len(photos) > 0 {
 			srcDir = filepath.Dir(photos[0].Path)
 		}
-		for _, p := range photos {
-			_ = a.store.MarkExported(p.Path)
+		for i := range photos {
+			_ = a.store.MarkExported(photos[i].Path)
 			if srcDir != "" {
-				_ = a.store.SaveSelection(p.Path, srcDir, false)
+				_ = a.store.SaveSelection(photos[i].Path, srcDir, false)
 			}
 		}
 	}
