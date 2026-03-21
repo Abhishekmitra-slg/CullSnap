@@ -11,9 +11,12 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/disintegration/imaging"
+	"golang.org/x/sync/errgroup"
 )
 
 // CalculateLaplacianVariance computes the variance of the laplacian for an image.
@@ -136,60 +139,69 @@ func colorToLuminance(c color.Color) float64 {
 // FindBestPhoto updates the duplicate group by selecting the one with highest sharpness variance.
 func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir string, progressCallback func(current, total int, message string)) error {
 	totalGroups := len(groups)
-	for i, group := range groups {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	var processedCount int32
 
-		if progressCallback != nil {
-			progressCallback(i+1, totalGroups, "Selecting best quality photos...")
-		}
+	eg := new(errgroup.Group)
+	eg.SetLimit(runtime.NumCPU())
+
+	for _, group := range groups {
+		group := group
 
 		if len(group.Photos) <= 1 {
-			// Unique photo is inherently the "best"
 			if len(group.Photos) == 1 {
 				group.Photos[0].IsUnique = true
+			}
+			count := atomic.AddInt32(&processedCount, 1)
+			if progressCallback != nil {
+				progressCallback(int(count), totalGroups, "Selecting best quality photos...")
 			}
 			continue
 		}
 
-		var bestPhoto *PhotoInfo
-		var maxVariance float64 = -1
-
-		for _, photo := range group.Photos {
-			if photo.Hash == nil {
-				continue
+		eg.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
 			}
 
-			variance, err := CalculateLaplacianVariance(photo.Path, thumbnailDir)
-			if err != nil {
-				continue // Skip gracefully
+			var bestPhoto *PhotoInfo
+			var maxVariance float64 = -1
+
+			for _, photo := range group.Photos {
+				if photo.Hash == nil {
+					continue
+				}
+
+				variance, err := CalculateLaplacianVariance(photo.Path, thumbnailDir)
+				if err != nil {
+					continue
+				}
+
+				if variance > maxVariance {
+					maxVariance = variance
+					bestPhoto = photo
+				}
 			}
 
-			if variance > maxVariance {
-				maxVariance = variance
-				bestPhoto = photo
+			for _, photo := range group.Photos {
+				photo.IsUnique = photo == bestPhoto && bestPhoto != nil
 			}
-		}
 
-		// Mark the best photo as the true "Unique" representative, others are duplicates
-		for _, photo := range group.Photos {
-			if photo == bestPhoto && bestPhoto != nil {
-				photo.IsUnique = true
-			} else {
-				photo.IsUnique = false
+			if bestPhoto == nil && len(group.Photos) > 0 {
+				group.Photos[0].IsUnique = true
+				for i := 1; i < len(group.Photos); i++ {
+					group.Photos[i].IsUnique = false
+				}
 			}
-		}
 
-		// Fallback: If all failed sharpness detection, mark the first one as representative
-		if bestPhoto == nil && len(group.Photos) > 0 {
-			group.Photos[0].IsUnique = true
-			for i := 1; i < len(group.Photos); i++ {
-				group.Photos[i].IsUnique = false
+			count := atomic.AddInt32(&processedCount, 1)
+			if progressCallback != nil {
+				progressCallback(int(count), totalGroups, "Selecting best quality photos...")
 			}
-		}
+			return nil
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
