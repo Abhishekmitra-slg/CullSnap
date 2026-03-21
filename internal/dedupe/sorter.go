@@ -181,8 +181,9 @@ func tagString(t *tiff.Tag) string {
 }
 
 // SortGroupsByDate extracts dates from the "Unique" representation inside a group
-// and sorts the groups chronologically.
-func SortGroupsByDate(ctx context.Context, groups []*DuplicateGroup) error {
+// and sorts the groups chronologically. When dateCache is non-nil, cached dates
+// are used instead of re-reading files from disk.
+func SortGroupsByDate(ctx context.Context, groups []*DuplicateGroup, dateCache map[string]time.Time) error {
 	// 1. Assign Date Taken to each group based on the representative unique photo
 	type GroupMeta struct {
 		G     *DuplicateGroup
@@ -211,8 +212,12 @@ func SortGroupsByDate(ctx context.Context, groups []*DuplicateGroup) error {
 		}
 
 		if representative != "" {
-			date, valid := ExtractDateTaken(representative)
-			metaList[i] = &GroupMeta{G: g, Date: date, Valid: valid}
+			if date, ok := dateCache[representative]; ok {
+				metaList[i] = &GroupMeta{G: g, Date: date, Valid: true}
+			} else {
+				date, valid := ExtractDateTaken(representative)
+				metaList[i] = &GroupMeta{G: g, Date: date, Valid: valid}
+			}
 		} else {
 			metaList[i] = &GroupMeta{G: g, Valid: false}
 		}

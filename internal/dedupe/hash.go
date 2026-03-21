@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/corona10/goimagehash"
 	"golang.org/x/sync/errgroup"
@@ -22,10 +23,12 @@ import (
 
 // PhotoInfo holds deduplication info for a single photo.
 type PhotoInfo struct {
-	Path     string
-	Hash     *goimagehash.ImageHash
-	IsUnique bool
-	GroupID  string // used to bind duplicate photos together
+	Path      string
+	Hash      *goimagehash.ImageHash
+	IsUnique  bool
+	GroupID   string    // used to bind duplicate photos together
+	DateTaken time.Time // cached EXIF date
+	HasDate   bool      // whether DateTaken is valid
 }
 
 // Group similar images based on perceptual hash.

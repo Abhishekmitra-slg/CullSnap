@@ -24,6 +24,8 @@ import (
 
 	cullImage "cullsnap/internal/image"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -774,6 +776,28 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 		}
 	}
 
+	// Pre-extract EXIF dates in parallel to avoid repeated file reads later
+	var dateMu sync.Mutex
+	dateCache := make(map[string]time.Time)
+
+	eg := new(errgroup.Group)
+	eg.SetLimit(stdruntime.NumCPU())
+	for i := range scannedPhotos {
+		photoPath := scannedPhotos[i].Path
+		eg.Go(func() error {
+			date, valid := dedupe.ExtractDateTaken(photoPath)
+			if valid {
+				dateMu.Lock()
+				dateCache[photoPath] = date
+				dateMu.Unlock()
+			}
+			return nil
+		})
+	}
+	_ = eg.Wait()
+
+	logger.Log.Info("dedup: date extraction complete", "total", len(scannedPhotos), "withDates", len(dateCache))
+
 	thumbnailDir := ""
 	if a.thumbCache != nil {
 		thumbnailDir = a.thumbCache.CacheDir()
@@ -792,7 +816,7 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 
 	// 3. Sort groups chronologically
 	emitProgress(0, len(groups), "Sorting by date...")
-	err = dedupe.SortGroupsByDate(appCtx, groups)
+	err = dedupe.SortGroupsByDate(appCtx, groups, dateCache)
 	if err != nil {
 		return nil, err
 	}
@@ -818,8 +842,8 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 				continue // Skip gracefully
 			}
 
-			date, valid := dedupe.ExtractDateTaken(p.Path)
-			if !valid {
+			date, hasCachedDate := dateCache[p.Path]
+			if !hasCachedDate {
 				date = info.ModTime() // fallback
 			}
 

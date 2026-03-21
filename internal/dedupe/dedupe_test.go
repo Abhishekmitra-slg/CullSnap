@@ -82,12 +82,12 @@ func TestExtractFullEXIF_JPEGWithoutEXIF(t *testing.T) {
 // --- SortGroupsByDate ---
 
 func TestSortGroupsByDate_EmptyGroups(t *testing.T) {
-	err := SortGroupsByDate(context.Background(), nil)
+	err := SortGroupsByDate(context.Background(), nil, nil)
 	if err != nil {
 		t.Errorf("expected no error for empty groups, got %v", err)
 	}
 
-	err = SortGroupsByDate(context.Background(), []*DuplicateGroup{})
+	err = SortGroupsByDate(context.Background(), []*DuplicateGroup{}, nil)
 	if err != nil {
 		t.Errorf("expected no error for zero-length slice, got %v", err)
 	}
@@ -102,7 +102,7 @@ func TestSortGroupsByDate_CancelledContext(t *testing.T) {
 		{Photos: []*PhotoInfo{{Path: "/fake/b.jpg", IsUnique: true}}},
 	}
 
-	err := SortGroupsByDate(ctx, groups)
+	err := SortGroupsByDate(ctx, groups, nil)
 	if err == nil {
 		t.Error("expected error for cancelled context")
 	}
@@ -120,7 +120,7 @@ func TestSortGroupsByDate_GroupsWithPhotos(t *testing.T) {
 	g2 := &DuplicateGroup{Photos: []*PhotoInfo{{Path: p1, IsUnique: true}}}
 	groups := []*DuplicateGroup{g1, g2}
 
-	err := SortGroupsByDate(context.Background(), groups)
+	err := SortGroupsByDate(context.Background(), groups, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestSortGroupsByDate_EmptyPhotosInGroup(t *testing.T) {
 		{Photos: []*PhotoInfo{}},
 		{Photos: nil},
 	}
-	err := SortGroupsByDate(context.Background(), groups)
+	err := SortGroupsByDate(context.Background(), groups, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
