@@ -1,7 +1,7 @@
-This file lists third-party components bundled with CullSnap.
+This file lists third-party components referenced by CullSnap.
 
 ================================================================================
-dcraw — Raw Image Decoder
+dcraw — Raw Image Decoder (optional, not bundled)
 ================================================================================
 Author: Dave Coffin
 License: GPL-2.0
@@ -11,5 +11,6 @@ dcraw is distributed under the terms of the GNU General Public License
 version 2. A copy of the license is available at:
 https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
-dcraw is used as a fallback binary for extracting embedded JPEG previews
-from camera RAW files (RAF, RW2, ORF, NRW, PEF, SRW formats).
+CullSnap includes optional fallback code that can invoke dcraw if installed
+on the user's system. All 11 supported RAW formats are handled natively in
+Pure Go without dcraw — it is not bundled or required.

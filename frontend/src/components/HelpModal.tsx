@@ -126,7 +126,7 @@ function FeaturesTab() {
         },
         {
             title: 'RAW Image Support',
-            text: 'Native support for 11 camera RAW formats: CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Embedded JPEG previews are extracted directly — no external software needed for Canon, Sony, Nikon, and Leica files. Fujifilm, Panasonic, and Olympus formats use dcraw as a fallback. RAW files show format badges in the grid and viewer. RAW+JPEG pairs shot simultaneously are automatically linked.',
+            text: 'Native Pure Go support for 11 camera RAW formats: CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. All formats are handled natively with zero external dependencies. RAW files show format badges in the grid and viewer. RAW+JPEG pairs shot simultaneously are automatically linked.',
         },
         {
             title: 'Video Support',
