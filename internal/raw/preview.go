@@ -36,13 +36,10 @@ func ExtractPreview(path string) ([]byte, error) {
 
 	switch ext {
 	case ".cr3":
-		// TODO: CR3 uses BMFF (ISO Base Media File Format). The imagemeta library
-		// (github.com/evanoberholster/imagemeta) has a PreviewCR3 function but its
-		// preview extraction API requires zerolog and internal pool management that
-		// makes it impractical to integrate cleanly. Once the library stabilizes its
-		// preview API, implement native CR3 extraction here. For now, fall through
-		// directly to dcraw.
-		logger.Log.Debug("preview: CR3 format, using dcraw directly", "path", path)
+		pathAData, pathAErr = extractCR3Preview(path)
+		if pathAErr != nil {
+			logger.Log.Debug("preview: CR3 extraction failed, trying dcraw", "path", path, "error", pathAErr)
+		}
 	case ".cr2", ".nef", ".arw", ".dng":
 		pathAData, pathAErr = extractTIFFPreview(path)
 		if pathAErr != nil {
