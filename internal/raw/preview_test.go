@@ -104,6 +104,108 @@ func TestExtractPreview_TIFF(t *testing.T) {
 	}
 }
 
+func TestExtractPreview_TIFFVariantFormats(t *testing.T) {
+	// Test that ORF, RW2, PEF, NRW, SRW extensions route through the TIFF parser.
+	origAvailable := dcrawAvailable
+	dcrawAvailable = false
+	defer func() { dcrawAvailable = origAvailable }()
+
+	jpegData := buildValidJPEG(t, 800, 600)
+
+	// Standard TIFF formats (PEF, NRW, SRW use magic=42).
+	standardExts := []string{".pef", ".nrw", ".srw"}
+	for _, ext := range standardExts {
+		t.Run(ext, func(t *testing.T) {
+			tiffData := buildTIFFWithJPEG(t, jpegData)
+			dir := t.TempDir()
+			path := filepath.Join(dir, "test"+ext)
+			if err := os.WriteFile(path, tiffData, 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := ExtractPreview(path)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", ext, err)
+			}
+			if result[0] != 0xFF || result[1] != 0xD8 {
+				t.Fatalf("result for %s does not start with JPEG SOI", ext)
+			}
+		})
+	}
+}
+
+func TestExtractPreview_ORF(t *testing.T) {
+	// ORF uses non-standard TIFF magic 0x4F52.
+	origAvailable := dcrawAvailable
+	dcrawAvailable = false
+	defer func() { dcrawAvailable = origAvailable }()
+
+	jpegData := buildValidJPEG(t, 800, 600)
+
+	// Build a TIFF with ORF magic.
+	bo := binary.LittleEndian
+	ifdOffset := uint32(8)
+	numEntries := uint16(3)
+	ifdSize := 2 + int(numEntries)*12 + 4
+	jpegDataOffset := uint32(8 + ifdSize)
+	totalSize := int(jpegDataOffset) + len(jpegData)
+	buf := make([]byte, totalSize)
+
+	// Write header with ORF magic.
+	buf[0], buf[1] = 'I', 'I'
+	bo.PutUint16(buf[2:4], orfMagicOR)
+	bo.PutUint32(buf[4:8], ifdOffset)
+
+	pos := int(ifdOffset)
+	bo.PutUint16(buf[pos:pos+2], numEntries)
+	pos += 2
+	writeIFDEntryShortInline(buf[pos:pos+12], bo, tagCompression, compressionJPEG)
+	pos += 12
+	writeIFDEntry(buf[pos:pos+12], bo, tagStripOffsets, 4, 1, jpegDataOffset)
+	pos += 12
+	writeIFDEntry(buf[pos:pos+12], bo, tagStripByteCounts, 4, 1, uint32(len(jpegData)))
+	pos += 12
+	bo.PutUint32(buf[pos:pos+4], 0)
+	copy(buf[jpegDataOffset:], jpegData)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.orf")
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ExtractPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error for ORF: %v", err)
+	}
+	if result[0] != 0xFF || result[1] != 0xD8 {
+		t.Fatal("result does not start with JPEG SOI")
+	}
+}
+
+func TestExtractPreview_RAF(t *testing.T) {
+	origAvailable := dcrawAvailable
+	dcrawAvailable = false
+	defer func() { dcrawAvailable = origAvailable }()
+
+	jpegData := buildValidJPEG(t, 800, 600)
+	rafData := buildMinimalRAF(jpegData)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.raf")
+	if err := os.WriteFile(path, rafData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ExtractPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error for RAF: %v", err)
+	}
+	if result[0] != 0xFF || result[1] != 0xD8 {
+		t.Fatal("result does not start with JPEG SOI")
+	}
+}
+
 func TestIsPreviewLargeEnough_Large(t *testing.T) {
 	data := buildValidJPEG(t, 800, 600)
 	if !isPreviewLargeEnough(data, 400) {
@@ -137,6 +239,9 @@ func TestExtractPreview_RealFiles(t *testing.T) {
 		{"sample.raf", "RAF"},
 		{"sample.rw2", "RW2"},
 		{"sample.orf", "ORF"},
+		{"sample.pef", "PEF"},
+		{"sample.nrw", "NRW"},
+		{"sample.srw", "SRW"},
 	}
 
 	for _, tt := range tests {

@@ -16,8 +16,9 @@ const minPreviewWidth = 400
 
 // ExtractPreview extracts a JPEG preview from the given RAW file.
 // It uses a two-path strategy:
-//   - Path A: native Go extraction (TIFF parser for CR2/NEF/ARW/DNG)
-//   - Path B: dcraw fallback for unsupported formats or when Path A fails
+//   - Path A: native Go extraction (TIFF parser for CR2/NEF/ARW/DNG/ORF/RW2/PEF/NRW/SRW,
+//     BMFF parser for CR3, RAF header parser for RAF)
+//   - Path B: dcraw fallback when Path A fails or preview is too small
 //
 // Returns the JPEG bytes or an error if no preview could be extracted.
 func ExtractPreview(path string) ([]byte, error) {
@@ -40,14 +41,20 @@ func ExtractPreview(path string) ([]byte, error) {
 		if pathAErr != nil {
 			logger.Log.Debug("preview: CR3 extraction failed, trying dcraw", "path", path, "error", pathAErr)
 		}
-	case ".cr2", ".nef", ".arw", ".dng":
+	case ".raf":
+		pathAData, pathAErr = extractRAFPreview(path)
+		if pathAErr != nil {
+			logger.Log.Debug("preview: RAF extraction failed, trying dcraw", "path", path, "error", pathAErr)
+		}
+	case ".cr2", ".nef", ".arw", ".dng", ".orf", ".rw2", ".pef", ".nrw", ".srw":
+		// Standard TIFF and TIFF-variant formats.
+		// ORF (Olympus): TIFF with magic 0x4F52 or 0x5253 instead of 42.
+		// RW2 (Panasonic): TIFF with magic 0x0055 instead of 42.
+		// PEF (Pentax), NRW (Nikon), SRW (Samsung): standard TIFF (magic=42).
 		pathAData, pathAErr = extractTIFFPreview(path)
 		if pathAErr != nil {
 			logger.Log.Debug("preview: TIFF extraction failed, trying dcraw", "path", path, "error", pathAErr)
 		}
-	default:
-		// .raf, .rw2, .orf, .nrw, .pef, .srw — go directly to dcraw.
-		logger.Log.Debug("preview: format requires dcraw", "path", path, "ext", ext)
 	}
 
 	// If Path A succeeded, check dimensions.

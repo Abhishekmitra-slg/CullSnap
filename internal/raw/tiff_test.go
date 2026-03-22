@@ -468,3 +468,135 @@ func TestParseTIFF_JPEGInterchangeFormat(t *testing.T) {
 		t.Fatal("missing JPEG SOI marker")
 	}
 }
+
+func TestParseTIFF_ORFMagic(t *testing.T) {
+	// Olympus ORF uses "IIRO" header: byte order "II" + magic 0x4F52 ("OR").
+	bo := binary.LittleEndian
+	jpeg := fakeJPEG(120)
+
+	ifdOffset := uint32(8)
+	numEntries := uint16(3)
+	ifdSize := 2 + int(numEntries)*12 + 4
+	jpegOff := uint32(8 + ifdSize)
+	totalSize := int(jpegOff) + 120
+	buf := make([]byte, totalSize)
+
+	writeTIFFHeader(buf, bo, orfMagicOR, ifdOffset)
+	pos := int(ifdOffset)
+	bo.PutUint16(buf[pos:], numEntries)
+	pos += 2
+	writeIFDEntryShortInline(buf[pos:], bo, tagCompression, compressionJPEG)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripOffsets, 4, 1, jpegOff)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripByteCounts, 4, 1, 120)
+	pos += 12
+	bo.PutUint32(buf[pos:], 0)
+	copy(buf[jpegOff:], jpeg)
+
+	path := writeTempFile(t, buf)
+	result, err := extractTIFFPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error for ORF magic: %v", err)
+	}
+	if len(result) != 120 {
+		t.Fatalf("expected 120 bytes, got %d", len(result))
+	}
+	if result[0] != 0xFF || result[1] != 0xD8 {
+		t.Fatal("missing JPEG SOI marker")
+	}
+}
+
+func TestParseTIFF_ORFMagicRS(t *testing.T) {
+	// Olympus ORF "IIRS" variant: byte order "II" + magic 0x5253 ("RS").
+	bo := binary.LittleEndian
+	jpeg := fakeJPEG(80)
+
+	ifdOffset := uint32(8)
+	numEntries := uint16(3)
+	ifdSize := 2 + int(numEntries)*12 + 4
+	jpegOff := uint32(8 + ifdSize)
+	totalSize := int(jpegOff) + 80
+	buf := make([]byte, totalSize)
+
+	writeTIFFHeader(buf, bo, orfMagicRS, ifdOffset)
+	pos := int(ifdOffset)
+	bo.PutUint16(buf[pos:], numEntries)
+	pos += 2
+	writeIFDEntryShortInline(buf[pos:], bo, tagCompression, compressionJPEG)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripOffsets, 4, 1, jpegOff)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripByteCounts, 4, 1, 80)
+	pos += 12
+	bo.PutUint32(buf[pos:], 0)
+	copy(buf[jpegOff:], jpeg)
+
+	path := writeTempFile(t, buf)
+	result, err := extractTIFFPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error for ORF RS magic: %v", err)
+	}
+	if len(result) != 80 {
+		t.Fatalf("expected 80 bytes, got %d", len(result))
+	}
+}
+
+func TestParseTIFF_RW2Magic(t *testing.T) {
+	// Panasonic RW2 uses byte order "II" + magic 0x0055.
+	bo := binary.LittleEndian
+	jpeg := fakeJPEG(90)
+
+	ifdOffset := uint32(8)
+	numEntries := uint16(3)
+	ifdSize := 2 + int(numEntries)*12 + 4
+	jpegOff := uint32(8 + ifdSize)
+	totalSize := int(jpegOff) + 90
+	buf := make([]byte, totalSize)
+
+	writeTIFFHeader(buf, bo, rw2Magic, ifdOffset)
+	pos := int(ifdOffset)
+	bo.PutUint16(buf[pos:], numEntries)
+	pos += 2
+	writeIFDEntryShortInline(buf[pos:], bo, tagCompression, compressionJPEG)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripOffsets, 4, 1, jpegOff)
+	pos += 12
+	writeIFDEntry(buf[pos:], bo, tagStripByteCounts, 4, 1, 90)
+	pos += 12
+	bo.PutUint32(buf[pos:], 0)
+	copy(buf[jpegOff:], jpeg)
+
+	path := writeTempFile(t, buf)
+	result, err := extractTIFFPreview(path)
+	if err != nil {
+		t.Fatalf("unexpected error for RW2 magic: %v", err)
+	}
+	if len(result) != 90 {
+		t.Fatalf("expected 90 bytes, got %d", len(result))
+	}
+	if result[0] != 0xFF || result[1] != 0xD8 {
+		t.Fatal("missing JPEG SOI marker")
+	}
+}
+
+func TestIsAcceptedTIFFMagic(t *testing.T) {
+	tests := []struct {
+		magic    uint16
+		accepted bool
+	}{
+		{tiffMagic, true},
+		{orfMagicOR, true},
+		{orfMagicRS, true},
+		{rw2Magic, true},
+		{bigTIFF, false},
+		{0x0000, false},
+		{0xFFFF, false},
+	}
+	for _, tt := range tests {
+		got := isAcceptedTIFFMagic(tt.magic)
+		if got != tt.accepted {
+			t.Errorf("isAcceptedTIFFMagic(0x%04X) = %v, want %v", tt.magic, got, tt.accepted)
+		}
+	}
+}

@@ -32,6 +32,11 @@ const (
 	jpegSOI   = 0xFFD8
 	tiffMagic = 42
 	bigTIFF   = 43
+
+	// Variant TIFF magic numbers used by camera manufacturers.
+	orfMagicOR = 0x4F52 // Olympus ORF: "OR" in big-endian (IIRO / MMOR)
+	orfMagicRS = 0x5253 // Olympus ORF: "RS" (IIRS)
+	rw2Magic   = 0x0055 // Panasonic RW2
 )
 
 // TIFF data type sizes (indexed by type ID 1..5).
@@ -96,8 +101,8 @@ func extractTIFFPreview(path string) ([]byte, error) {
 	if magic == bigTIFF {
 		return nil, errors.New("tiff: BigTIFF (magic=43) is not supported")
 	}
-	if magic != tiffMagic {
-		return nil, fmt.Errorf("tiff: unexpected magic number %d", magic)
+	if !isAcceptedTIFFMagic(magic) {
+		return nil, fmt.Errorf("tiff: unexpected magic number %d (0x%04X)", magic, magic)
 	}
 
 	visited := make(map[uint32]bool)
@@ -323,4 +328,15 @@ func readTagValues(f *os.File, bo binary.ByteOrder, typ uint16, count uint32, va
 		}
 	}
 	return result
+}
+
+// isAcceptedTIFFMagic returns true if the magic number is standard TIFF (42)
+// or a known camera-vendor variant (Olympus ORF, Panasonic RW2).
+func isAcceptedTIFFMagic(magic uint16) bool {
+	switch magic {
+	case tiffMagic, orfMagicOR, orfMagicRS, rw2Magic:
+		return true
+	default:
+		return false
+	}
 }
