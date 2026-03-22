@@ -2,11 +2,10 @@ package raw
 
 import (
 	"bytes"
+	"cullsnap/internal/logger"
 	"encoding/binary"
 	"fmt"
 	"os"
-
-	"cullsnap/internal/logger"
 )
 
 // prvwUUID is the UUID of the BMFF box containing the PRVW preview in CR3 files.

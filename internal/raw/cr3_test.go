@@ -32,12 +32,12 @@ func buildUUIDBox(uuid [16]byte, payload []byte) []byte {
 func buildPRVWBox(jpegData []byte) []byte {
 	// PRVW header: 14 bytes before JPEG (6 unknown + 2 width + 2 height + 2 unknown + 4 jpeg_size - but we just need SOI scan to work)
 	header := make([]byte, 14)
-	binary.BigEndian.PutUint16(header[4:6], 1620)  // width
-	binary.BigEndian.PutUint16(header[6:8], 1080)  // height
+	binary.BigEndian.PutUint16(header[4:6], 1620) // width
+	binary.BigEndian.PutUint16(header[6:8], 1080) // height
 	binary.BigEndian.PutUint32(header[10:14], uint32(len(jpegData)))
 
-	payload := append(header, jpegData...)
-	return buildBMFFBox("PRVW", payload)
+	header = append(header, jpegData...)
+	return buildBMFFBox("PRVW", header)
 }
 
 // buildSyntheticCR3 builds a minimal synthetic CR3 file containing:
@@ -88,8 +88,10 @@ func TestExtractCR3Preview_ValidFile(t *testing.T) {
 func TestExtractCR3Preview_NoPRVWBox(t *testing.T) {
 	// Build a CR3 with a uuid box that has a different UUID (no PRVW)
 	ftyp := buildBMFFBox("ftyp", []byte("crx \x00\x00\x01\x00crx "))
-	otherUUID := [16]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	otherUUID := [16]byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+	}
 	uuidBox := buildUUIDBox(otherUUID, []byte("some other data here"))
 
 	var cr3Data []byte

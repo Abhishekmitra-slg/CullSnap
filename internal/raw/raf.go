@@ -1,12 +1,11 @@
 package raw
 
 import (
+	"cullsnap/internal/logger"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
-
-	"cullsnap/internal/logger"
 )
 
 // RAF header constants.
