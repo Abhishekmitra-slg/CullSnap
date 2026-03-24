@@ -32,7 +32,7 @@ func TestThumbCache(t *testing.T) {
 	logger.Init("/dev/null")
 
 	tmpDir := t.TempDir()
-	tc, err := NewThumbCache(tmpDir)
+	tc, err := NewThumbCache(tmpDir, false)
 	if err != nil {
 		t.Fatalf("NewThumbCache failed: %v", err)
 	}

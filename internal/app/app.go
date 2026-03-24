@@ -87,7 +87,7 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.cfg = a.loadOrInitConfig(ffmpegPath)
 
-	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir)
+	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir, true)
 	if err != nil {
 		logger.Log.Error("Failed to initialize thumbnail cache", "error", err)
 	} else {
