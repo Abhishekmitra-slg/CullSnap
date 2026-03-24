@@ -27,6 +27,8 @@ type AppConfig struct {
 	ServerIdleTimeoutSec int         `json:"serverIdleTimeoutSec"`
 	CacheDir             string      `json:"cacheDir"`
 	AutoUpdate           string      `json:"autoUpdate"` // "off", "notify", "auto"
+	UseNativeSips        bool        `json:"useNativeSips"`
+	MaxCloudCacheMB      int         `json:"maxCloudCacheMB"`
 	Probe                SystemProbe `json:"probe"`
 }
 
@@ -85,6 +87,9 @@ func DeriveDefaults(probe SystemProbe) AppConfig {
 	cfg.CacheDir = filepath.Join(cacheBase, "CullSnap", "thumbs")
 
 	cfg.AutoUpdate = "notify"
+
+	cfg.UseNativeSips = runtime.GOOS == "darwin"
+	cfg.MaxCloudCacheMB = 10240 // 10 GB
 
 	return cfg
 }

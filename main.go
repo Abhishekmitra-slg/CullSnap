@@ -333,7 +333,13 @@ func main() {
 		cacheDir = filepath.Join(userCacheDir, "CullSnap", "thumbs")
 	}
 
-	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir, useNativeSips: true}
+	// Read useNativeSips from persisted config; fall back to platform default (true on macOS).
+	useNativeSips := true
+	if val, _ := store.GetConfig("useNativeSips"); val == "false" {
+		useNativeSips = false
+	}
+
+	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir, useNativeSips: useNativeSips}
 
 	go func() {
 		mediaServer := &http.Server{

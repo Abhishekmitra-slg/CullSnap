@@ -87,7 +87,7 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.cfg = a.loadOrInitConfig(ffmpegPath)
 
-	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir, true)
+	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir, a.cfg.UseNativeSips)
 	if err != nil {
 		logger.Log.Error("Failed to initialize thumbnail cache", "error", err)
 	} else {
@@ -130,6 +130,18 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	if cfg.AutoUpdate == "" {
 		cfg.AutoUpdate = "notify"
 	}
+	useNativeSipsVal, _ := a.store.GetConfig("useNativeSips")
+	if useNativeSipsVal == "false" {
+		cfg.UseNativeSips = false
+	} else {
+		// Default: true on darwin, false elsewhere
+		cfg.UseNativeSips = stdruntime.GOOS == "darwin"
+	}
+	val, _ = a.store.GetConfig("maxCloudCacheMB")
+	cfg.MaxCloudCacheMB, _ = strconv.Atoi(val)
+	if cfg.MaxCloudCacheMB <= 0 {
+		cfg.MaxCloudCacheMB = 10240
+	}
 
 	// Always re-run the probe on startup so hardware info stays current.
 	cfg.Probe = RunSystemProbe(ffmpegPath)
@@ -171,6 +183,16 @@ func (a *App) persistConfig(cfg *AppConfig) {
 	}
 	if err := a.store.SetConfig("autoUpdate", cfg.AutoUpdate); err != nil {
 		runtime.LogWarningf(a.ctx, "persistConfig: failed to save autoUpdate: %v", err)
+	}
+	useNativeSipsVal := "true"
+	if !cfg.UseNativeSips {
+		useNativeSipsVal = "false"
+	}
+	if err := a.store.SetConfig("useNativeSips", useNativeSipsVal); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save useNativeSips: %v", err)
+	}
+	if err := a.store.SetConfig("maxCloudCacheMB", strconv.Itoa(cfg.MaxCloudCacheMB)); err != nil {
+		runtime.LogWarningf(a.ctx, "persistConfig: failed to save maxCloudCacheMB: %v", err)
 	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
 		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {
