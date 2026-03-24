@@ -2,19 +2,6 @@ package app
 
 import (
 	"context"
-	"cullsnap/internal/cloudsource"
-	"cullsnap/internal/cloudsource/providers/googledrive"
-	"cullsnap/internal/cloudsource/providers/icloud"
-	"cullsnap/internal/dedupe"
-	"cullsnap/internal/device"
-	"cullsnap/internal/export"
-	"cullsnap/internal/logger"
-	"cullsnap/internal/model"
-	"cullsnap/internal/raw"
-	"cullsnap/internal/scanner"
-	"cullsnap/internal/storage"
-	"cullsnap/internal/updater"
-	"cullsnap/internal/video"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,13 +14,25 @@ import (
 	"sync/atomic"
 	"time"
 
+	"cullsnap/internal/cloudsource"
+	"cullsnap/internal/cloudsource/providers/googledrive"
+	"cullsnap/internal/cloudsource/providers/icloud"
+	"cullsnap/internal/dedupe"
+	"cullsnap/internal/device"
+	"cullsnap/internal/export"
 	cullImage "cullsnap/internal/image"
-
-	"golang.org/x/sync/errgroup"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
+	"cullsnap/internal/raw"
+	"cullsnap/internal/scanner"
+	"cullsnap/internal/storage"
+	"cullsnap/internal/updater"
+	"cullsnap/internal/video"
 
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/sync/errgroup"
 )
 
 // Contributor represents a project contributor parsed from CONTRIBUTORS.yml.
@@ -59,34 +58,33 @@ type AboutInfo struct {
 
 // App struct
 type App struct {
-	ctx             context.Context
-	store           *storage.SQLiteStore
-	dedupeMutex     sync.Mutex
-	dedupeCancel    context.CancelFunc
-	thumbCache      *cullImage.ThumbCache
-	cfg             *AppConfig
-	enrichMu        sync.Mutex
-	enrichCancel    context.CancelFunc
-	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
-	Version         string           // set from main.version (build-time ldflags)
-	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
-	UpdatePublicKey         []byte // ECDSA public key for update signature verification
-	GoogleDriveClientID     string // OAuth client ID (injected via ldflags or env var)
-	GoogleDriveClientSecret string // OAuth client secret (injected via ldflags or env var)
-	updater         *updater.Updater // manages self-update checks
-	cloudRegistry   *cloudsource.Registry
-	mirrorManager   *cloudsource.MirrorManager
-	tokenStore      *cloudsource.TokenStore
-	mirrorCancels   map[string]context.CancelFunc
-	mirrorMu        sync.Mutex
-	deviceDetector  device.Detector
+	ctx                     context.Context
+	store                   *storage.SQLiteStore
+	dedupeMutex             sync.Mutex
+	dedupeCancel            context.CancelFunc
+	thumbCache              *cullImage.ThumbCache
+	cfg                     *AppConfig
+	enrichMu                sync.Mutex
+	enrichCancel            context.CancelFunc
+	OnAllowDir              func(dir string) // called to register a directory with the media server allowlist
+	Version                 string           // set from main.version (build-time ldflags)
+	ContributorsRaw         string           // raw CONTRIBUTORS.yml content embedded at build time
+	UpdatePublicKey         []byte           // ECDSA public key for update signature verification
+	GoogleDriveClientID     string           // OAuth client ID (injected via ldflags or env var)
+	GoogleDriveClientSecret string           // OAuth client secret (injected via ldflags or env var)
+	updater                 *updater.Updater // manages self-update checks
+	cloudRegistry           *cloudsource.Registry
+	mirrorManager           *cloudsource.MirrorManager
+	tokenStore              *cloudsource.TokenStore
+	mirrorCancels           map[string]context.CancelFunc
+	mirrorMu                sync.Mutex
+	deviceDetector          device.Detector
 }
 
 // NewApp creates a new App application struct
 func NewApp(store *storage.SQLiteStore) *App {
 	return &App{store: store}
 }
-
 
 // Startup is called when the app starts. The context is saved
 // so we can call the runtime methods
