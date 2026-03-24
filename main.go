@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"cullsnap/internal/app"
+	"cullsnap/internal/heic"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/raw"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/video"
 	"embed"
+	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -20,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -40,11 +45,13 @@ var updatePublicKey []byte
 var version = "dev"
 
 type FileLoader struct {
-	sem         chan struct{}   // limits concurrent file-serving goroutines
-	serverCtx   context.Context // cancelled on app shutdown
-	cacheDir    string          // for Cache-Control header detection
-	allowedMu   sync.RWMutex    // protects allowedDirs
-	allowedDirs []string        // directories the user has explicitly opened
+	sem            chan struct{}        // limits concurrent file-serving goroutines
+	serverCtx      context.Context     // cancelled on app shutdown
+	cacheDir       string              // for Cache-Control header detection
+	allowedMu      sync.RWMutex        // protects allowedDirs
+	allowedDirs    []string            // directories the user has explicitly opened
+	heicGroup      singleflight.Group  // dedup concurrent HEIC conversions
+	useNativeSips  bool                // controls sips vs FFmpeg for HEIC conversion
 }
 
 // AllowDirectory adds a directory to the allowlist of paths the media server may serve.
@@ -147,6 +154,40 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			res.Header().Set("Content-Type", "image/jpeg")
 			res.Header().Set("Cache-Control", "private, max-age=3600")
 			io.Copy(res, bytes.NewReader(previewBytes)) //nolint:errcheck // best-effort binary JPEG write
+			return
+		}
+
+		// HEIC/HEIF: convert to JPEG, cache, and serve
+		if ext == ".heic" || ext == ".heif" {
+			heicCacheDir := filepath.Join(h.cacheDir, "heic")
+			os.MkdirAll(heicCacheDir, 0700) //nolint:errcheck // best-effort cache dir creation
+			cacheKey := fmt.Sprintf("%x", sha256.Sum256([]byte(filePath)))
+			cachedPath := filepath.Join(heicCacheDir, cacheKey+".jpg")
+
+			// Check cache first
+			if _, err := os.Stat(cachedPath); err == nil {
+				logger.Log.Debug("media: serving cached HEIC conversion", "path", filePath)
+				res.Header().Set("Content-Type", "image/jpeg")
+				res.Header().Set("Cache-Control", "public, max-age=86400")
+				http.ServeFile(res, req, cachedPath)
+				return
+			}
+
+			// Convert with singleflight to dedup concurrent requests for same file
+			logger.Log.Debug("media: converting HEIC to JPEG", "path", filePath, "useSips", h.useNativeSips)
+			_, err, _ := h.heicGroup.Do(cacheKey, func() (interface{}, error) {
+				return nil, heic.ConvertToJPEG(filePath, cachedPath, h.useNativeSips)
+			})
+			if err != nil {
+				logger.Log.Error("HEIC conversion failed", "path", filePath, "error", err)
+				http.Error(res, "HEIC conversion failed", http.StatusInternalServerError)
+				return
+			}
+
+			logger.Log.Debug("media: HEIC conversion complete", "path", filePath, "cached", cachedPath)
+			res.Header().Set("Content-Type", "image/jpeg")
+			res.Header().Set("Cache-Control", "public, max-age=86400")
+			http.ServeFile(res, req, cachedPath)
 			return
 		}
 
@@ -292,7 +333,7 @@ func main() {
 		cacheDir = filepath.Join(userCacheDir, "CullSnap", "thumbs")
 	}
 
-	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir}
+	loader := &FileLoader{sem: sem, serverCtx: serverCtx, cacheDir: cacheDir, useNativeSips: true}
 
 	go func() {
 		mediaServer := &http.Server{

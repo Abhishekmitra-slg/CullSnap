@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/corona10/goimagehash v1.1.0
+	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/disintegration/imaging v1.6.2
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -17,7 +18,6 @@ require (
 	github.com/42wim/httpsig v1.2.3 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
-	github.com/creativeprojects/go-selfupdate v1.5.2 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
