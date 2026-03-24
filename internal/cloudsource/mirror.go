@@ -2,13 +2,12 @@ package cloudsource
 
 import (
 	"context"
+	"cullsnap/internal/logger"
+	"cullsnap/internal/storage"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"cullsnap/internal/logger"
-	"cullsnap/internal/storage"
 )
 
 // MirrorManager handles downloading cloud files to local mirror directories.

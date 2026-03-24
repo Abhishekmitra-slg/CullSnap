@@ -4,14 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"cullsnap/internal/logger"
 	"encoding/base64"
 	"fmt"
 	"html/template"
 	"net"
 	"net/http"
 	"time"
-
-	"cullsnap/internal/logger"
 
 	"golang.org/x/oauth2"
 )
@@ -59,7 +58,7 @@ func StartOAuthFlow(ctx context.Context, config *oauth2.Config, openBrowser func
 	if err != nil {
 		return nil, fmt.Errorf("oauth: failed to start listener: %w", err)
 	}
-	defer listener.Close()
+	defer listener.Close() //nolint:errcheck // best-effort cleanup
 
 	port := listener.Addr().(*net.TCPAddr).Port
 	config.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d/oauth/callback", port)
@@ -97,16 +96,16 @@ func StartOAuthFlow(ctx context.Context, config *oauth2.Config, openBrowser func
 		if result.Error != "" {
 			tmpl := template.Must(template.New("err").Parse(
 				`<html><body><h2>Authorization Failed</h2><p>{{.}}</p><p>You can close this tab.</p></body></html>`))
-			tmpl.Execute(w, result.Error) //nolint:errcheck
+			tmpl.Execute(w, result.Error) //nolint:errcheck,gosec // best-effort response to browser
 		} else {
-			w.Write([]byte("<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to CullSnap.</p></body></html>")) //nolint:errcheck
+			w.Write([]byte("<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to CullSnap.</p></body></html>")) //nolint:errcheck,gosec // best-effort response to browser
 		}
 
 		resultCh <- result
 	})
 
-	server := &http.Server{Handler: mux}
-	go server.Serve(listener) //nolint:errcheck // shutdown handled below
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second} //nolint:gosec // loopback-only, short-lived
+	go server.Serve(listener)                                                 //nolint:errcheck // shutdown handled below
 
 	// Open browser
 	logger.Log.Debug("oauth: opening browser for authorization", "url", authURL)
@@ -123,12 +122,12 @@ func StartOAuthFlow(ctx context.Context, config *oauth2.Config, openBrowser func
 	case result = <-resultCh:
 		// Got callback
 	case <-timeoutCtx.Done():
-		server.Shutdown(context.Background()) //nolint:errcheck
+		server.Shutdown(context.Background()) //nolint:errcheck,gosec // best-effort shutdown
 		return nil, fmt.Errorf("oauth: timed out waiting for authorization")
 	}
 
 	// Shutdown listener immediately (single-use)
-	server.Shutdown(context.Background()) //nolint:errcheck
+	server.Shutdown(context.Background()) //nolint:errcheck,gosec // best-effort shutdown
 
 	if result.Error != "" {
 		return nil, fmt.Errorf("oauth: authorization denied: %s", result.Error)

@@ -1,12 +1,11 @@
 package cloudsource
 
 import (
+	"cullsnap/internal/logger"
 	"encoding/json"
 	"os"
 	"testing"
 	"time"
-
-	"cullsnap/internal/logger"
 
 	"golang.org/x/oauth2"
 )

@@ -4,13 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-
-	"cullsnap/internal/logger"
 
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
