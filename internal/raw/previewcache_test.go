@@ -1,6 +1,7 @@
 package raw
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,7 +49,7 @@ func TestCachePreview_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCachedPreview failed: %v", err)
 	}
-	if string(loaded) != string(data) {
+	if !bytes.Equal(loaded, data) {
 		t.Errorf("cached data mismatch: got %d bytes, want %d bytes", len(loaded), len(data))
 	}
 }

@@ -1,6 +1,7 @@
 package dedupe
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,7 +24,7 @@ func TestCopyFile_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(data) {
+	if !bytes.Equal(got, data) {
 		t.Errorf("copied data mismatch: got %q, want %q", got, data)
 	}
 }
