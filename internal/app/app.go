@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/dedupe"
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
@@ -68,6 +69,11 @@ type App struct {
 	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
 	UpdatePublicKey []byte           // ECDSA public key for update signature verification
 	updater         *updater.Updater // manages self-update checks
+	cloudRegistry   *cloudsource.Registry
+	mirrorManager   *cloudsource.MirrorManager
+	tokenStore      *cloudsource.TokenStore
+	mirrorCancels   map[string]context.CancelFunc
+	mirrorMu        sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -100,6 +106,14 @@ func (a *App) Startup(ctx context.Context) {
 	// Start auto-update checker
 	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
 	a.updater.Start()
+
+	// Initialize cloud source infrastructure
+	cloudDir := filepath.Join(a.cfg.CacheDir, "cloud")
+	a.tokenStore = cloudsource.NewTokenStore(cloudDir)
+	a.cloudRegistry = cloudsource.NewRegistry()
+	a.mirrorManager = cloudsource.NewMirrorManager(cloudDir, a.store, a.cfg.MaxCloudCacheMB, a.cfg.ThumbnailWorkers)
+	a.mirrorCancels = make(map[string]context.CancelFunc)
+	logger.Log.Info("Cloud source infrastructure initialized", "cloudDir", cloudDir)
 
 	// Initialize RAW module (dcraw provisioning)
 	if err := raw.Init(); err != nil {
