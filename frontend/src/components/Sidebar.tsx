@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info, Cloud } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info, Cloud, Smartphone } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -22,6 +22,8 @@ interface SidebarProps {
     onOpenAbout: () => void;
     onOpenHelp: () => void;
     onOpenCloud: () => void;
+    onOpenDeviceImport?: () => void;
+    probe?: { OS: string };
 }
 
 export function Sidebar({
@@ -42,7 +44,9 @@ export function Sidebar({
     onOpenSettings,
     onOpenAbout,
     onOpenHelp,
-    onOpenCloud
+    onOpenCloud,
+    onOpenDeviceImport,
+    probe
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -119,6 +123,13 @@ export function Sidebar({
                     <Cloud size={16} />
                     Cloud Albums
                 </button>
+
+                {probe?.OS === 'darwin' && onOpenDeviceImport && (
+                    <button className="btn w-full mt-2" onClick={onOpenDeviceImport}>
+                        <Smartphone size={16} />
+                        Import from Device
+                    </button>
+                )}
 
                 <button
                     className="btn w-full mt-2"

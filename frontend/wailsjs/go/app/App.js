@@ -129,3 +129,23 @@ export function GetMirrorStats() {
 export function ClearCloudMirror(arg1, arg2) {
   return window['go']['app']['App']['ClearCloudMirror'](arg1, arg2);
 }
+
+export function GetConnectedDevices() {
+  return window['go']['app']['App']['GetConnectedDevices']();
+}
+
+export function ImportFromDevice(arg1) {
+  return window['go']['app']['App']['ImportFromDevice'](arg1);
+}
+
+export function CancelImport(arg1) {
+  return window['go']['app']['App']['CancelImport'](arg1);
+}
+
+export function GetImportStats() {
+  return window['go']['app']['App']['GetImportStats']();
+}
+
+export function ClearImportCache(arg1) {
+  return window['go']['app']['App']['ClearImportCache'](arg1);
+}

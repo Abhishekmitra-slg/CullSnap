@@ -66,3 +66,13 @@ export function CancelMirror(arg1:string,arg2:string):Promise<void>;
 export function GetMirrorStats():Promise<any>;
 
 export function ClearCloudMirror(arg1:string,arg2:string):Promise<void>;
+
+export function GetConnectedDevices():Promise<any[]>;
+
+export function ImportFromDevice(arg1:string):Promise<string>;
+
+export function CancelImport(arg1:string):Promise<void>;
+
+export function GetImportStats():Promise<any>;
+
+export function ClearImportCache(arg1:string):Promise<void>;

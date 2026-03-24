@@ -6,8 +6,9 @@ import { SettingsModal } from './components/SettingsModal';
 import { AboutModal } from './components/AboutModal';
 import { HelpModal } from './components/HelpModal';
 import { CloudSourceModal } from './components/CloudSourceModal';
+import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
 
 interface SystemMetrics {
@@ -44,12 +45,39 @@ function App() {
     const [aboutOpen, setAboutOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const [cloudOpen, setCloudOpen] = useState(false);
+    const [deviceImportOpen, setDeviceImportOpen] = useState(false);
+    const [probe, setProbe] = useState<{ OS: string } | undefined>(undefined);
+    const [deviceToast, setDeviceToast] = useState<{ name: string; serial: string } | null>(null);
 
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
             setSysMetrics(data);
         });
         return () => { EventsOff('sys-metrics'); };
+    }, []);
+
+    // Load probe info (OS detection for conditional UI)
+    useEffect(() => {
+        GetAppConfig().then(cfg => {
+            if (cfg?.probe) setProbe(cfg.probe);
+        }).catch(console.error);
+    }, []);
+
+    // Device auto-detect toast
+    useEffect(() => {
+        const connectHandler = (data: any) => {
+            console.log('[device] auto-detected:', data);
+            setDeviceToast({ name: data?.name || 'Device', serial: data?.serial || '' });
+        };
+        const disconnectHandler = () => {
+            setDeviceToast(null);
+        };
+        EventsOn('device-connected', connectHandler);
+        EventsOn('device-disconnected', disconnectHandler);
+        return () => {
+            EventsOff('device-connected');
+            EventsOff('device-disconnected');
+        };
     }, []);
 
     // Cleanup debounce timer on unmount
@@ -439,6 +467,8 @@ function App() {
                 onOpenAbout={() => setAboutOpen(true)}
                 onOpenHelp={() => setHelpOpen(true)}
                 onOpenCloud={() => setCloudOpen(true)}
+                onOpenDeviceImport={() => setDeviceImportOpen(true)}
+                probe={probe}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>
@@ -492,6 +522,61 @@ function App() {
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
             {cloudOpen && <CloudSourceModal onClose={() => setCloudOpen(false)} onLoadDir={loadDirectory} />}
+            {deviceImportOpen && <DeviceImportModal onClose={() => setDeviceImportOpen(false)} onLoadDir={loadDirectory} />}
+
+            {/* Device auto-detect toast */}
+            {deviceToast && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 40,
+                    right: 20,
+                    zIndex: 10000,
+                    background: 'rgba(30, 30, 40, 0.95)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(129, 140, 248, 0.3)',
+                    borderRadius: 12,
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                    maxWidth: 360,
+                }}>
+                    <div style={{
+                        width: 36, height: 36, borderRadius: '50%',
+                        background: 'rgba(129, 140, 248, 0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    }}>
+                        <span style={{ fontSize: '1.1rem' }}>&#128241;</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary, #fff)' }}>
+                            {deviceToast.name} connected
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #aaa)', marginTop: 2 }}>
+                            Import photos directly to CullSnap
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button
+                            className="btn btn-gradient"
+                            style={{ fontSize: '0.72rem', padding: '4px 10px' }}
+                            onClick={() => { setDeviceToast(null); setDeviceImportOpen(true); }}
+                        >
+                            Import
+                        </button>
+                        <button
+                            className="btn"
+                            style={{ fontSize: '0.72rem', padding: '4px 8px' }}
+                            onClick={() => setDeviceToast(null)}
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <UpdateToast />
         </div>
     );

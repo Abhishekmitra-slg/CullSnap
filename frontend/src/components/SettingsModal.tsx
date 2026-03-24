@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, RotateCcw, Cloud, Trash2 } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetMirrorStats, ClearCloudMirror } from '../../wailsjs/go/app/App';
+import { X, RotateCcw, Cloud, Trash2, Smartphone } from 'lucide-react';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetMirrorStats, ClearCloudMirror, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -12,10 +12,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [saving, setSaving] = useState(false);
     const [mirrorStats, setMirrorStats] = useState<any>(null);
     const [clearingMirrors, setClearingMirrors] = useState(false);
+    const [importStats, setImportStats] = useState<any>(null);
+    const [clearingImport, setClearingImport] = useState<string | null>(null);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
         loadMirrorStats();
+        loadImportStats();
     }, []);
 
     const loadMirrorStats = async () => {
@@ -37,6 +40,28 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             console.error('[settings] failed to clear mirrors:', e);
         } finally {
             setClearingMirrors(false);
+        }
+    };
+
+    const loadImportStats = async () => {
+        try {
+            const stats = await GetImportStats();
+            setImportStats(stats);
+        } catch (e) {
+            console.error('[settings] failed to load import stats:', e);
+        }
+    };
+
+    const handleClearImportCache = async (serial: string) => {
+        if (!window.confirm('Clear cached imports for this device? This will delete locally stored files.')) return;
+        setClearingImport(serial);
+        try {
+            await ClearImportCache(serial);
+            await loadImportStats();
+        } catch (e) {
+            console.error('[settings] failed to clear import cache:', e);
+        } finally {
+            setClearingImport(null);
         }
     };
 
@@ -231,6 +256,53 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         {clearingMirrors ? 'Clearing...' : 'Clear All Mirrors'}
                     </button>
                 </section>
+
+                {config.probe?.OS === 'darwin' && (
+                    <section className="settings-section">
+                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Smartphone size={14} />
+                            Device Import Cache
+                        </h3>
+                        <div className="settings-info-grid">
+                            <span>Total Disk Usage</span>
+                            <span>{importStats ? formatBytes(importStats.totalBytes || 0) : 'Loading...'}</span>
+                        </div>
+                        {importStats && importStats.deviceStats && Object.keys(importStats.deviceStats).length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                                {Object.entries(importStats.deviceStats as Record<string, number>).map(([serial, bytes]) => (
+                                    <div key={serial} style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        padding: '6px 10px', borderRadius: 6,
+                                        background: 'rgba(255,255,255,0.03)',
+                                    }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                {serial.substring(0, 12)}...
+                                            </div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                                {formatBytes(bytes)}
+                                            </div>
+                                        </div>
+                                        <button
+                                            className="btn"
+                                            style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                                            onClick={() => handleClearImportCache(serial)}
+                                            disabled={clearingImport === serial}
+                                        >
+                                            <Trash2 size={10} />
+                                            {clearingImport === serial ? 'Clearing...' : 'Clear'}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {importStats && (importStats.totalBytes || 0) === 0 && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                                No device imports cached
+                            </div>
+                        )}
+                    </section>
+                )}
 
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>
