@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"cullsnap/internal/cloudsource"
+	"cullsnap/internal/cloudsource/providers/googledrive"
 	"cullsnap/internal/dedupe"
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
@@ -114,6 +115,13 @@ func (a *App) Startup(ctx context.Context) {
 	a.mirrorManager = cloudsource.NewMirrorManager(cloudDir, a.store, a.cfg.MaxCloudCacheMB, a.cfg.ThumbnailWorkers)
 	a.mirrorCancels = make(map[string]context.CancelFunc)
 	logger.Log.Info("Cloud source infrastructure initialized", "cloudDir", cloudDir)
+
+	// Register Google Drive provider
+	// Client ID/Secret would normally come from embedded credentials
+	// For now, register with empty credentials (shows "not configured" state)
+	gdProvider := googledrive.New(a.tokenStore, "", "")
+	a.cloudRegistry.Register(gdProvider)
+	logger.Log.Info("Cloud provider registered", "provider", gdProvider.ID())
 
 	// Initialize RAW module (dcraw provisioning)
 	if err := raw.Init(); err != nil {
