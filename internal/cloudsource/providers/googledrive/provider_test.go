@@ -3,14 +3,13 @@ package googledrive
 import (
 	"bytes"
 	"context"
+	"cullsnap/internal/logger"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-
-	"cullsnap/internal/logger"
 )
 
 func TestMain(m *testing.M) {

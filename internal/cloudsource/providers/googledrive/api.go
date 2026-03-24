@@ -2,13 +2,13 @@ package googledrive
 
 import (
 	"context"
+	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-
-	"cullsnap/internal/logger"
+	"strings"
 )
 
 const driveAPIBase = "https://www.googleapis.com/drive/v3"
@@ -80,7 +80,10 @@ func (c *DriveClient) ListFolders(ctx context.Context, pageToken string) (*FileL
 
 // ListImagesInFolder lists image files in a specific folder.
 func (c *DriveClient) ListImagesInFolder(ctx context.Context, folderID, pageToken string) (*FileListResponse, error) {
-	q := fmt.Sprintf("'%s' in parents and mimeType contains 'image/' and trashed=false", folderID)
+	// Escape single quotes in folder ID to prevent Drive API query injection
+	safeFolderID := strings.ReplaceAll(folderID, `\`, `\\`)
+	safeFolderID = strings.ReplaceAll(safeFolderID, `'`, `\'`)
+	q := fmt.Sprintf("'%s' in parents and mimeType contains 'image/' and trashed=false", safeFolderID)
 	params := url.Values{
 		"q":        {q},
 		"fields":   {"files(id,name,mimeType,size,modifiedTime,createdTime,imageMediaMetadata),nextPageToken"},
@@ -103,7 +106,7 @@ func (c *DriveClient) listFiles(ctx context.Context, params url.Values) (*FileLi
 	if err != nil {
 		return nil, fmt.Errorf("drive: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("drive: rate limited (HTTP 429)")
@@ -132,7 +135,7 @@ func (c *DriveClient) DownloadFile(ctx context.Context, fileID string, dest io.W
 	if err != nil {
 		return fmt.Errorf("drive: download failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -140,8 +143,8 @@ func (c *DriveClient) DownloadFile(ctx context.Context, fileID string, dest io.W
 	}
 
 	pw := &progressWriter{
-		dest:      dest,
-		total:     resp.ContentLength,
+		dest:       dest,
+		total:      resp.ContentLength,
 		progressFn: progressFn,
 	}
 

@@ -32,7 +32,7 @@ func NewTokenStore(fallbackDir string) *TokenStore {
 // Save persists an OAuth2 token for the given provider. Tries keychain
 // first, falls back to AES-256-GCM encrypted file.
 func (ts *TokenStore) Save(providerID string, token *oauth2.Token) error {
-	data, err := json.Marshal(token)
+	data, err := json.Marshal(token) //nolint:gosec // token must be marshaled for encrypted persistence
 	if err != nil {
 		return fmt.Errorf("token_store: marshal failed: %w", err)
 	}

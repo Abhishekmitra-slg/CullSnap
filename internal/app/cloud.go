@@ -2,10 +2,9 @@ package app
 
 import (
 	"context"
-	"fmt"
-
 	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/logger"
+	"fmt"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -123,7 +122,6 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 			"total":      total,
 		})
 	})
-
 	if err != nil {
 		logger.Log.Error("cloud: mirror failed", "providerID", providerID, "albumID", albumID, "error", err)
 		runtime.EventsEmit(a.ctx, "cloud-download-error", map[string]string{

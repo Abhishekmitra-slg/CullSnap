@@ -2,15 +2,14 @@ package googledrive
 
 import (
 	"context"
+	"cullsnap/internal/cloudsource"
+	"cullsnap/internal/logger"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
-
-	"cullsnap/internal/cloudsource"
-	"cullsnap/internal/logger"
 
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
@@ -39,7 +38,7 @@ func New(tokenStore *cloudsource.TokenStore, clientID, clientSecret string) *Pro
 	}
 }
 
-func (p *Provider) ID() string         { return "google_drive" }
+func (p *Provider) ID() string          { return "google_drive" }
 func (p *Provider) DisplayName() string { return "Google Drive" }
 func (p *Provider) IsAvailable() bool   { return p.oauthConfig.ClientID != "" }
 
@@ -102,7 +101,8 @@ func (p *Provider) ListAlbums(ctx context.Context) ([]cloudsource.Album, error) 
 		if err != nil {
 			return nil, err
 		}
-		for _, f := range resp.Files {
+		for i := range resp.Files {
+			f := &resp.Files[i]
 			modTime, _ := time.Parse(time.RFC3339, f.ModifiedTime)
 			albums = append(albums, cloudsource.Album{
 				ID:        f.ID,
@@ -133,7 +133,8 @@ func (p *Provider) ListMediaInAlbum(ctx context.Context, albumID string) ([]clou
 		if err != nil {
 			return nil, err
 		}
-		for _, f := range resp.Files {
+		for i := range resp.Files {
+			f := &resp.Files[i]
 			size, _ := strconv.ParseInt(f.Size, 10, 64)
 			created, _ := time.Parse(time.RFC3339, f.CreatedTime)
 			modified, _ := time.Parse(time.RFC3339, f.ModifiedTime)
@@ -170,9 +171,12 @@ func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, 
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	return client.DownloadFile(ctx, media.ID, f, progressFn)
+	dlErr := client.DownloadFile(ctx, media.ID, f, progressFn)
+	if closeErr := f.Close(); closeErr != nil && dlErr == nil {
+		return fmt.Errorf("drive: close file failed: %w", closeErr)
+	}
+	return dlErr
 }
 
 func (p *Provider) Disconnect() error {
