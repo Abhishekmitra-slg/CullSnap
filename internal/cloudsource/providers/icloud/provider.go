@@ -18,18 +18,20 @@ import (
 
 // Provider implements cloudsource.CloudSource for iCloud Photos on macOS.
 // It communicates with Photos.app via osascript (AppleScript).
-type Provider struct {
-	tokenStore *cloudsource.TokenStore
-}
+// iCloud Photos uses TCC (Transparency, Consent, and Control) for access — no
+// token storage is needed.
+type Provider struct{}
 
-// New creates an iCloud Photos provider.
+// New creates an iCloud Photos provider. The TokenStore parameter is accepted
+// for interface compatibility but is not used — iCloud access is governed by
+// macOS TCC permissions, not application-managed tokens.
 func New(_ *cloudsource.TokenStore) *Provider {
 	return &Provider{}
 }
 
-func (p *Provider) ID() string          { return "icloud" }
-func (p *Provider) DisplayName() string { return "iCloud Photos" }
-func (p *Provider) IsAvailable() bool   { return true }
+func (p *Provider) ID() string            { return "icloud" }
+func (p *Provider) DisplayName() string   { return "iCloud Photos" }
+func (p *Provider) IsAvailable() bool     { return true }
 func (p *Provider) IsAuthenticated() bool { return true }
 
 // Authenticate is a no-op for iCloud — Photos.app handles TCC permissions.

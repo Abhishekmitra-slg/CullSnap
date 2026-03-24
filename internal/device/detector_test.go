@@ -1,10 +1,9 @@
 package device
 
 import (
+	"cullsnap/internal/logger"
 	"os"
 	"testing"
-
-	"cullsnap/internal/logger"
 )
 
 func TestMain(m *testing.M) {

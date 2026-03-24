@@ -4,9 +4,8 @@ package icloud
 
 import (
 	"context"
-	"fmt"
-
 	"cullsnap/internal/cloudsource"
+	"fmt"
 )
 
 // Provider is a stub for non-macOS platforms where iCloud Photos is unavailable.
@@ -15,9 +14,9 @@ type Provider struct{}
 // New creates a stub iCloud Photos provider.
 func New(_ *cloudsource.TokenStore) *Provider { return &Provider{} }
 
-func (p *Provider) ID() string          { return "icloud" }
-func (p *Provider) DisplayName() string { return "iCloud Photos" }
-func (p *Provider) IsAvailable() bool   { return false }
+func (p *Provider) ID() string            { return "icloud" }
+func (p *Provider) DisplayName() string   { return "iCloud Photos" }
+func (p *Provider) IsAvailable() bool     { return false }
 func (p *Provider) IsAuthenticated() bool { return false }
 
 func (p *Provider) Authenticate(_ context.Context) error {

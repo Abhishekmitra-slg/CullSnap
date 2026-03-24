@@ -4,13 +4,12 @@ package device
 
 import (
 	"context"
+	"cullsnap/internal/logger"
 	"encoding/json"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
-
-	"cullsnap/internal/logger"
 )
 
 const (

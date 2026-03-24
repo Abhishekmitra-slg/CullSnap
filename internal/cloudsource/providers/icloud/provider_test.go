@@ -1,12 +1,11 @@
 package icloud
 
 import (
+	"cullsnap/internal/cloudsource"
+	"cullsnap/internal/logger"
 	"os"
 	"testing"
 	"time"
-
-	"cullsnap/internal/cloudsource"
-	"cullsnap/internal/logger"
 )
 
 func TestMain(m *testing.M) {
@@ -42,8 +41,8 @@ func TestParseAlbumOutput(t *testing.T) {
 			},
 		},
 		{
-			name:     "malformed entry skipped",
-			input:    "bad entry###Good Album|||ID-1|||5",
+			name:  "malformed entry skipped",
+			input: "bad entry###Good Album|||ID-1|||5",
 			expected: []cloudsource.Album{
 				{ID: "ID-1", Title: "Good Album", MediaCount: 5},
 			},
@@ -114,8 +113,8 @@ func TestParseMediaOutput(t *testing.T) {
 			},
 		},
 		{
-			name:     "malformed entry skipped",
-			input:    "bad|||entry###Good.jpg|||M-1|||2024-01-01 10:00:00|||5000",
+			name:  "malformed entry skipped",
+			input: "bad|||entry###Good.jpg|||M-1|||2024-01-01 10:00:00|||5000",
 			expected: []cloudsource.RemoteMedia{
 				{ID: "M-1", Filename: "Good.jpg", SizeBytes: 5000},
 			},

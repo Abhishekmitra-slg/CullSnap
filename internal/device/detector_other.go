@@ -8,9 +8,9 @@ import "context"
 type StubDetector struct{}
 
 // NewDetector returns a stub detector on non-macOS platforms.
-func NewDetector() Detector             { return &StubDetector{} }
-func (d *StubDetector) Start(_ context.Context) {}
-func (d *StubDetector) Stop()                   {}
+func NewDetector() Detector                         { return &StubDetector{} }
+func (d *StubDetector) Start(_ context.Context)     {}
+func (d *StubDetector) Stop()                       {}
 func (d *StubDetector) OnConnect(_ func(Device))    {}
 func (d *StubDetector) OnDisconnect(_ func(Device)) {}
-func (d *StubDetector) ConnectedDevices() []Device   { return nil }
+func (d *StubDetector) ConnectedDevices() []Device  { return nil }

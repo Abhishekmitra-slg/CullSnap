@@ -4,13 +4,12 @@ package device
 
 import (
 	"context"
+	"cullsnap/internal/logger"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-
-	"cullsnap/internal/logger"
 )
 
 var sanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
