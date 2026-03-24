@@ -15,7 +15,7 @@ func TestConvertToJPEG_MissingInput(t *testing.T) {
 
 func TestConvertToJPEG_InvalidExtension(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "test.txt")
-	os.WriteFile(tmp, []byte("not heic"), 0644)
+	os.WriteFile(tmp, []byte("not heic"), 0o644) //nolint:errcheck // test helper
 	err := ConvertToJPEG(tmp, filepath.Join(t.TempDir(), "out.jpg"), false)
 	if err == nil {
 		t.Fatal("expected error for non-HEIC input")

@@ -123,7 +123,7 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 	if isHEIC {
 		logger.Log.Debug("thumbcache: generating HEIC thumbnail", "path", path)
 		tempJPEG := filepath.Join(tc.cacheDir, fmt.Sprintf("heic_temp_%x.jpg", md5.Sum([]byte(path))))
-		defer os.Remove(tempJPEG)
+		defer func() { _ = os.Remove(tempJPEG) }()
 
 		if err := heic.ConvertToJPEG(path, tempJPEG, tc.useNativeSips); err != nil {
 			return "", fmt.Errorf("HEIC conversion failed for %s: %w", filepath.Base(path), err)

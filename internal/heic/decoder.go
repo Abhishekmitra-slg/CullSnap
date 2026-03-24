@@ -21,7 +21,7 @@ func ConvertToJPEG(heicPath, jpegPath string, useSips bool) error {
 		return fmt.Errorf("heic: input file not found: %w", err)
 	}
 	outDir := filepath.Dir(jpegPath)
-	if err := os.MkdirAll(outDir, 0700); err != nil {
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return fmt.Errorf("heic: cannot create output dir: %w", err)
 	}
 	logger.Log.Debug("heic: converting", "input", heicPath, "output", jpegPath, "useSips", useSips)
@@ -41,7 +41,7 @@ func convertFFmpeg(heicPath, jpegPath string) error {
 	}
 	info, err := os.Stat(jpegPath)
 	if err != nil || info.Size() == 0 {
-		os.Remove(jpegPath)
+		_ = os.Remove(jpegPath)
 		return fmt.Errorf("ffmpeg produced empty output for %s", heicPath)
 	}
 	logger.Log.Debug("heic: ffmpeg conversion complete", "input", heicPath, "outputSize", info.Size())

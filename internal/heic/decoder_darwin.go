@@ -28,7 +28,7 @@ func convertSips(heicPath, jpegPath string) error {
 	}
 	info, err := os.Stat(jpegPath)
 	if err != nil || info.Size() == 0 {
-		os.Remove(jpegPath)
+		_ = os.Remove(jpegPath)
 		return fmt.Errorf("sips produced empty output for %s", heicPath)
 	}
 	logger.Log.Debug("heic: sips conversion complete", "input", heicPath, "outputSize", info.Size())

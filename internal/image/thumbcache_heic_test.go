@@ -1,13 +1,12 @@
 package image
 
 import (
+	"cullsnap/internal/logger"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"cullsnap/internal/logger"
 )
 
 func TestGenerateThumbnail_HEIC_Routing(t *testing.T) {
