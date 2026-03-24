@@ -37,6 +37,9 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **Disk-Based Thumbnail Cache**: Parallel Go goroutines generate 300px JPEG thumbnails to `~/.cullsnap/thumbs/` with secure permissions. Worker count is auto-tuned from hardware and user-configurable.
 -   **Smart Deduplication**: Pure-Go perceptual hashing (dHash) automatically groups duplicate/burst photos and selects the best image using multi-factor quality scoring — weighted combination of sharpness (Laplacian of Gaussian), exposure (highlight/shadow clipping), noise estimation (Immerkaer method), and contrast (RMS). Hashes and scores from cached thumbnails for fast performance even on external drives.
 -   **RAW Image Support**: Native Pure Go support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Zero external dependencies. Extracts embedded JPEG previews using format-specific parsers: TIFF IFD walker (Canon DSLR/Sony/Nikon/Leica), BMFF box walker (Canon mirrorless CR3), Fujifilm RAF header parser, and TIFF-variant handling (Olympus/Panasonic). Includes RAW+JPEG companion pairing and format badges in the UI.
+-   **HEIC/HEIF Support**: Full support for iPhone's default photo format. On macOS, uses the native `sips` decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. Decoder preference is configurable in Settings with a clear performance warning.
+-   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain.
+-   **Import from Device (macOS)**: Connect an iPhone or iPad via USB and CullSnap detects it automatically. One-click import via Image Capture to a local staging directory, then scan and cull as usual. Also accessible via the sidebar for manual triggering.
 -   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
 -   **Stable Media Architecture**: Dedicated high-speed server on port `34342` with panic recovery, connection semaphore, structured shutdown, and MIME-correct headers for all video formats.
@@ -65,10 +68,12 @@ graph LR
     subgraph Backend [Go Desktop Backend]
         direction TB
         Scanner["Directory Scanner\n(internal/scanner)"]
-        ThumbCache["Thumbnail Cache\n(internal/image)"]
+        ThumbCache["Thumbnail Cache\n(internal/image + heic)"]
         FFmpeg["FFmpeg Engine\n(internal/video)"]
         RAW["RAW Preview Engine\n(internal/raw)"]
         Dedupe["Perceptual Hash\n+ Quality Scoring"]
+        Cloud["Cloud Sources\n(Google Drive + iCloud)"]
+        DeviceImport["Device Import\n(USB iPhone/iPad)"]
         Storage["SQLite Persistence\n(internal/storage)"]
         Config["System Probe\n+ AppConfig"]
         MediaServer["Media Server :34342\n(panic recovery + semaphore)"]
@@ -84,6 +89,8 @@ graph LR
     Bindings <-->|Find Duplicates| Dedupe
     Bindings <-->|Persist State| Storage
     Bindings <-->|Auto-Tune| Config
+    Bindings <-->|Mirror + Auth| Cloud
+    Bindings <-->|Detect + Import| DeviceImport
 ```
 
 ## 🛠️ Installation
@@ -137,28 +144,30 @@ make dev
 
 ## 🎮 Usage Guide
 
-1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, RAW, and video files.
-2.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
-3.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
-4.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
-5.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
-6.  **Trim Videos**: Select a video, set trim start/end in the viewer. Only the trimmed segment is exported (lossless fast-seek).
-7.  **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
-8.  **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
-9.  **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
-10. **Settings**: Click the gear icon to view system info (OS, CPU, RAM, Storage, FFmpeg) and adjust performance tuning sliders.
+1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, HEIC, RAW, and video files.
+2.  **Cloud Albums**: Click **Cloud Albums** in the sidebar to connect Google Drive or iCloud Photos. Browse folders/albums and mirror them locally for culling.
+3.  **Import from Device** (macOS): Connect an iPhone via USB. CullSnap detects it and offers one-click import, or use the **Import from Device** sidebar button anytime.
+4.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
+5.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
+6.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
+7.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
+8.  **Trim Videos**: Select a video, set trim start/end in the viewer. Only the trimmed segment is exported (lossless fast-seek).
+9.  **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
+10. **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
+11. **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
+12. **Settings**: Click the gear icon to view system info, adjust performance sliders, configure HEIC decoder, and manage cloud storage cache.
 
 ## 📷 Supported Formats
 
 | Category | Formats |
 |----------|---------|
-| **Images** | JPG, JPEG, PNG |
+| **Images** | JPG, JPEG, PNG, HEIC, HEIF |
 | **RAW** | CR2 (Canon DSLR), CR3 (Canon mirrorless), ARW (Sony), NEF (Nikon), DNG (Adobe/Leica/Ricoh), RAF (Fujifilm), RW2 (Panasonic), ORF (Olympus/OM System), NRW (Nikon compact), PEF (Pentax), SRW (Samsung) |
 | **Video** | MP4, MOV, WEBM, MKV, AVI (requires FFmpeg) |
 
 RAW files are displayed with format badges in both the grid and viewer. When RAW+JPEG pairs are detected (same filename, same directory), CullSnap automatically links them as companions.
 
-> **Note:** All 11 RAW formats are handled natively in Pure Go with zero external dependencies. No additional software is required.
+> **Note:** All 11 RAW formats are handled natively in Pure Go with zero external dependencies. HEIC/HEIF decoding uses macOS sips (hardware-accelerated) or FFmpeg.
 
 ## 📁 Project Structure
 
@@ -178,19 +187,25 @@ CullSnap/
 │   │   ├── thumbnail.go            # EXIF thumbnail extraction + resize fallback
 │   │   └── thumbcache.go           # Disk cache with parallel batch generation
 │   ├── raw/                        # RAW image support (TIFF/BMFF/RAF parsers, preview cache)
-│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png + RAW + video)
+│   ├── heic/                       # HEIC/HEIF decoder (sips on macOS, FFmpeg fallback)
+│   ├── cloudsource/                # Cloud source framework (OAuth, mirror, token store)
+│   │   └── providers/              # Google Drive, iCloud (macOS) providers
+│   ├── device/                     # USB device detection + import (macOS)
+│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png/heic + RAW + video)
 │   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
 │   ├── export/copier.go            # File copy with flush-error checking + video trim
 │   ├── model/photo.go              # Unified Photo struct
-│   ├── storage/                    # SQLite (selections, ratings, exported, config)
+│   ├── storage/                    # SQLite (selections, ratings, exported, config, cloud mirrors)
 │   └── logger/                     # Structured logging (slog)
 └── frontend/src/
     ├── App.tsx                      # 2-phase loading, event listeners, state
     ├── components/
     │   ├── Grid.tsx                 # Virtualized grid (TanStack Virtual)
     │   ├── Viewer.tsx               # Image/Video viewer + trim controls
-    │   ├── Sidebar.tsx              # Folder nav, export dialog, dedup trigger
-    │   └── SettingsModal.tsx        # System info + performance sliders
+    │   ├── Sidebar.tsx              # Folder nav, cloud, device import, export, dedup
+    │   ├── CloudSourceModal.tsx    # Google Drive + iCloud album browser
+    │   ├── DeviceImportModal.tsx   # USB iPhone/iPad import
+    │   └── SettingsModal.tsx        # System info, performance, HEIC decoder, cloud cache
     └── index.css                    # Navy/violet theme, glassmorphism, animations
 ```
 
