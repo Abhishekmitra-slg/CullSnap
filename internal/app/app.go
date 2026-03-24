@@ -70,7 +70,8 @@ type App struct {
 	OnAllowDir      func(dir string) // called to register a directory with the media server allowlist
 	Version         string           // set from main.version (build-time ldflags)
 	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
-	UpdatePublicKey []byte           // ECDSA public key for update signature verification
+	UpdatePublicKey        []byte  // ECDSA public key for update signature verification
+	GoogleDriveCredentials []byte // OAuth client credentials (embedded from credentials/google_drive.json)
 	updater         *updater.Updater // manages self-update checks
 	cloudRegistry   *cloudsource.Registry
 	mirrorManager   *cloudsource.MirrorManager
@@ -83,6 +84,25 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp(store *storage.SQLiteStore) *App {
 	return &App{store: store}
+}
+
+// parseGoogleDriveCredentials extracts client_id and client_secret from the
+// Google Cloud "Desktop app" credentials JSON (the "installed" format).
+func parseGoogleDriveCredentials(data []byte) (clientID, clientSecret string) {
+	if len(data) == 0 {
+		return "", ""
+	}
+	var creds struct {
+		Installed struct {
+			ClientID     string `json:"client_id"`
+			ClientSecret string `json:"client_secret"`
+		} `json:"installed"`
+	}
+	if err := json.Unmarshal(data, &creds); err != nil {
+		logger.Log.Error("Failed to parse Google Drive credentials", "error", err)
+		return "", ""
+	}
+	return creds.Installed.ClientID, creds.Installed.ClientSecret
 }
 
 // Startup is called when the app starts. The context is saved
@@ -119,12 +139,15 @@ func (a *App) Startup(ctx context.Context) {
 	a.mirrorCancels = make(map[string]context.CancelFunc)
 	logger.Log.Info("Cloud source infrastructure initialized", "cloudDir", cloudDir)
 
-	// Register Google Drive provider
-	// Client ID/Secret would normally come from embedded credentials
-	// For now, register with empty credentials (shows "not configured" state)
-	gdProvider := googledrive.New(a.tokenStore, "", "")
+	// Register Google Drive provider with embedded credentials
+	gdClientID, gdClientSecret := parseGoogleDriveCredentials(a.GoogleDriveCredentials)
+	gdProvider := googledrive.New(a.tokenStore, gdClientID, gdClientSecret)
 	a.cloudRegistry.Register(gdProvider)
-	logger.Log.Info("Cloud provider registered", "provider", gdProvider.ID())
+	if gdClientID != "" {
+		logger.Log.Info("Cloud provider registered", "provider", gdProvider.ID())
+	} else {
+		logger.Log.Warn("Google Drive credentials not configured — cloud feature disabled")
+	}
 
 	// Register iCloud Photos provider (macOS only; stub on other platforms)
 	icloudProvider := icloud.New(a.tokenStore)

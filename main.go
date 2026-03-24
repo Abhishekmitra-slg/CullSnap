@@ -41,6 +41,12 @@ var contributorsYML string
 //go:embed keys/update_signing.pub
 var updatePublicKey []byte
 
+// Google Drive OAuth credentials — embedded from credentials/google_drive.json
+// This file is .gitignore'd. CI injects it at build time.
+// If missing, the embed will contain empty bytes and Google Drive shows "not configured".
+//go:embed credentials/google_drive.json
+var googleDriveCredentials []byte
+
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z"
 var version = "dev"
 
@@ -365,6 +371,7 @@ func main() {
 	application.Version = version
 	application.ContributorsRaw = contributorsYML
 	application.UpdatePublicKey = updatePublicKey
+	application.GoogleDriveCredentials = googleDriveCredentials
 
 	// Create application with options
 	err = wails.Run(&options.App{
