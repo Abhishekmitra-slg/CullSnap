@@ -34,7 +34,6 @@ docs/superpowers/
 gha-creds-*.json
 *.key
 *.pem
-credentials/
 
 # Build output
 /bin/

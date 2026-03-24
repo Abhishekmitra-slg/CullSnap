@@ -41,14 +41,16 @@ var contributorsYML string
 //go:embed keys/update_signing.pub
 var updatePublicKey []byte
 
-// Google Drive OAuth credentials — embedded from credentials/google_drive.json
-// This file is .gitignore'd. CI injects it at build time.
-// If missing, the embed will contain empty bytes and Google Drive shows "not configured".
-//go:embed credentials/google_drive.json
-var googleDriveCredentials []byte
-
-// version is set at build time via -ldflags "-X main.version=vX.Y.Z"
-var version = "dev"
+// version and Google Drive OAuth credentials are set at build time via ldflags:
+//   -X main.version=vX.Y.Z
+//   -X main.googleDriveClientID=<id>
+//   -X main.googleDriveClientSecret=<secret>
+// For local development, set GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET env vars.
+var (
+	version                  = "dev"
+	googleDriveClientID      = "" // injected via ldflags in CI
+	googleDriveClientSecret  = "" // injected via ldflags in CI
+)
 
 type FileLoader struct {
 	sem           chan struct{}      // limits concurrent file-serving goroutines
@@ -371,7 +373,18 @@ func main() {
 	application.Version = version
 	application.ContributorsRaw = contributorsYML
 	application.UpdatePublicKey = updatePublicKey
-	application.GoogleDriveCredentials = googleDriveCredentials
+
+	// Google Drive OAuth credentials: ldflags (CI) → env vars (local dev)
+	gdID := googleDriveClientID
+	gdSecret := googleDriveClientSecret
+	if gdID == "" {
+		gdID = os.Getenv("GOOGLE_DRIVE_CLIENT_ID")
+	}
+	if gdSecret == "" {
+		gdSecret = os.Getenv("GOOGLE_DRIVE_CLIENT_SECRET")
+	}
+	application.GoogleDriveClientID = gdID
+	application.GoogleDriveClientSecret = gdSecret
 
 	// Create application with options
 	err = wails.Run(&options.App{

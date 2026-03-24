@@ -59,11 +59,14 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ github.ref_name }}
+          GD_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GD_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
         run: |
+          LDFLAGS="-X main.version=$VERSION -X main.googleDriveClientID=$GD_CLIENT_ID -X main.googleDriveClientSecret=$GD_CLIENT_SECRET"
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            wails build -platform ${{ matrix.platform }} -clean -m -tags webkit2_41 -ldflags "-X main.version=$VERSION"
+            wails build -platform ${{ matrix.platform }} -clean -m -tags webkit2_41 -ldflags "$LDFLAGS"
           else
-            wails build -platform ${{ matrix.platform }} -clean -m -ldflags "-X main.version=$VERSION"
+            wails build -platform ${{ matrix.platform }} -clean -m -ldflags "$LDFLAGS"
           fi
 
       - name: Compress macOS Binary
