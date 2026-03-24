@@ -4,6 +4,7 @@ import (
 	"context"
 	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/cloudsource/providers/googledrive"
+	"cullsnap/internal/cloudsource/providers/icloud"
 	"cullsnap/internal/dedupe"
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
@@ -122,6 +123,11 @@ func (a *App) Startup(ctx context.Context) {
 	gdProvider := googledrive.New(a.tokenStore, "", "")
 	a.cloudRegistry.Register(gdProvider)
 	logger.Log.Info("Cloud provider registered", "provider", gdProvider.ID())
+
+	// Register iCloud Photos provider (macOS only; stub on other platforms)
+	icloudProvider := icloud.New(a.tokenStore)
+	a.cloudRegistry.Register(icloudProvider)
+	logger.Log.Info("Cloud provider registered", "provider", icloudProvider.ID())
 
 	// Initialize RAW module (dcraw provisioning)
 	if err := raw.Init(); err != nil {
