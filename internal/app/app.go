@@ -476,11 +476,34 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		numWorkers = a.cfg.ThumbnailWorkers
 	}
 
+	// Count HEIC files in the batch so the UI can show decoder info
+	heicCount := 0
+	for _, item := range items {
+		ext := strings.ToLower(filepath.Ext(item.Path))
+		if ext == ".heic" || ext == ".heif" {
+			heicCount++
+		}
+	}
+	heicDecoder := ""
+	if heicCount > 0 {
+		if a.cfg.UseNativeSips && stdruntime.GOOS == "darwin" {
+			heicDecoder = "sips"
+		} else {
+			heicDecoder = "ffmpeg"
+		}
+		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
+	}
+
 	thumbnailMap := a.thumbCache.GenerateBatch(items, numWorkers, func(completed, total int) {
-		runtime.EventsEmit(a.ctx, "thumb-progress", map[string]interface{}{
+		payload := map[string]interface{}{
 			"current": completed,
 			"total":   total,
-		})
+		}
+		if heicCount > 0 {
+			payload["heicCount"] = heicCount
+			payload["heicDecoder"] = heicDecoder
+		}
+		runtime.EventsEmit(a.ctx, "thumb-progress", payload)
 	})
 
 	// Populate ThumbnailPath on photos

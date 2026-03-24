@@ -38,7 +38,7 @@ function App() {
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const [dedupCompleted, setDedupCompleted] = useState(false);
-    const [thumbProgress, setThumbProgress] = useState<{current: number, total: number} | null>(null);
+    const [thumbProgress, setThumbProgress] = useState<{current: number, total: number, heicCount?: number, heicDecoder?: string} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
@@ -458,7 +458,13 @@ function App() {
                     {loading ? (
                         <div className="progress-container"><div className="progress-bar-indeterminate"></div></div>
                     ) : (
-                <span>{photos.length} photos • {selectedPaths.size} selected{thumbProgress ? ` • Loading thumbnails ${thumbProgress.current}/${thumbProgress.total}` : ''}</span>
+                <span>{photos.length} photos • {selectedPaths.size} selected{thumbProgress ? ` • Loading thumbnails ${thumbProgress.current}/${thumbProgress.total}` : ''}{thumbProgress && thumbProgress.heicCount && thumbProgress.heicCount > 0 ? (
+                    <span style={{ color: thumbProgress.heicDecoder === 'sips' ? '#a78bfa' : '#d4a017', marginLeft: '6px' }}>
+                        {thumbProgress.heicDecoder === 'sips'
+                            ? `${thumbProgress.heicCount} HEIC via native decoder`
+                            : `${thumbProgress.heicCount} HEIC via FFmpeg (slower)`}
+                    </span>
+                ) : null}</span>
                     )}
                 </div>
 
