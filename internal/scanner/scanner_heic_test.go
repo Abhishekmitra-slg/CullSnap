@@ -8,9 +8,9 @@ import (
 
 func TestScanDirectory_HEIC(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "photo1.heic"), []byte("fake"), 0644)
-	os.WriteFile(filepath.Join(dir, "photo2.heif"), []byte("fake"), 0644)
-	os.WriteFile(filepath.Join(dir, "photo3.jpg"), []byte("fake"), 0644)
+	os.WriteFile(filepath.Join(dir, "photo1.heic"), []byte("fake"), 0o644)
+	os.WriteFile(filepath.Join(dir, "photo2.heif"), []byte("fake"), 0o644)
+	os.WriteFile(filepath.Join(dir, "photo3.jpg"), []byte("fake"), 0o644)
 
 	photos, err := ScanDirectory(dir)
 	if err != nil {

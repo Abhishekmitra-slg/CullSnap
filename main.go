@@ -45,13 +45,13 @@ var updatePublicKey []byte
 var version = "dev"
 
 type FileLoader struct {
-	sem            chan struct{}        // limits concurrent file-serving goroutines
-	serverCtx      context.Context     // cancelled on app shutdown
-	cacheDir       string              // for Cache-Control header detection
-	allowedMu      sync.RWMutex        // protects allowedDirs
-	allowedDirs    []string            // directories the user has explicitly opened
-	heicGroup      singleflight.Group  // dedup concurrent HEIC conversions
-	useNativeSips  bool                // controls sips vs FFmpeg for HEIC conversion
+	sem           chan struct{}      // limits concurrent file-serving goroutines
+	serverCtx     context.Context    // cancelled on app shutdown
+	cacheDir      string             // for Cache-Control header detection
+	allowedMu     sync.RWMutex       // protects allowedDirs
+	allowedDirs   []string           // directories the user has explicitly opened
+	heicGroup     singleflight.Group // dedup concurrent HEIC conversions
+	useNativeSips bool               // controls sips vs FFmpeg for HEIC conversion
 }
 
 // AllowDirectory adds a directory to the allowlist of paths the media server may serve.
@@ -135,7 +135,7 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			if cached, err := raw.GetCachedPreview(filePath); err == nil {
 				res.Header().Set("Content-Type", "image/jpeg")
 				res.Header().Set("Cache-Control", "private, max-age=3600")
-				io.Copy(res, bytes.NewReader(cached)) //nolint:errcheck // best-effort binary JPEG write
+				io.Copy(res, bytes.NewReader(cached)) //nolint:errcheck,gosec // best-effort binary JPEG write
 				return
 			}
 
@@ -153,14 +153,14 @@ func (h *FileLoader) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 			res.Header().Set("Content-Type", "image/jpeg")
 			res.Header().Set("Cache-Control", "private, max-age=3600")
-			io.Copy(res, bytes.NewReader(previewBytes)) //nolint:errcheck // best-effort binary JPEG write
+			io.Copy(res, bytes.NewReader(previewBytes)) //nolint:errcheck,gosec // best-effort binary JPEG write
 			return
 		}
 
 		// HEIC/HEIF: convert to JPEG, cache, and serve
 		if ext == ".heic" || ext == ".heif" {
 			heicCacheDir := filepath.Join(h.cacheDir, "heic")
-			os.MkdirAll(heicCacheDir, 0700) //nolint:errcheck // best-effort cache dir creation
+			os.MkdirAll(heicCacheDir, 0o700) //nolint:errcheck,gosec // best-effort cache dir creation
 			cacheKey := fmt.Sprintf("%x", sha256.Sum256([]byte(filePath)))
 			cachedPath := filepath.Join(heicCacheDir, cacheKey+".jpg")
 
@@ -267,11 +267,11 @@ func main() {
 	// mime.AddExtensionType overrides whatever the OS registry/database has,
 	// ensuring correct Content-Type on all platforms (Windows registry is missing
 	// mkv/webm; macOS may not have all).
-	mime.AddExtensionType(".mov", "video/quicktime")
-	mime.AddExtensionType(".mkv", "video/x-matroska")
-	mime.AddExtensionType(".webm", "video/webm")
-	mime.AddExtensionType(".mp4", "video/mp4")
-	mime.AddExtensionType(".avi", "video/x-msvideo")
+	_ = mime.AddExtensionType(".mov", "video/quicktime")
+	_ = mime.AddExtensionType(".mkv", "video/x-matroska")
+	_ = mime.AddExtensionType(".webm", "video/webm")
+	_ = mime.AddExtensionType(".mp4", "video/mp4")
+	_ = mime.AddExtensionType(".avi", "video/x-msvideo")
 
 	// Determine App Data Directory
 	configDir, err := os.UserConfigDir()
@@ -309,7 +309,7 @@ func main() {
 		logger.Log.Error("CRITICAL: Failed to init storage", "error", err)
 		log.Fatal(err)
 	}
-	defer store.Close()
+	defer store.Close() //nolint:errcheck // best-effort cleanup on exit
 
 	// serverCtx is cancelled in OnShutdown so semaphore-blocked goroutines exit cleanly.
 	serverCtx, serverCancel := context.WithCancel(context.Background())
@@ -352,7 +352,7 @@ func main() {
 		}
 		go func() {
 			<-serverCtx.Done()
-			mediaServer.Close()
+			mediaServer.Close() //nolint:errcheck,gosec // best-effort shutdown
 		}()
 		if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Failed to start media server: %v", err)
