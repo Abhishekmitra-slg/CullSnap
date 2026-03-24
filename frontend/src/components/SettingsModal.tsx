@@ -124,6 +124,60 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                 </section>
 
+                {config.probe?.OS === 'darwin' && (
+                    <section className="settings-section">
+                        <h3>HEIC Decoder</h3>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Use native macOS HEIC decoder</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                    Uses sips for fast HEIC thumbnail generation
+                                </div>
+                            </div>
+                            <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22, flexShrink: 0 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.useNativeSips}
+                                    onChange={(e) => {
+                                        if (!e.target.checked) {
+                                            if (!window.confirm(
+                                                'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. ' +
+                                                'Thumbnail generation for HEIC photos will take significantly longer.'
+                                            )) {
+                                                return;
+                                            }
+                                        }
+                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: e.target.checked }));
+                                    }}
+                                    style={{ opacity: 0, width: 0, height: 0 }}
+                                />
+                                <span style={{
+                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                    backgroundColor: config.useNativeSips ? '#818cf8' : '#555',
+                                    borderRadius: 11, transition: 'background-color 0.2s',
+                                }} />
+                                <span style={{
+                                    position: 'absolute', content: '""', height: 18, width: 18,
+                                    left: config.useNativeSips ? 20 : 2, top: 2,
+                                    backgroundColor: config.useNativeSips ? 'white' : '#999',
+                                    borderRadius: '50%', transition: 'left 0.2s, background-color 0.2s',
+                                }} />
+                            </label>
+                        </div>
+                        {!config.useNativeSips && (
+                            <div style={{
+                                marginTop: 12, padding: '8px 10px',
+                                background: 'rgba(255, 180, 50, 0.08)',
+                                border: '1px solid rgba(255, 180, 50, 0.2)',
+                                borderRadius: 8, fontSize: '0.75rem', color: '#d4a017',
+                            }}>
+                                <strong>&#9888; Slower decoding active</strong> — HEIC photos will be decoded using FFmpeg,
+                                which is 3-5x slower than the native macOS decoder.
+                            </div>
+                        )}
+                    </section>
+                )}
+
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>
                         <RotateCcw size={14} /> Reset to Defaults

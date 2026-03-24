@@ -95,6 +95,8 @@ export namespace app {
 	    serverIdleTimeoutSec: number;
 	    cacheDir: string;
 	    autoUpdate: string;
+	    useNativeSips: boolean;
+	    maxCloudCacheMB: number;
 	    probe: SystemProbe;
 	
 	    static createFrom(source: any = {}) {
@@ -109,6 +111,8 @@ export namespace app {
 	        this.serverIdleTimeoutSec = source["serverIdleTimeoutSec"];
 	        this.cacheDir = source["cacheDir"];
 	        this.autoUpdate = source["autoUpdate"];
+	        this.useNativeSips = source["useNativeSips"];
+	        this.maxCloudCacheMB = source["maxCloudCacheMB"];
 	        this.probe = this.convertValues(source["probe"], SystemProbe);
 	    }
 	
