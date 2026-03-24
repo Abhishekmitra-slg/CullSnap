@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"cullsnap/internal/cloudsource"
+	"cullsnap/internal/cloudsource/providers/googledrive"
+	"cullsnap/internal/cloudsource/providers/icloud"
 	"cullsnap/internal/dedupe"
+	"cullsnap/internal/device"
 	"cullsnap/internal/export"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/model"
@@ -29,7 +33,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Contributor represents a project contributor parsed from CONTRIBUTORS.yml.
@@ -68,6 +72,12 @@ type App struct {
 	ContributorsRaw string           // raw CONTRIBUTORS.yml content embedded at build time
 	UpdatePublicKey []byte           // ECDSA public key for update signature verification
 	updater         *updater.Updater // manages self-update checks
+	cloudRegistry   *cloudsource.Registry
+	mirrorManager   *cloudsource.MirrorManager
+	tokenStore      *cloudsource.TokenStore
+	mirrorCancels   map[string]context.CancelFunc
+	mirrorMu        sync.Mutex
+	deviceDetector  device.Detector
 }
 
 // NewApp creates a new App application struct
@@ -87,7 +97,7 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.cfg = a.loadOrInitConfig(ffmpegPath)
 
-	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir)
+	tc, err := cullImage.NewThumbCache(a.cfg.CacheDir, a.cfg.UseNativeSips)
 	if err != nil {
 		logger.Log.Error("Failed to initialize thumbnail cache", "error", err)
 	} else {
@@ -100,6 +110,39 @@ func (a *App) Startup(ctx context.Context) {
 	// Start auto-update checker
 	a.updater = updater.NewUpdater(ctx, a.Version, a.UpdatePublicKey, a.cfg.AutoUpdate)
 	a.updater.Start()
+
+	// Initialize cloud source infrastructure
+	cloudDir := filepath.Join(a.cfg.CacheDir, "cloud")
+	a.tokenStore = cloudsource.NewTokenStore(cloudDir)
+	a.cloudRegistry = cloudsource.NewRegistry()
+	a.mirrorManager = cloudsource.NewMirrorManager(cloudDir, a.store, a.cfg.MaxCloudCacheMB, a.cfg.ThumbnailWorkers)
+	a.mirrorCancels = make(map[string]context.CancelFunc)
+	logger.Log.Info("Cloud source infrastructure initialized", "cloudDir", cloudDir)
+
+	// Register Google Drive provider
+	// Client ID/Secret would normally come from embedded credentials
+	// For now, register with empty credentials (shows "not configured" state)
+	gdProvider := googledrive.New(a.tokenStore, "", "")
+	a.cloudRegistry.Register(gdProvider)
+	logger.Log.Info("Cloud provider registered", "provider", gdProvider.ID())
+
+	// Register iCloud Photos provider (macOS only; stub on other platforms)
+	icloudProvider := icloud.New(a.tokenStore)
+	a.cloudRegistry.Register(icloudProvider)
+	logger.Log.Info("Cloud provider registered", "provider", icloudProvider.ID())
+
+	// Initialize device detector (all platforms — stub on non-macOS)
+	a.deviceDetector = device.NewDetector()
+	a.deviceDetector.OnConnect(func(d device.Device) {
+		wailsRuntime.EventsEmit(a.ctx, "device-connected", d)
+		logger.Log.Info("device: connected event emitted", "name", d.Name, "serial", d.Serial)
+	})
+	a.deviceDetector.OnDisconnect(func(d device.Device) {
+		wailsRuntime.EventsEmit(a.ctx, "device-disconnected", d)
+		logger.Log.Info("device: disconnected event emitted", "name", d.Name, "serial", d.Serial)
+	})
+	go a.deviceDetector.Start(a.ctx)
+	logger.Log.Info("Device detector started")
 
 	// Initialize RAW module (dcraw provisioning)
 	if err := raw.Init(); err != nil {
@@ -130,6 +173,18 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	if cfg.AutoUpdate == "" {
 		cfg.AutoUpdate = "notify"
 	}
+	useNativeSipsVal, _ := a.store.GetConfig("useNativeSips")
+	if useNativeSipsVal == "false" {
+		cfg.UseNativeSips = false
+	} else {
+		// Default: true on darwin, false elsewhere
+		cfg.UseNativeSips = stdruntime.GOOS == "darwin"
+	}
+	val, _ = a.store.GetConfig("maxCloudCacheMB")
+	cfg.MaxCloudCacheMB, _ = strconv.Atoi(val)
+	if cfg.MaxCloudCacheMB <= 0 {
+		cfg.MaxCloudCacheMB = 10240
+	}
 
 	// Always re-run the probe on startup so hardware info stays current.
 	cfg.Probe = RunSystemProbe(ffmpegPath)
@@ -155,26 +210,36 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 
 func (a *App) persistConfig(cfg *AppConfig) {
 	if err := a.store.SetConfig("maxConnections", strconv.Itoa(cfg.MaxConnections)); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save maxConnections: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save maxConnections: %v", err)
 	}
 	if err := a.store.SetConfig("thumbnailWorkers", strconv.Itoa(cfg.ThumbnailWorkers)); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save thumbnailWorkers: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save thumbnailWorkers: %v", err)
 	}
 	if err := a.store.SetConfig("scannerWorkers", strconv.Itoa(cfg.ScannerWorkers)); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save scannerWorkers: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save scannerWorkers: %v", err)
 	}
 	if err := a.store.SetConfig("serverIdleTimeoutSec", strconv.Itoa(cfg.ServerIdleTimeoutSec)); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save serverIdleTimeoutSec: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save serverIdleTimeoutSec: %v", err)
 	}
 	if err := a.store.SetConfig("cacheDir", cfg.CacheDir); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save cacheDir: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save cacheDir: %v", err)
 	}
 	if err := a.store.SetConfig("autoUpdate", cfg.AutoUpdate); err != nil {
-		runtime.LogWarningf(a.ctx, "persistConfig: failed to save autoUpdate: %v", err)
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save autoUpdate: %v", err)
+	}
+	useNativeSipsVal := "true"
+	if !cfg.UseNativeSips {
+		useNativeSipsVal = "false"
+	}
+	if err := a.store.SetConfig("useNativeSips", useNativeSipsVal); err != nil {
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save useNativeSips: %v", err)
+	}
+	if err := a.store.SetConfig("maxCloudCacheMB", strconv.Itoa(cfg.MaxCloudCacheMB)); err != nil {
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save maxCloudCacheMB: %v", err)
 	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
 		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {
-			runtime.LogWarningf(a.ctx, "persistConfig: failed to save probe: %v", err)
+			wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save probe: %v", err)
 		}
 	}
 }
@@ -295,7 +360,7 @@ func (a *App) RestartForUpdate() error {
 
 // SelectDirectory opens a native OS dialog to select a folder
 func (a *App) SelectDirectory() (string, error) {
-	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+	dir, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Select Folder to Cull",
 	})
 	if err != nil {
@@ -312,7 +377,7 @@ func (a *App) SelectDirectory() (string, error) {
 
 // SelectExportDirectory opens a native OS dialog to select an export folder
 func (a *App) SelectExportDirectory() (string, error) {
-	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+	dir, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "Select Export Destination",
 	})
 	return dir, err
@@ -338,7 +403,7 @@ func (a *App) startEnrichment(videoPaths []string) {
 // Emits "video-duration-complete" when all workers finish.
 func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 	if len(videoPaths) == 0 {
-		runtime.EventsEmit(a.ctx, "video-duration-complete")
+		wailsRuntime.EventsEmit(a.ctx, "video-duration-complete")
 		return
 	}
 
@@ -369,7 +434,7 @@ func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 					logger.Log.Warn("Duration enrichment failed", "file", filepath.Base(path), "error", err)
 					continue
 				}
-				runtime.EventsEmit(a.ctx, "video-duration-ready", map[string]interface{}{
+				wailsRuntime.EventsEmit(a.ctx, "video-duration-ready", map[string]interface{}{
 					"path":     path,
 					"duration": dur,
 				})
@@ -378,7 +443,7 @@ func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 	}
 
 	wg.Wait()
-	runtime.EventsEmit(a.ctx, "video-duration-complete")
+	wailsRuntime.EventsEmit(a.ctx, "video-duration-complete")
 }
 
 // ScanDirectory returns all photos in the directory
@@ -454,11 +519,34 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		numWorkers = a.cfg.ThumbnailWorkers
 	}
 
+	// Count HEIC files in the batch so the UI can show decoder info
+	heicCount := 0
+	for _, item := range items {
+		ext := strings.ToLower(filepath.Ext(item.Path))
+		if ext == ".heic" || ext == ".heif" {
+			heicCount++
+		}
+	}
+	heicDecoder := ""
+	if heicCount > 0 {
+		if a.cfg.UseNativeSips && stdruntime.GOOS == "darwin" {
+			heicDecoder = "sips"
+		} else {
+			heicDecoder = "ffmpeg"
+		}
+		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
+	}
+
 	thumbnailMap := a.thumbCache.GenerateBatch(items, numWorkers, func(completed, total int) {
-		runtime.EventsEmit(a.ctx, "thumb-progress", map[string]interface{}{
+		payload := map[string]interface{}{
 			"current": completed,
 			"total":   total,
-		})
+		}
+		if heicCount > 0 {
+			payload["heicCount"] = heicCount
+			payload["heicDecoder"] = heicDecoder
+		}
+		wailsRuntime.EventsEmit(a.ctx, "thumb-progress", payload)
 	})
 
 	// Populate ThumbnailPath on photos
@@ -613,7 +701,7 @@ func (a *App) emitSystemMetrics() {
 			lastNetRecv = stat.BytesRecv
 		}
 
-		runtime.EventsEmit(a.ctx, "sys-metrics", metrics)
+		wailsRuntime.EventsEmit(a.ctx, "sys-metrics", metrics)
 	}
 }
 
@@ -752,7 +840,7 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 
 	// Shared progress emitter
 	emitProgress := func(current, total int, message string) {
-		runtime.EventsEmit(a.ctx, "dedupe-progress", map[string]interface{}{
+		wailsRuntime.EventsEmit(a.ctx, "dedupe-progress", map[string]interface{}{
 			"current": current,
 			"total":   total,
 			"message": message,

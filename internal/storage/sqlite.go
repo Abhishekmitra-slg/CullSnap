@@ -57,6 +57,20 @@ func (s *SQLiteStore) initSchema() error {
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );`,
+		`CREATE TABLE IF NOT EXISTS cloud_mirrors (
+    provider_id  TEXT NOT NULL,
+    album_id     TEXT NOT NULL,
+    album_title  TEXT NOT NULL,
+    local_path   TEXT NOT NULL,
+    synced_at    DATETIME,
+    PRIMARY KEY (provider_id, album_id)
+);`,
+		`CREATE TABLE IF NOT EXISTS cloud_media_meta (
+    local_path        TEXT PRIMARY KEY,
+    remote_id         TEXT NOT NULL,
+    provider_id       TEXT NOT NULL,
+    remote_updated_at DATETIME
+);`,
 	}
 
 	for _, query := range queries {
@@ -228,4 +242,117 @@ func (s *SQLiteStore) GetSQLiteVersion() (string, error) {
 	var ver string
 	err := s.db.QueryRow("SELECT sqlite_version()").Scan(&ver)
 	return ver, err
+}
+
+// CloudMirror represents a synced cloud album mapped to a local directory.
+type CloudMirror struct {
+	ProviderID string
+	AlbumID    string
+	AlbumTitle string
+	LocalPath  string
+	SyncedAt   time.Time
+}
+
+// CloudMediaMeta holds remote metadata for a locally known media file.
+type CloudMediaMeta struct {
+	LocalPath       string
+	RemoteID        string
+	ProviderID      string
+	RemoteUpdatedAt time.Time
+}
+
+// SaveCloudMirror upserts a cloud mirror record.
+func (s *SQLiteStore) SaveCloudMirror(providerID, albumID, albumTitle, localPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `INSERT OR REPLACE INTO cloud_mirrors (provider_id, album_id, album_title, local_path, synced_at)
+	          VALUES (?, ?, ?, ?, ?)`
+	_, err := s.db.Exec(query, providerID, albumID, albumTitle, localPath, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to save cloud mirror: %w", err)
+	}
+	return nil
+}
+
+// GetCloudMirror retrieves a cloud mirror by provider and album ID.
+func (s *SQLiteStore) GetCloudMirror(providerID, albumID string) (CloudMirror, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var m CloudMirror
+	query := `SELECT provider_id, album_id, album_title, local_path, synced_at
+	          FROM cloud_mirrors WHERE provider_id = ? AND album_id = ?`
+	err := s.db.QueryRow(query, providerID, albumID).Scan(
+		&m.ProviderID, &m.AlbumID, &m.AlbumTitle, &m.LocalPath, &m.SyncedAt,
+	)
+	if err != nil {
+		return CloudMirror{}, fmt.Errorf("failed to get cloud mirror: %w", err)
+	}
+	return m, nil
+}
+
+// ListCloudMirrors returns all stored cloud mirrors.
+func (s *SQLiteStore) ListCloudMirrors() ([]CloudMirror, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows, err := s.db.Query(`SELECT provider_id, album_id, album_title, local_path, synced_at FROM cloud_mirrors`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cloud mirrors: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var mirrors []CloudMirror
+	for rows.Next() {
+		var m CloudMirror
+		if err := rows.Scan(&m.ProviderID, &m.AlbumID, &m.AlbumTitle, &m.LocalPath, &m.SyncedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan cloud mirror row: %w", err)
+		}
+		mirrors = append(mirrors, m)
+	}
+	return mirrors, nil
+}
+
+// DeleteCloudMirror removes a cloud mirror record.
+func (s *SQLiteStore) DeleteCloudMirror(providerID, albumID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`DELETE FROM cloud_mirrors WHERE provider_id = ? AND album_id = ?`, providerID, albumID)
+	if err != nil {
+		return fmt.Errorf("failed to delete cloud mirror: %w", err)
+	}
+	return nil
+}
+
+// SaveCloudMediaMeta upserts remote metadata for a local media file.
+func (s *SQLiteStore) SaveCloudMediaMeta(localPath, remoteID, providerID string, remoteUpdatedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `INSERT OR REPLACE INTO cloud_media_meta (local_path, remote_id, provider_id, remote_updated_at)
+	          VALUES (?, ?, ?, ?)`
+	_, err := s.db.Exec(query, localPath, remoteID, providerID, remoteUpdatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to save cloud media meta: %w", err)
+	}
+	return nil
+}
+
+// GetCloudMediaMeta retrieves remote metadata for a local media file.
+func (s *SQLiteStore) GetCloudMediaMeta(localPath string) (CloudMediaMeta, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var m CloudMediaMeta
+	query := `SELECT local_path, remote_id, provider_id, remote_updated_at
+	          FROM cloud_media_meta WHERE local_path = ?`
+	err := s.db.QueryRow(query, localPath).Scan(
+		&m.LocalPath, &m.RemoteID, &m.ProviderID, &m.RemoteUpdatedAt,
+	)
+	if err != nil {
+		return CloudMediaMeta{}, fmt.Errorf("failed to get cloud media meta: %w", err)
+	}
+	return m, nil
 }

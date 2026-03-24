@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, RotateCcw } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig } from '../../wailsjs/go/app/App';
+import { X, RotateCcw, Cloud, Trash2, Smartphone } from 'lucide-react';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetMirrorStats, ClearCloudMirror, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -10,10 +10,67 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
     const [config, setConfig] = useState<app.AppConfig | null>(null);
     const [saving, setSaving] = useState(false);
+    const [mirrorStats, setMirrorStats] = useState<any>(null);
+    const [clearingMirrors, setClearingMirrors] = useState(false);
+    const [importStats, setImportStats] = useState<any>(null);
+    const [clearingImport, setClearingImport] = useState<string | null>(null);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
+        loadMirrorStats();
+        loadImportStats();
     }, []);
+
+    const loadMirrorStats = async () => {
+        try {
+            const stats = await GetMirrorStats();
+            setMirrorStats(stats);
+        } catch (e) {
+            console.error('[settings] failed to load mirror stats:', e);
+        }
+    };
+
+    const handleClearAllMirrors = async () => {
+        if (!window.confirm('Clear all mirrored cloud albums? This will delete locally cached files.')) return;
+        setClearingMirrors(true);
+        try {
+            await ClearCloudMirror('', '');
+            await loadMirrorStats();
+        } catch (e) {
+            console.error('[settings] failed to clear mirrors:', e);
+        } finally {
+            setClearingMirrors(false);
+        }
+    };
+
+    const loadImportStats = async () => {
+        try {
+            const stats = await GetImportStats();
+            setImportStats(stats);
+        } catch (e) {
+            console.error('[settings] failed to load import stats:', e);
+        }
+    };
+
+    const handleClearImportCache = async (serial: string) => {
+        if (!window.confirm('Clear cached imports for this device? This will delete locally stored files.')) return;
+        setClearingImport(serial);
+        try {
+            await ClearImportCache(serial);
+            await loadImportStats();
+        } catch (e) {
+            console.error('[settings] failed to clear import cache:', e);
+        } finally {
+            setClearingImport(null);
+        }
+    };
+
+    const formatBytes = (bytes: number): string => {
+        if (!bytes || bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+    };
 
     const handleSave = async () => {
         if (!config) return;
@@ -123,6 +180,129 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         Changes take effect after restart.
                     </div>
                 </section>
+
+                {config.probe?.OS === 'darwin' && (
+                    <section className="settings-section">
+                        <h3>HEIC Decoder</h3>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Use native macOS HEIC decoder</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                    Uses sips for fast HEIC thumbnail generation
+                                </div>
+                            </div>
+                            <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22, flexShrink: 0 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={config.useNativeSips}
+                                    onChange={(e) => {
+                                        if (!e.target.checked) {
+                                            if (!window.confirm(
+                                                'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. ' +
+                                                'Thumbnail generation for HEIC photos will take significantly longer.'
+                                            )) {
+                                                return;
+                                            }
+                                        }
+                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: e.target.checked }));
+                                    }}
+                                    style={{ opacity: 0, width: 0, height: 0 }}
+                                />
+                                <span style={{
+                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                    backgroundColor: config.useNativeSips ? '#818cf8' : '#555',
+                                    borderRadius: 11, transition: 'background-color 0.2s',
+                                }} />
+                                <span style={{
+                                    position: 'absolute', content: '""', height: 18, width: 18,
+                                    left: config.useNativeSips ? 20 : 2, top: 2,
+                                    backgroundColor: config.useNativeSips ? 'white' : '#999',
+                                    borderRadius: '50%', transition: 'left 0.2s, background-color 0.2s',
+                                }} />
+                            </label>
+                        </div>
+                        {!config.useNativeSips && (
+                            <div style={{
+                                marginTop: 12, padding: '8px 10px',
+                                background: 'rgba(255, 180, 50, 0.08)',
+                                border: '1px solid rgba(255, 180, 50, 0.2)',
+                                borderRadius: 8, fontSize: '0.75rem', color: '#d4a017',
+                            }}>
+                                <strong>&#9888; Slower decoding active</strong> — HEIC photos will be decoded using FFmpeg,
+                                which is 3-5x slower than the native macOS decoder.
+                            </div>
+                        )}
+                    </section>
+                )}
+
+                <section className="settings-section">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Cloud size={14} />
+                        Cloud Storage
+                    </h3>
+                    <div className="settings-info-grid">
+                        <span>Mirror Disk Usage</span>
+                        <span>{mirrorStats ? formatBytes(mirrorStats.totalBytes || 0) : 'Loading...'}</span>
+                        <span>Cached Albums</span>
+                        <span>{mirrorStats ? (mirrorStats.albumCount || 0) : '...'}</span>
+                    </div>
+                    <button
+                        className="btn outline"
+                        style={{ marginTop: 10, fontSize: '0.8rem' }}
+                        onClick={handleClearAllMirrors}
+                        disabled={clearingMirrors || !mirrorStats || (mirrorStats.totalBytes || 0) === 0}
+                    >
+                        <Trash2 size={12} />
+                        {clearingMirrors ? 'Clearing...' : 'Clear All Mirrors'}
+                    </button>
+                </section>
+
+                {config.probe?.OS === 'darwin' && (
+                    <section className="settings-section">
+                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Smartphone size={14} />
+                            Device Import Cache
+                        </h3>
+                        <div className="settings-info-grid">
+                            <span>Total Disk Usage</span>
+                            <span>{importStats ? formatBytes(importStats.totalBytes || 0) : 'Loading...'}</span>
+                        </div>
+                        {importStats && importStats.deviceStats && Object.keys(importStats.deviceStats).length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                                {Object.entries(importStats.deviceStats as Record<string, number>).map(([serial, bytes]) => (
+                                    <div key={serial} style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        padding: '6px 10px', borderRadius: 6,
+                                        background: 'rgba(255,255,255,0.03)',
+                                    }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                {serial.substring(0, 12)}...
+                                            </div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                                {formatBytes(bytes)}
+                                            </div>
+                                        </div>
+                                        <button
+                                            className="btn"
+                                            style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                                            onClick={() => handleClearImportCache(serial)}
+                                            disabled={clearingImport === serial}
+                                        >
+                                            <Trash2 size={10} />
+                                            {clearingImport === serial ? 'Clearing...' : 'Clear'}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {importStats && (importStats.totalBytes || 0) === 0 && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                                No device imports cached
+                            </div>
+                        )}
+                    </section>
+                )}
 
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>

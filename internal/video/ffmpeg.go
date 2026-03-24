@@ -212,6 +212,11 @@ func extractZipEntry(file *zip.File, destPath string) error {
 	return nil
 }
 
+// FFmpegPath returns the resolved path to the ffmpeg binary, or "" if not available.
+func FFmpegPath() string {
+	return ffmpegPath
+}
+
 // GetDuration returns the duration of a video in seconds.
 func GetDuration(path string) (float64, error) {
 	cmd := exec.Command(ffprobePath, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)

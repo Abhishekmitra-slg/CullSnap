@@ -140,6 +140,18 @@ function FeaturesTab() {
             title: 'System Metrics',
             text: 'The status bar shows real-time CPU, RAM, disk I/O, and network usage so you can monitor performance during large scans.',
         },
+        {
+            title: 'HEIC/HEIF Support',
+            text: 'Native support for iPhone HEIC/HEIF photos. On macOS, uses the built-in sips decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. You can switch between decoders in Settings > HEIC Decoder.',
+        },
+        {
+            title: 'Cloud Albums',
+            text: "Browse and cull photos from Google Drive and iCloud without manual downloads. Click 'Cloud Albums' in the sidebar to connect your cloud storage. Photos are mirrored locally for fast culling, and your selections persist across sessions.",
+        },
+        {
+            title: 'Import from Device (macOS)',
+            text: "Connect an iPhone or iPad via USB and CullSnap will detect it automatically. Click 'Import from Device' in the sidebar or use the auto-detect notification to import photos for culling.",
+        },
     ];
 
     return (
@@ -191,7 +203,7 @@ function ExportingTab() {
                     Supported formats
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Images: JPG, JPEG, PNG, CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
+                    Images: JPG, JPEG, PNG, HEIC, HEIF, CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Videos: MP4, MOV, AVI, MKV, WEBM (when FFmpeg is available).
                 </div>
             </div>
         </div>

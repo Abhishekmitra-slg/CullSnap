@@ -4,20 +4,24 @@ go 1.25.0
 
 require (
 	github.com/corona10/goimagehash v1.1.0
+	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/disintegration/imaging v1.6.2
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.11.0
+	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.20.0
 	modernc.org/sqlite v1.47.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	code.gitea.io/sdk/gitea v0.22.1 // indirect
 	github.com/42wim/httpsig v1.2.3 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
-	github.com/creativeprojects/go-selfupdate v1.5.2 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
@@ -62,7 +66,6 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.36.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

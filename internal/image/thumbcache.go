@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"crypto/md5"
+	"cullsnap/internal/heic"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/raw"
 	"cullsnap/internal/video"
@@ -20,17 +21,18 @@ import (
 // ThumbCache manages a disk-based thumbnail cache.
 // Thumbnails are stored in a user-private directory with restricted permissions.
 type ThumbCache struct {
-	cacheDir string
+	cacheDir      string
+	useNativeSips bool
 }
 
 // NewThumbCache creates a ThumbCache at the given directory with 0700 permissions.
 // Pass AppConfig.CacheDir to ensure the cache location matches what the media server uses.
-func NewThumbCache(cacheDir string) (*ThumbCache, error) {
+func NewThumbCache(cacheDir string, useNativeSips bool) (*ThumbCache, error) {
 	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create thumbnail cache: %w", err)
 	}
-	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir)
-	return &ThumbCache{cacheDir: cacheDir}, nil
+	logger.Log.Info("Thumbnail cache initialized", "cacheDir", cacheDir, "useNativeSips", useNativeSips)
+	return &ThumbCache{cacheDir: cacheDir, useNativeSips: useNativeSips}, nil
 }
 
 // CacheDir returns the directory where thumbnails are stored.
@@ -113,6 +115,47 @@ func (tc *ThumbCache) GenerateThumbnail(path string, modTime time.Time) (string,
 		}
 
 		logger.Log.Debug("thumbcache: RAW thumbnail generated", "path", path)
+		return thumbPath, nil
+	}
+
+	// HEIC/HEIF: convert to JPEG via sips/ffmpeg, then resize
+	isHEIC := ext == ".heic" || ext == ".heif"
+	if isHEIC {
+		logger.Log.Debug("thumbcache: generating HEIC thumbnail", "path", path)
+		tempJPEG := filepath.Join(tc.cacheDir, fmt.Sprintf("heic_temp_%x.jpg", md5.Sum([]byte(path))))
+		defer func() { _ = os.Remove(tempJPEG) }()
+
+		if err := heic.ConvertToJPEG(path, tempJPEG, tc.useNativeSips); err != nil {
+			return "", fmt.Errorf("HEIC conversion failed for %s: %w", filepath.Base(path), err)
+		}
+
+		img, err := imaging.Open(tempJPEG)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode converted HEIC: %w", err)
+		}
+
+		thumb := imaging.Resize(img, 300, 0, imaging.Box)
+
+		tmpPath := thumbPath + ".tmp"
+		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
+		}
+		if err := jpeg.Encode(f, thumb, &jpeg.Options{Quality: 80}); err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to encode thumbnail: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("failed to close thumbnail file: %w", err)
+		}
+		if err := os.Rename(tmpPath, thumbPath); err != nil {
+			_ = os.Remove(tmpPath)
+			return "", err
+		}
+
+		logger.Log.Debug("thumbcache: HEIC thumbnail generated", "path", path)
 		return thumbPath, nil
 	}
 
