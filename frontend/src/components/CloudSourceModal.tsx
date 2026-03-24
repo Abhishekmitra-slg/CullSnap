@@ -16,10 +16,10 @@ interface CloudSourceModalProps {
 }
 
 interface CloudProvider {
-    id: string;
-    name: string;
-    authenticated: boolean;
-    email?: string;
+    providerID: string;
+    displayName: string;
+    isAvailable: boolean;
+    isConnected: boolean;
 }
 
 interface CloudAlbum {
@@ -205,7 +205,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
         }
     };
 
-    const selectedProviderObj = providers.find(p => p.id === selectedProvider);
+    const selectedProviderObj = providers.find(p => p.providerID === selectedProvider);
 
     return (
         <div className="settings-overlay" onClick={onClose}>
@@ -295,48 +295,48 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {providers.map(provider => (
                                     <div
-                                        key={provider.id}
+                                        key={provider.providerID}
                                         style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',
                                             padding: '10px 12px',
                                             borderRadius: 8,
-                                            background: selectedProvider === provider.id
+                                            background: selectedProvider === provider.providerID
                                                 ? 'rgba(129, 140, 248, 0.15)'
                                                 : 'rgba(255, 255, 255, 0.05)',
-                                            border: selectedProvider === provider.id
+                                            border: selectedProvider === provider.providerID
                                                 ? '1px solid rgba(129, 140, 248, 0.3)'
                                                 : '1px solid transparent',
-                                            cursor: provider.authenticated ? 'pointer' : 'default',
+                                            cursor: provider.isConnected ? 'pointer' : 'default',
                                             transition: 'background 0.2s, border 0.2s',
                                         }}
-                                        onClick={() => provider.authenticated && handleSelectProvider(provider.id)}
+                                        onClick={() => provider.isConnected && handleSelectProvider(provider.providerID)}
                                     >
                                         <div>
                                             <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                                                {provider.name}
+                                                {provider.displayName}
                                             </div>
-                                            {provider.authenticated && provider.email && (
+                                            {!provider.isAvailable && (
                                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                                    {provider.email}
+                                                    Not available on this platform
                                                 </div>
                                             )}
                                         </div>
                                         <div style={{ display: 'flex', gap: 6 }}>
-                                            {provider.authenticated ? (
+                                            {provider.isConnected ? (
                                                 <>
                                                     <button
                                                         className="btn"
                                                         style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                                                        onClick={(e) => { e.stopPropagation(); handleSelectProvider(provider.id); }}
+                                                        onClick={(e) => { e.stopPropagation(); handleSelectProvider(provider.providerID); }}
                                                     >
                                                         Browse
                                                     </button>
                                                     <button
                                                         className="btn"
                                                         style={{ fontSize: '0.75rem', padding: '4px 8px' }}
-                                                        onClick={(e) => { e.stopPropagation(); handleDisconnect(provider.id); }}
+                                                        onClick={(e) => { e.stopPropagation(); handleDisconnect(provider.providerID); }}
                                                         title="Disconnect"
                                                     >
                                                         <LogOut size={12} />
@@ -346,10 +346,10 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                                                 <button
                                                     className="btn btn-gradient"
                                                     style={{ fontSize: '0.75rem', padding: '4px 12px' }}
-                                                    onClick={(e) => { e.stopPropagation(); handleConnect(provider.id); }}
-                                                    disabled={authenticating === provider.id}
+                                                    onClick={(e) => { e.stopPropagation(); handleConnect(provider.providerID); }}
+                                                    disabled={authenticating === provider.providerID}
                                                 >
-                                                    {authenticating === provider.id ? 'Connecting...' : 'Connect'}
+                                                    {authenticating === provider.providerID ? 'Connecting...' : 'Connect'}
                                                 </button>
                                             )}
                                         </div>
@@ -361,10 +361,10 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                 )}
 
                 {/* Album list */}
-                {!mirroring && selectedProviderObj?.authenticated && (
+                {!mirroring && selectedProviderObj?.isConnected && (
                     <section className="settings-section">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <h3>Albums — {selectedProviderObj.name}</h3>
+                            <h3>Albums — {selectedProviderObj.displayName}</h3>
                             <button
                                 className="btn icon-btn"
                                 onClick={() => selectedProvider && loadAlbums(selectedProvider)}
