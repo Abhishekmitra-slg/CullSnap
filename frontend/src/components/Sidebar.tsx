@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info, Cloud } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -21,6 +21,7 @@ interface SidebarProps {
     onOpenSettings: () => void;
     onOpenAbout: () => void;
     onOpenHelp: () => void;
+    onOpenCloud: () => void;
 }
 
 export function Sidebar({
@@ -40,7 +41,8 @@ export function Sidebar({
     duplicateCount,
     onOpenSettings,
     onOpenAbout,
-    onOpenHelp
+    onOpenHelp,
+    onOpenCloud
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -111,6 +113,11 @@ export function Sidebar({
                 <button className="btn btn-gradient w-full" onClick={onOpenFolder}>
                     <FolderOpen size={16} />
                     Open Folder
+                </button>
+
+                <button className="btn w-full mt-2" onClick={onOpenCloud}>
+                    <Cloud size={16} />
+                    Cloud Albums
                 </button>
 
                 <button

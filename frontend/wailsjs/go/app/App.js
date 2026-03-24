@@ -97,3 +97,35 @@ export function SetPhotoRating(arg1, arg2) {
 export function ToggleSelection(arg1, arg2, arg3) {
   return window['go']['app']['App']['ToggleSelection'](arg1, arg2, arg3);
 }
+
+export function GetCloudSources() {
+  return window['go']['app']['App']['GetCloudSources']();
+}
+
+export function AuthenticateCloudSource(arg1) {
+  return window['go']['app']['App']['AuthenticateCloudSource'](arg1);
+}
+
+export function DisconnectCloudSource(arg1) {
+  return window['go']['app']['App']['DisconnectCloudSource'](arg1);
+}
+
+export function ListCloudAlbums(arg1) {
+  return window['go']['app']['App']['ListCloudAlbums'](arg1);
+}
+
+export function MirrorCloudAlbum(arg1, arg2) {
+  return window['go']['app']['App']['MirrorCloudAlbum'](arg1, arg2);
+}
+
+export function CancelMirror(arg1, arg2) {
+  return window['go']['app']['App']['CancelMirror'](arg1, arg2);
+}
+
+export function GetMirrorStats() {
+  return window['go']['app']['App']['GetMirrorStats']();
+}
+
+export function ClearCloudMirror(arg1, arg2) {
+  return window['go']['app']['App']['ClearCloudMirror'](arg1, arg2);
+}

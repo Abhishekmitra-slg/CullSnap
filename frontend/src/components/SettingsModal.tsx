@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, RotateCcw } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig } from '../../wailsjs/go/app/App';
+import { X, RotateCcw, Cloud, Trash2 } from 'lucide-react';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetMirrorStats, ClearCloudMirror } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -10,10 +10,42 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
     const [config, setConfig] = useState<app.AppConfig | null>(null);
     const [saving, setSaving] = useState(false);
+    const [mirrorStats, setMirrorStats] = useState<any>(null);
+    const [clearingMirrors, setClearingMirrors] = useState(false);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
+        loadMirrorStats();
     }, []);
+
+    const loadMirrorStats = async () => {
+        try {
+            const stats = await GetMirrorStats();
+            setMirrorStats(stats);
+        } catch (e) {
+            console.error('[settings] failed to load mirror stats:', e);
+        }
+    };
+
+    const handleClearAllMirrors = async () => {
+        if (!window.confirm('Clear all mirrored cloud albums? This will delete locally cached files.')) return;
+        setClearingMirrors(true);
+        try {
+            await ClearCloudMirror('', '');
+            await loadMirrorStats();
+        } catch (e) {
+            console.error('[settings] failed to clear mirrors:', e);
+        } finally {
+            setClearingMirrors(false);
+        }
+    };
+
+    const formatBytes = (bytes: number): string => {
+        if (!bytes || bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+    };
 
     const handleSave = async () => {
         if (!config) return;
@@ -177,6 +209,28 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         )}
                     </section>
                 )}
+
+                <section className="settings-section">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Cloud size={14} />
+                        Cloud Storage
+                    </h3>
+                    <div className="settings-info-grid">
+                        <span>Mirror Disk Usage</span>
+                        <span>{mirrorStats ? formatBytes(mirrorStats.totalBytes || 0) : 'Loading...'}</span>
+                        <span>Cached Albums</span>
+                        <span>{mirrorStats ? (mirrorStats.albumCount || 0) : '...'}</span>
+                    </div>
+                    <button
+                        className="btn outline"
+                        style={{ marginTop: 10, fontSize: '0.8rem' }}
+                        onClick={handleClearAllMirrors}
+                        disabled={clearingMirrors || !mirrorStats || (mirrorStats.totalBytes || 0) === 0}
+                    >
+                        <Trash2 size={12} />
+                        {clearingMirrors ? 'Clearing...' : 'Clear All Mirrors'}
+                    </button>
+                </section>
 
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>

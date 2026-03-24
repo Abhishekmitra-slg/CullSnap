@@ -50,3 +50,19 @@ export function SelectExportDirectory():Promise<string>;
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;
+
+export function GetCloudSources():Promise<any[]>;
+
+export function AuthenticateCloudSource(arg1:string):Promise<void>;
+
+export function DisconnectCloudSource(arg1:string):Promise<void>;
+
+export function ListCloudAlbums(arg1:string):Promise<any[]>;
+
+export function MirrorCloudAlbum(arg1:string,arg2:string):Promise<string>;
+
+export function CancelMirror(arg1:string,arg2:string):Promise<void>;
+
+export function GetMirrorStats():Promise<any>;
+
+export function ClearCloudMirror(arg1:string,arg2:string):Promise<void>;

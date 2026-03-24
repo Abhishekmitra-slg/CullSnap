@@ -5,6 +5,7 @@ import { Viewer } from './components/Viewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AboutModal } from './components/AboutModal';
 import { HelpModal } from './components/HelpModal';
+import { CloudSourceModal } from './components/CloudSourceModal';
 import { UpdateToast } from './components/UpdateToast';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
@@ -42,6 +43,7 @@ function App() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [cloudOpen, setCloudOpen] = useState(false);
 
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
@@ -436,6 +438,7 @@ function App() {
                 onOpenSettings={() => setSettingsOpen(true)}
                 onOpenAbout={() => setAboutOpen(true)}
                 onOpenHelp={() => setHelpOpen(true)}
+                onOpenCloud={() => setCloudOpen(true)}
             />
 
             <div className="main-content" style={{ position: 'relative' }}>
@@ -488,6 +491,7 @@ function App() {
             {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+            {cloudOpen && <CloudSourceModal onClose={() => setCloudOpen(false)} onLoadDir={loadDirectory} />}
             <UpdateToast />
         </div>
     );
