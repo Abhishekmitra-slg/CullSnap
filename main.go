@@ -41,6 +41,9 @@ var contributorsYML string
 //go:embed keys/update_signing.pub
 var updatePublicKey []byte
 
+//go:embed CHANGELOG.md
+var changelogMD string
+
 // version and Google Drive OAuth credentials are set at build time via ldflags:
 //   -X main.version=vX.Y.Z
 //   -X main.googleDriveClientID=<id>
@@ -372,6 +375,7 @@ func main() {
 	application.OnAllowDir = loader.AllowDirectory
 	application.Version = version
 	application.ContributorsRaw = contributorsYML
+	application.ChangelogRaw = changelogMD
 	application.UpdatePublicKey = updatePublicKey
 
 	// Google Drive OAuth credentials: ldflags (CI) → env vars (local dev)

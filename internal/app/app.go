@@ -69,6 +69,7 @@ type App struct {
 	OnAllowDir              func(dir string) // called to register a directory with the media server allowlist
 	Version                 string           // set from main.version (build-time ldflags)
 	ContributorsRaw         string           // raw CONTRIBUTORS.yml content embedded at build time
+	ChangelogRaw            string           // raw CHANGELOG.md content embedded at build time
 	UpdatePublicKey         []byte           // ECDSA public key for update signature verification
 	GoogleDriveClientID     string           // OAuth client ID (injected via ldflags or env var)
 	GoogleDriveClientSecret string           // OAuth client secret (injected via ldflags or env var)
