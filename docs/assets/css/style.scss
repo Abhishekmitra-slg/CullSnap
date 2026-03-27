@@ -3,15 +3,28 @@
 
 @import "jekyll-theme-leap-day";
 
-/* Widen the content column for dense technical content */
-#main_content {
+/* Widen the content area — Leap Day uses `section` as the content container */
+section {
+  width: auto !important;
   max-width: 800px;
-  width: 100%;
+  padding: 30px 40px 50px 40px;
 }
 
-/* Make the overall wrapper use available space */
+/* Widen wrapper so sidebar + content have room */
 .wrapper {
+  width: auto !important;
   max-width: 1100px;
+}
+
+/* Reposition sidebar nav for wider layout */
+@media screen and (min-width: 1060px) {
+  nav {
+    margin-left: -620px;
+  }
+
+  footer {
+    margin-left: -570px;
+  }
 }
 
 /* Responsive tables — horizontal scroll instead of overflow */
@@ -22,23 +35,18 @@ table {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Constrain images and SVGs to fit content column */
-img {
+/* Constrain all images and SVGs to content column */
+section img {
   max-width: 100%;
   height: auto;
 }
 
-svg {
-  max-width: 100%;
-  height: auto;
-}
-
-/* Architecture diagram specific — ensure it scales down */
+/* Architecture diagram — center and scale */
 img[alt="CullSnap Architecture Diagram"] {
   max-width: 100%;
   height: auto;
   display: block;
-  margin: 1em auto;
+  margin: 1.5em auto;
 }
 
 /* Better code block styling */
@@ -50,20 +58,10 @@ pre {
   line-height: 1.5;
 }
 
-/* Feature list — tighter spacing for readability */
-#main_content > ul > li {
+/* Feature list — better spacing */
+section > ul > li {
   margin-bottom: 0.6em;
   line-height: 1.6;
-}
-
-/* Badge row — centered with proper spacing */
-p:has(> a > img[alt="Go Version"]) {
-  text-align: center;
-  margin: 0.5em 0;
-}
-
-p:has(> a > img[alt="CullSnap icon"]) {
-  text-align: center;
 }
 
 /* Blockquote styling — cleaner notes */
@@ -77,6 +75,11 @@ blockquote {
 
 blockquote p {
   margin: 0;
+}
+
+/* Inline nav row — remove from Jekyll version since sidebar handles it */
+section > p:has(> a[href*="#-"]) {
+  display: none;
 }
 
 /* Footer — subtle */
