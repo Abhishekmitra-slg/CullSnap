@@ -143,3 +143,8 @@ CullSnap is dual-licensed:
 ## Code of Conduct
 
 This project follows the [Contributor Covenant v2.1](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md). Please read it before participating.
+
+## Legal
+
+- [Privacy Policy](privacy)
+- [Terms of Service](terms)
