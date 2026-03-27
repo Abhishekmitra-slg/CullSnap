@@ -1,0 +1,86 @@
+---
+---
+
+@import "jekyll-theme-leap-day";
+
+/* Widen the content column for dense technical content */
+#main_content {
+  max-width: 800px;
+  width: 100%;
+}
+
+/* Make the overall wrapper use available space */
+.wrapper {
+  max-width: 1100px;
+}
+
+/* Responsive tables — horizontal scroll instead of overflow */
+table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Constrain images and SVGs to fit content column */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Architecture diagram specific — ensure it scales down */
+img[alt="CullSnap Architecture Diagram"] {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+/* Better code block styling */
+pre {
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Feature list — tighter spacing for readability */
+#main_content > ul > li {
+  margin-bottom: 0.6em;
+  line-height: 1.6;
+}
+
+/* Badge row — centered with proper spacing */
+p:has(> a > img[alt="Go Version"]) {
+  text-align: center;
+  margin: 0.5em 0;
+}
+
+p:has(> a > img[alt="CullSnap icon"]) {
+  text-align: center;
+}
+
+/* Blockquote styling — cleaner notes */
+blockquote {
+  border-left: 4px solid #8b8b47;
+  background: #fafaf0;
+  padding: 0.8em 1em;
+  margin: 1em 0;
+  border-radius: 0 4px 4px 0;
+}
+
+blockquote p {
+  margin: 0;
+}
+
+/* Footer — subtle */
+footer {
+  font-size: 0.85em;
+  opacity: 0.85;
+}

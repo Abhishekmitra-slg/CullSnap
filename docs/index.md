@@ -16,16 +16,6 @@ title: CullSnap
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
 </p>
 
-<p align="center">
-  <a href="#-installation">Install</a> &middot;
-  <a href="#-features">Features</a> &middot;
-  <a href="#-usage-guide">Usage</a> &middot;
-  <a href="#-architecture">Architecture</a> &middot;
-  <a href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md">Contributing</a> &middot;
-  <a href="#-license">License</a> &middot;
-  <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest">Download</a>
-</p>
-
 ---
 
 CullSnap lets photographers review, rate, deduplicate, and export thousands of photos and videos from a single native window. The Go backend handles heavy lifting (perceptual hashing, parallel thumbnail generation, FFmpeg video trimming) while the React frontend delivers a responsive glassmorphism UI with virtualized scrolling.

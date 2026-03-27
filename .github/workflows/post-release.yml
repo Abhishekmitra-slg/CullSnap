@@ -46,6 +46,10 @@ jobs:
             | sed 's|href="CONTRIBUTING.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md"|g' \
             | sed 's|href="COMMERCIAL-LICENSE.md|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md|g' \
             | sed 's|href="CODE_OF_CONDUCT.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md"|g' \
+            | sed '/^<p align="center">$/,/^<\/p>$/{ /Install.*Features.*Usage/d; /href="#-/d; }' \
+            | sed '/^<p align="center">$/,/^<\/p>$/{/^$/d}' \
+            | sed 's/^## ✨ /## /; s/^## 🏗️ /## /; s/^## 🛠️ /## /; s/^## 🎮 /## /; s/^## 📷 /## /; s/^## 📁 /## /; s/^## 🔒 /## /; s/^## 🤝 /## /; s/^## 📄 /## /; s/^## ⚖️ /## /' \
+            | sed 's/^### 🍎 /### /' \
             >> docs/index.md
 
       - name: Create pull request
