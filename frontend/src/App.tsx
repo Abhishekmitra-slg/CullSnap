@@ -8,7 +8,8 @@ import { HelpModal } from './components/HelpModal';
 import { CloudSourceModal } from './components/CloudSourceModal';
 import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig } from '../wailsjs/go/app/App';
+import { WhatsNewModal } from './components/WhatsNewModal';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew } from '../wailsjs/go/app/App';
 import { model as appModel } from '../wailsjs/go/models';
 
 interface SystemMetrics {
@@ -46,6 +47,7 @@ function App() {
     const [helpOpen, setHelpOpen] = useState(false);
     const [cloudOpen, setCloudOpen] = useState(false);
     const [deviceImportOpen, setDeviceImportOpen] = useState(false);
+    const [whatsNewOpen, setWhatsNewOpen] = useState(false);
     const [probe, setProbe] = useState<{ OS: string } | undefined>(undefined);
     const [deviceToast, setDeviceToast] = useState<{ name: string; serial: string } | null>(null);
 
@@ -60,6 +62,9 @@ function App() {
     useEffect(() => {
         GetAppConfig().then(cfg => {
             if (cfg?.probe) setProbe(cfg.probe);
+        }).catch(console.error);
+        ShouldShowWhatsNew().then(show => {
+            if (show) setWhatsNewOpen(true);
         }).catch(console.error);
     }, []);
 
@@ -523,6 +528,7 @@ function App() {
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
             {cloudOpen && <CloudSourceModal onClose={() => setCloudOpen(false)} onLoadDir={loadDirectory} />}
             {deviceImportOpen && <DeviceImportModal onClose={() => setDeviceImportOpen(false)} onLoadDir={loadDirectory} />}
+            {whatsNewOpen && <WhatsNewModal onClose={() => setWhatsNewOpen(false)} />}
 
             {/* Device auto-detect toast */}
             {deviceToast && (
