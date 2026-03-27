@@ -1,0 +1,38 @@
+graph LR
+    subgraph Frontend [React / Vite UI]
+        direction TB
+        Grid["Virtualized Grid\n(TanStack Virtual)"]
+        Viewer["Image/Video Viewer\n+ EXIF + Trim"]
+        Sidebar["Sidebar Controls\n& Settings"]
+    end
+
+    subgraph IPC [Wails Bridge]
+        Bindings["TypeScript Bindings\nwailsjs/go/app/App"]
+    end
+
+    subgraph Backend [Go Desktop Backend]
+        direction TB
+        Scanner["Directory Scanner\n(internal/scanner)"]
+        ThumbCache["Thumbnail Cache\n(internal/image + heic)"]
+        FFmpeg["FFmpeg Engine\n(internal/video)"]
+        RAW["RAW Preview Engine\n(internal/raw)"]
+        Dedupe["Perceptual Hash\n+ Quality Scoring"]
+        Cloud["Cloud Sources\n(Google Drive + iCloud)"]
+        DeviceImport["Device Import\n(USB iPhone/iPad)"]
+        Storage["SQLite Persistence\n(internal/storage)"]
+        Config["System Probe\n+ AppConfig"]
+        MediaServer["Media Server :34342\n(panic recovery + semaphore)"]
+    end
+
+    Grid <-->|Photos / Thumbnails| Bindings
+    Viewer <-->|Full-Res + EXIF| Bindings
+    Sidebar <-->|Export / Dedup / Settings| Bindings
+
+    Bindings <-->|Scan + Enrich| Scanner
+    Bindings <-->|Parallel Thumb Gen| ThumbCache
+    Bindings <-->|Trim + Duration| FFmpeg
+    Bindings <-->|Find Duplicates| Dedupe
+    Bindings <-->|Persist State| Storage
+    Bindings <-->|Auto-Tune| Config
+    Bindings <-->|Mirror + Auth| Cloud
+    Bindings <-->|Detect + Import| DeviceImport

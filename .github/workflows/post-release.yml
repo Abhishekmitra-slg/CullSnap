@@ -1,0 +1,72 @@
+name: Post-Release Updates
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          config: cliff.toml
+          args: --output CHANGELOG.md
+
+      - name: Sync README to docs/index.md
+        run: |
+          cat > docs/index.md << 'HEADER'
+          ---
+          layout: default
+          title: CullSnap
+          ---
+
+          <!-- This file is auto-generated from README.md by the post-release workflow. Do not edit manually. -->
+
+          HEADER
+          sed -i 's/^          //' docs/index.md
+          cat README.md \
+            | sed 's|src="build/appicon.png"|src="https://raw.githubusercontent.com/Abhishekmitra-slg/CullSnap/main/build/appicon.png"|g' \
+            | sed 's|src="docs/assets/|src="assets/|g' \
+            | sed 's|href="go.mod"|href="https://github.com/Abhishekmitra-slg/CullSnap"|g' \
+            | sed 's|href="wails.json"|href="https://github.com/Abhishekmitra-slg/CullSnap"|g' \
+            | sed 's|href="LICENSE"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE"|g' \
+            | sed 's|href="SECURITY.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/SECURITY.md"|g' \
+            | sed 's|href="CONTRIBUTING.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md"|g' \
+            | sed 's|href="COMMERCIAL-LICENSE.md|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md|g' \
+            | sed 's|href="CODE_OF_CONDUCT.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md"|g' \
+            >> docs/index.md
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          BRANCH="post-release/${TAG_NAME}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add CHANGELOG.md docs/index.md
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "docs: update CHANGELOG.md and GitHub Pages for ${TAG_NAME}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "docs: post-release updates for ${TAG_NAME}" \
+            --body "Automated post-release updates:
+          - Updated CHANGELOG.md with ${TAG_NAME} release notes
+          - Synced README.md to docs/index.md for GitHub Pages
+
+          This PR was automatically created by the post-release workflow." \
+            --base main \
+            --head "$BRANCH"

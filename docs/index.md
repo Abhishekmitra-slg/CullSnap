@@ -1,18 +1,19 @@
+---
+layout: default
+title: CullSnap
+---
+
+<!-- This file is auto-generated from README.md by the post-release workflow. Do not edit manually. -->
+
 <p align="center">
-  <img src="build/appicon.png" width="128" alt="CullSnap icon" />
+  <img src="https://raw.githubusercontent.com/Abhishekmitra-slg/CullSnap/main/build/appicon.png" width="128" alt="CullSnap icon" />
 </p>
 
-<h1 align="center">CullSnap</h1>
-
 <p align="center">
-  <strong>A blazing-fast, native desktop photo &amp; video culling tool for photographers.</strong>
-</p>
-
-<p align="center">
-  <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go" alt="Go Version" /></a>
-  <a href="wails.json"><img src="https://img.shields.io/badge/Wails-v2.11-E34F26?style=flat-square" alt="Wails Version" /></a>
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go" alt="Go Version" /></a>
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap"><img src="https://img.shields.io/badge/Wails-v2.11-E34F26?style=flat-square" alt="Wails Version" /></a>
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest"><img src="https://img.shields.io/github/v/release/Abhishekmitra-slg/CullSnap?style=flat-square&color=blue" alt="Latest Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
 </p>
 
 <p align="center">
@@ -20,7 +21,7 @@
   <a href="#-features">Features</a> &middot;
   <a href="#-usage-guide">Usage</a> &middot;
   <a href="#-architecture">Architecture</a> &middot;
-  <a href="#-contributing">Contributing</a> &middot;
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md">Contributing</a> &middot;
   <a href="#-license">License</a> &middot;
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest">Download</a>
 </p>
@@ -29,7 +30,7 @@
 
 CullSnap lets photographers review, rate, deduplicate, and export thousands of photos and videos from a single native window. The Go backend handles heavy lifting (perceptual hashing, parallel thumbnail generation, FFmpeg video trimming) while the React frontend delivers a responsive glassmorphism UI with virtualized scrolling.
 
-## ✨ Features
+## Features
 
 -   **Fast Photo & Video Grid**: Virtualized grid layout (TanStack Virtual, ~52 DOM nodes max) with cached disk thumbnails for buttery-smooth scrolling through 1000s of assets. RAW files display format badges (CR3, ARW, NEF, etc.) directly on thumbnails.
 -   **Video Support**: Native support for MP4, MOV, WEBM, MKV, and AVI. Includes background duration extraction, frame-accurate thumbnail generation, and lossless trim-on-export via FFmpeg fast-seek.
@@ -48,15 +49,15 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **Auto-Tuned Performance**: System probe detects CPU cores, RAM, storage type (SSD/HDD), and file descriptor limits. Settings modal exposes MaxConnections, ThumbnailWorkers, and ScannerWorkers sliders.
 -   **Resource Monitoring**: Real-time CPU, RAM, Disk I/O, and Network tracking in the status bar.
 
-## 🏗️ Architecture
+## Architecture
 
 CullSnap natively binds a high-performance **Go** backend to a modern **React/Vite** frontend using the **Wails Framework**.
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="CullSnap Architecture Diagram" width="100%" />
+  <img src="assets/architecture.svg" alt="CullSnap Architecture Diagram" width="100%" />
 </p>
 
-## 🛠️ Installation
+## Installation
 
 ### Direct Download
 
@@ -68,7 +69,7 @@ Pre-built binaries for all platforms are available on the [Releases](https://git
 | **Windows** (64-bit) | `CullSnap-windows-amd64.exe` | Standalone executable |
 | **Linux** (64-bit) | `CullSnap-linux-amd64` | Requires GTK3 + WebKit2GTK |
 
-### 🍎 macOS via Homebrew (Recommended)
+### macOS via Homebrew (Recommended)
 The easiest way to install on macOS and bypass Gatekeeper warnings:
 
 ```bash
@@ -78,7 +79,7 @@ brew install --cask cullsnap
 
 ---
 
-### 🍎 Manual macOS Installation (Troubleshooting)
+### Manual macOS Installation (Troubleshooting)
 If you download the `.zip` manually instead of using Homebrew, macOS will flag it with *"Apple could not verify CullSnap is free of malware."*
 
 To run the manually downloaded app:
@@ -105,7 +106,7 @@ To run in Developer Watch-Mode:
 make dev
 ```
 
-## 🎮 Usage Guide
+## Usage Guide
 
 1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, HEIC, RAW, and video files.
 2.  **Cloud Albums**: Click **Cloud Albums** in the sidebar to connect Google Drive or iCloud Photos. Browse folders/albums and mirror them locally for culling.
@@ -120,7 +121,7 @@ make dev
 11. **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
 12. **Settings**: Click the gear icon to view system info, adjust performance sliders, configure HEIC decoder, and manage cloud storage cache.
 
-## 📷 Supported Formats
+## Supported Formats
 
 | Category | Formats |
 |----------|---------|
@@ -132,63 +133,23 @@ RAW files are displayed with format badges in both the grid and viewer. When RAW
 
 > **Note:** All 11 RAW formats are handled natively in Pure Go with zero external dependencies. HEIC/HEIF decoding uses macOS sips (hardware-accelerated) or FFmpeg.
 
-## 📁 Project Structure
+## Security
 
-```
-CullSnap/
-├── main.go                         # Wails entry, media server, panic recovery
-├── internal/
-│   ├── app/
-│   │   ├── app.go                  # Core app logic, all Wails-bound methods
-│   │   ├── config.go               # SystemProbe, AppConfig, DeriveDefaults
-│   │   ├── config_unix.go          # FD limit detection (Unix)
-│   │   ├── config_windows.go       # FD limit detection (Windows)
-│   │   └── config_ram.go           # RAM detection (gopsutil)
-│   ├── video/
-│   │   └── ffmpeg.go               # FFmpeg/FFprobe provisioning, trim, thumbnails
-│   ├── image/
-│   │   ├── thumbnail.go            # EXIF thumbnail extraction + resize fallback
-│   │   └── thumbcache.go           # Disk cache with parallel batch generation
-│   ├── raw/                        # RAW image support (TIFF/BMFF/RAF parsers, preview cache)
-│   ├── heic/                       # HEIC/HEIF decoder (sips on macOS, FFmpeg fallback)
-│   ├── cloudsource/                # Cloud source framework (OAuth, mirror, token store)
-│   │   └── providers/              # Google Drive, iCloud (macOS) providers
-│   ├── device/                     # USB device detection + import (macOS)
-│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png/heic + RAW + video)
-│   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
-│   ├── export/copier.go            # File copy with flush-error checking + video trim
-│   ├── model/photo.go              # Unified Photo struct
-│   ├── storage/                    # SQLite (selections, ratings, exported, config, cloud mirrors)
-│   └── logger/                     # Structured logging (slog)
-└── frontend/src/
-    ├── App.tsx                      # 2-phase loading, event listeners, state
-    ├── components/
-    │   ├── Grid.tsx                 # Virtualized grid (TanStack Virtual)
-    │   ├── Viewer.tsx               # Image/Video viewer + trim controls
-    │   ├── Sidebar.tsx              # Folder nav, cloud, device import, export, dedup
-    │   ├── CloudSourceModal.tsx    # Google Drive + iCloud album browser
-    │   ├── DeviceImportModal.tsx   # USB iPhone/iPad import
-    │   └── SettingsModal.tsx        # System info, performance, HEIC decoder, cloud cache
-    └── index.css                    # Navy/violet theme, glassmorphism, animations
-```
+Found a vulnerability? Please report it privately — see [SECURITY.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
 
-## 🔒 Security
+## Contributing
 
-Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
+Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md) for details.
 
-## 🤝 Contributing
+All contributors must sign a [Contributor License Agreement (CLA)](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md#contributor-license-agreement-cla) before their first PR can be merged.
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-All contributors must sign a [Contributor License Agreement (CLA)](COMMERCIAL-LICENSE.md#contributor-license-agreement-cla) before their first PR can be merged.
-
-## 📄 License
+## License
 
 CullSnap is dual-licensed:
 
-- **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
-- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for details.
+- **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
+- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [COMMERCIAL-LICENSE.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md) for details.
 
-## ⚖️ Code of Conduct
+## Code of Conduct
 
-This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). Please read it before participating.
+This project follows the [Contributor Covenant v2.1](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md). Please read it before participating.
