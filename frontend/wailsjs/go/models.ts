@@ -201,6 +201,32 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class ImportStats {
+	    totalBytes: number;
+	    deviceStats: Record<string, number>;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalBytes = source["totalBytes"];
+	        this.deviceStats = source["deviceStats"];
+	    }
+	}
+	export class MirrorStats {
+	    totalMB: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MirrorStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalMB = source["totalMB"];
+	    }
+	}
 	export class PhotoEXIF {
 	    camera: string;
 	    lens: string;
@@ -222,6 +248,112 @@ export namespace app {
 	        this.shutter = source["shutter"];
 	        this.dateTaken = source["dateTaken"];
 	    }
+	}
+
+}
+
+export namespace cloudsource {
+	
+	export class Album {
+	    id: string;
+	    title: string;
+	    mediaCount: number;
+	    coverURL: string;
+	    // Go type: time
+	    updatedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Album(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.mediaCount = source["mediaCount"];
+	        this.coverURL = source["coverURL"];
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CloudSourceStatus {
+	    providerID: string;
+	    displayName: string;
+	    isAvailable: boolean;
+	    isConnected: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CloudSourceStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerID = source["providerID"];
+	        this.displayName = source["displayName"];
+	        this.isAvailable = source["isAvailable"];
+	        this.isConnected = source["isConnected"];
+	    }
+	}
+
+}
+
+export namespace device {
+	
+	export class Device {
+	    name: string;
+	    vendorID: string;
+	    productID: string;
+	    serial: string;
+	    // Go type: time
+	    detectedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Device(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.vendorID = source["vendorID"];
+	        this.productID = source["productID"];
+	        this.serial = source["serial"];
+	        this.detectedAt = this.convertValues(source["detectedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
