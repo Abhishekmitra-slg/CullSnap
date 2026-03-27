@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { GetChangelog } from '../../wailsjs/go/app/App';
 
 interface HelpModalProps {
     onClose: () => void;
 }
 
-const tabs = ['Getting Started', 'Shortcuts', 'Features', 'Exporting'] as const;
+const tabs = ['Getting Started', 'Shortcuts', 'Features', 'Exporting', "What's New"] as const;
 type Tab = (typeof tabs)[number];
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -210,6 +211,52 @@ function ExportingTab() {
     );
 }
 
+function WhatsNewTab() {
+    const [changelog, setChangelog] = useState('');
+    useEffect(() => {
+        GetChangelog().then(setChangelog).catch(console.error);
+    }, []);
+    if (!changelog) {
+        return <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Loading changelog...</p>;
+    }
+    const blocks = changelog.split(/\n(?=## \[v)/);
+    return (
+        <div style={{ fontSize: '0.75rem', lineHeight: 1.6 }}>
+            {blocks.map((block, i) => {
+                const lines = block.split('\n');
+                const headerLine = lines.find(l => l.startsWith('## ['));
+                if (!headerLine) return null;
+                const match = headerLine.match(/## \[(.+?)\] - (.+)/);
+                if (!match) return null;
+                const version = match[1];
+                const date = match[2];
+                const content = lines
+                    .filter(l => !l.startsWith('## [') && !l.startsWith('# ') && !l.startsWith('<!--') && l.trim() !== '')
+                    .join('\n');
+                return (
+                    <details key={version} open={i === 0} style={{ marginBottom: 8 }}>
+                        <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
+                            {version} <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}>({date})</span>
+                        </summary>
+                        <div style={{ paddingLeft: 12, color: 'var(--text-secondary)' }}>
+                            {content.split('\n').map((line, j) => {
+                                if (line.startsWith('### ')) {
+                                    return <h4 key={j} style={{ fontSize: '0.75rem', fontWeight: 600, margin: '8px 0 4px', color: 'var(--text-primary)' }}>{line.slice(4)}</h4>;
+                                }
+                                if (line.startsWith('- ')) {
+                                    const text = line.slice(2).replace(/\*\(([^)]+)\)\*\s*/, '[$1] ');
+                                    return <div key={j} style={{ paddingLeft: 8, marginBottom: 2 }}>• {text}</div>;
+                                }
+                                return null;
+                            })}
+                        </div>
+                    </details>
+                );
+            })}
+        </div>
+    );
+}
+
 export function HelpModal({ onClose }: HelpModalProps) {
     const [activeTab, setActiveTab] = useState<Tab>('Getting Started');
 
@@ -258,6 +305,7 @@ export function HelpModal({ onClose }: HelpModalProps) {
                     {activeTab === 'Shortcuts' && <ShortcutsTab />}
                     {activeTab === 'Features' && <FeaturesTab />}
                     {activeTab === 'Exporting' && <ExportingTab />}
+                    {activeTab === "What's New" && <WhatsNewTab />}
                 </section>
             </div>
         </div>
