@@ -40,10 +40,10 @@ commit_parsers = [
     { message = "^.*!(.*)$", group = "<!-- 0 -->Breaking Changes" },
     { body = ".*BREAKING CHANGE.*", group = "<!-- 0 -->Breaking Changes" },
 
-    { message = "^fix\\(security\\)", group = "<!-- 1 -->Security" },
-    { message = "^fix\\(deps\\)", body = "(?i).*(CVE|vulnerability|security|GHSA).*", group = "<!-- 1 -->Security" },
-
     { message = "^feat", group = "<!-- 2 -->Features" },
+
+    { message = "^fix\\(security\\)", group = "<!-- 1 -->Security" },
+    { message = "^fix\\(deps\\).*(?i)(CVE|vulnerability|GHSA|GO-\\d{4})", group = "<!-- 1 -->Security" },
 
     { message = "^fix", group = "<!-- 3 -->Bug Fixes" },
 
