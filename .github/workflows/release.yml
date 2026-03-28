@@ -97,6 +97,13 @@ jobs:
             wails build -platform ${{ matrix.platform }} -clean -m -ldflags "$LDFLAGS"
           fi
 
+      - name: Ad-hoc sign macOS app bundle
+        if: matrix.os == 'macos-latest'
+        run: |
+          codesign --force --deep --sign - build/bin/CullSnap.app
+          echo "Verifying signature..."
+          codesign -dv build/bin/CullSnap.app 2>&1
+
       - name: Compress macOS Binary
         if: matrix.os == 'macos-latest'
         run: |
