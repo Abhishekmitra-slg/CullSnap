@@ -164,6 +164,13 @@ func runOsascript(ctx context.Context, script string) (string, error) {
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
+		logger.Log.Debug("icloud: osascript failed", "stderr", errMsg)
+
+		// macOS TCC error -1743: app lacks Automation permission for Photos.app
+		if strings.Contains(errMsg, "-1743") || strings.Contains(errMsg, "Not authorized") {
+			return "", fmt.Errorf("CullSnap needs Automation permission to access Photos. " +
+				"Open System Settings \u2192 Privacy & Security \u2192 Automation and enable Photos for CullSnap, then try again")
+		}
 		return "", fmt.Errorf("osascript: %s", errMsg)
 	}
 
