@@ -23,6 +23,10 @@ Thumbs.db
 
 # Claude Code
 .claude/
+memory/
+
+# Screenshots / local image artifacts
+cullsnap-*.png
 
 # Planning docs, specs, design docs (local working documents only)
 .superpowers/
