@@ -92,6 +92,10 @@ func NewApp(store *storage.SQLiteStore) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 
+	// Repair bundle signature if the auto-updater replaced the binary
+	// without re-signing. Must run before any TCC-gated operations.
+	ensureBundleSigned()
+
 	home, _ := os.UserHomeDir()
 	ffmpegPath := filepath.Join(home, ".cullsnap", "bin", "ffmpeg")
 	if stdruntime.GOOS == "windows" {
