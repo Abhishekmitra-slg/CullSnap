@@ -13,7 +13,30 @@ env:
   WAILS_VERSION: "v2.11.0"
 
 jobs:
+  generate-changelog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          config: cliff.toml
+          args: --output CHANGELOG.md
+
+      - name: Upload CHANGELOG.md
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: changelog
+          path: CHANGELOG.md
+
   build:
+    needs: generate-changelog
     permissions:
       contents: read
     strategy:
@@ -37,6 +60,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           submodules: recursive
+
+      - name: Download generated CHANGELOG.md
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: changelog
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
@@ -150,6 +178,63 @@ jobs:
             release_assets/checksums.txt.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-docs:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          config: cliff.toml
+          args: --output CHANGELOG.md
+
+      - name: Sync README to docs/index.md
+        run: |
+          cat > docs/index.md << 'HEADER'
+          ---
+          layout: default
+          title: CullSnap
+          ---
+
+          <!-- This file is auto-generated from README.md by the post-release workflow. Do not edit manually. -->
+
+          HEADER
+          sed -i 's/^          //' docs/index.md
+          cat README.md \
+            | sed 's|src="build/appicon.png"|src="https://raw.githubusercontent.com/Abhishekmitra-slg/CullSnap/main/build/appicon.png"|g' \
+            | sed 's|src="docs/assets/|src="assets/|g' \
+            | sed 's|href="go.mod"|href="https://github.com/Abhishekmitra-slg/CullSnap"|g' \
+            | sed 's|href="wails.json"|href="https://github.com/Abhishekmitra-slg/CullSnap"|g' \
+            | sed 's|href="LICENSE"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE"|g' \
+            | sed 's|href="SECURITY.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/SECURITY.md"|g' \
+            | sed 's|href="CONTRIBUTING.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md"|g' \
+            | sed 's|href="COMMERCIAL-LICENSE.md|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md|g' \
+            | sed 's|href="CODE_OF_CONDUCT.md"|href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md"|g' \
+            | sed '/^<p align="center">$/,/^<\/p>$/{ /Install.*Features.*Usage/d; /href="#-/d; }' \
+            | sed '/^<p align="center">$/,/^<\/p>$/{/^$/d}' \
+            | sed 's/^## ✨ /## /; s/^## 🏗️ /## /; s/^## 🛠️ /## /; s/^## 🎮 /## /; s/^## 📷 /## /; s/^## 📁 /## /; s/^## 🔒 /## /; s/^## 🤝 /## /; s/^## 📄 /## /; s/^## ⚖️ /## /' \
+            | sed 's/^### 🍎 /### /' \
+            >> docs/index.md
+
+      - name: Commit and push to main
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md docs/index.md
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "docs: update CHANGELOG.md and GitHub Pages for ${TAG_NAME}"
+          git push origin main
 
   update-homebrew:
     needs: release
