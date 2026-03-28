@@ -9,11 +9,21 @@ title: CullSnap
   <img src="https://raw.githubusercontent.com/Abhishekmitra-slg/CullSnap/main/build/appicon.png" width="128" alt="CullSnap icon" />
 </p>
 
+<h1 align="center">CullSnap</h1>
+
+<p align="center">
+  <strong>A blazing-fast, native desktop photo &amp; video culling tool for photographers.</strong>
+</p>
+
 <p align="center">
   <a href="https://github.com/Abhishekmitra-slg/CullSnap"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go" alt="Go Version" /></a>
   <a href="https://github.com/Abhishekmitra-slg/CullSnap"><img src="https://img.shields.io/badge/Wails-v2.11-E34F26?style=flat-square" alt="Wails Version" /></a>
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest"><img src="https://img.shields.io/github/v/release/Abhishekmitra-slg/CullSnap?style=flat-square&color=blue" alt="Latest Release" /></a>
   <a href="https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Abhishekmitra-slg/CullSnap/releases/latest">Download</a>
 </p>
 
 ---
@@ -123,28 +133,63 @@ RAW files are displayed with format badges in both the grid and viewer. When RAW
 
 > **Note:** All 11 RAW formats are handled natively in Pure Go with zero external dependencies. HEIC/HEIF decoding uses macOS sips (hardware-accelerated) or FFmpeg.
 
+## Project Structure
+
+```
+CullSnap/
+├── main.go                         # Wails entry, media server, panic recovery
+├── internal/
+│   ├── app/
+│   │   ├── app.go                  # Core app logic, all Wails-bound methods
+│   │   ├── config.go               # SystemProbe, AppConfig, DeriveDefaults
+│   │   ├── config_unix.go          # FD limit detection (Unix)
+│   │   ├── config_windows.go       # FD limit detection (Windows)
+│   │   └── config_ram.go           # RAM detection (gopsutil)
+│   ├── video/
+│   │   └── ffmpeg.go               # FFmpeg/FFprobe provisioning, trim, thumbnails
+│   ├── image/
+│   │   ├── thumbnail.go            # EXIF thumbnail extraction + resize fallback
+│   │   └── thumbcache.go           # Disk cache with parallel batch generation
+│   ├── raw/                        # RAW image support (TIFF/BMFF/RAF parsers, preview cache)
+│   ├── heic/                       # HEIC/HEIF decoder (sips on macOS, FFmpeg fallback)
+│   ├── cloudsource/                # Cloud source framework (OAuth, mirror, token store)
+│   │   └── providers/              # Google Drive, iCloud (macOS) providers
+│   ├── device/                     # USB device detection + import (macOS)
+│   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png/heic + RAW + video)
+│   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
+│   ├── export/copier.go            # File copy with flush-error checking + video trim
+│   ├── model/photo.go              # Unified Photo struct
+│   ├── storage/                    # SQLite (selections, ratings, exported, config, cloud mirrors)
+│   └── logger/                     # Structured logging (slog)
+└── frontend/src/
+    ├── App.tsx                      # 2-phase loading, event listeners, state
+    ├── components/
+    │   ├── Grid.tsx                 # Virtualized grid (TanStack Virtual)
+    │   ├── Viewer.tsx               # Image/Video viewer + trim controls
+    │   ├── Sidebar.tsx              # Folder nav, cloud, device import, export, dedup
+    │   ├── CloudSourceModal.tsx    # Google Drive + iCloud album browser
+    │   ├── DeviceImportModal.tsx   # USB iPhone/iPad import
+    │   └── SettingsModal.tsx        # System info, performance, HEIC decoder, cloud cache
+    └── index.css                    # Navy/violet theme, glassmorphism, animations
+```
+
 ## Security
 
-Found a vulnerability? Please report it privately — see [SECURITY.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CONTRIBUTING.md) for details.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-All contributors must sign a [Contributor License Agreement (CLA)](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md#contributor-license-agreement-cla) before their first PR can be merged.
+All contributors must sign a [Contributor License Agreement (CLA)](COMMERCIAL-LICENSE.md#contributor-license-agreement-cla) before their first PR can be merged.
 
 ## License
 
 CullSnap is dual-licensed:
 
-- **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
-- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [COMMERCIAL-LICENSE.md](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/COMMERCIAL-LICENSE.md) for details.
+- **Open Source**: [GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) — free to use, modify, and distribute under AGPLv3 terms. All derivative works must also be released under AGPLv3.
+- **Commercial**: A commercial license is available for organizations that cannot comply with AGPLv3. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for details.
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant v2.1](https://github.com/Abhishekmitra-slg/CullSnap/blob/main/CODE_OF_CONDUCT.md). Please read it before participating.
-
-## Legal
-
-- [Privacy Policy](privacy)
-- [Terms of Service](terms)
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). Please read it before participating.
