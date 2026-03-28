@@ -184,6 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout main
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -225,16 +226,26 @@ jobs:
             | sed 's/^### 🍎 /### /' \
             >> docs/index.md
 
-      - name: Commit and push to main
+      - name: Create pull request
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          BRANCH="post-release/${TAG_NAME}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add CHANGELOG.md docs/index.md
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "docs: update CHANGELOG.md and GitHub Pages for ${TAG_NAME}"
-          git push origin main
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "docs: post-release updates for ${TAG_NAME}" \
+            --body "Automated post-release updates:
+          - Updated CHANGELOG.md with ${TAG_NAME} release notes
+          - Synced README.md to docs/index.md for GitHub Pages" \
+            --base main \
+            --head "$BRANCH"
 
   update-homebrew:
     needs: release
