@@ -137,3 +137,82 @@ func (c *CacheManager) GetCacheStats() (CacheStats, error) {
 		LimitBytes: int64(c.maxCacheMB) * 1024 * 1024,
 	}, nil
 }
+
+// DeleteAlbum removes a cached album's files and its database record.
+// Idempotent: returns nil if the album does not exist.
+func (c *CacheManager) DeleteAlbum(providerID, albumID string) error {
+	dir := filepath.Join(c.baseDir, SanitizeID(providerID), SanitizeID(albumID))
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("cache: remove album dir: %w", err)
+	}
+	if err := c.store.DeleteCloudMirror(providerID, albumID); err != nil {
+		return fmt.Errorf("cache: delete mirror record: %w", err)
+	}
+	logger.Log.Info("cache: deleted album", "provider", providerID, "album", albumID, "dir", dir)
+	return nil
+}
+
+// ClearAll removes all cached albums.
+func (c *CacheManager) ClearAll() error {
+	albums, err := c.ListCachedAlbums()
+	if err != nil {
+		return err
+	}
+	for _, a := range albums {
+		if delErr := c.DeleteAlbum(a.ProviderID, a.AlbumID); delErr != nil {
+			return delErr
+		}
+	}
+	logger.Log.Info("cache: cleared all albums", "count", len(albums))
+	return nil
+}
+
+// EvictIfNeeded frees space using LRU eviction until currentUsage + requiredBytes
+// fits within the cache limit. The album identified by excludeProviderID/excludeAlbumID
+// is never evicted (it is the album currently being synced).
+// Returns the list of evicted albums, or an error if not enough space can be freed.
+func (c *CacheManager) EvictIfNeeded(requiredBytes int64, excludeProviderID, excludeAlbumID string) ([]EvictedAlbum, error) {
+	albums, err := c.ListCachedAlbums()
+	if err != nil {
+		return nil, err
+	}
+
+	var currentUsage int64
+	for _, a := range albums {
+		currentUsage += a.SizeBytes
+	}
+
+	limitBytes := int64(c.maxCacheMB) * 1024 * 1024
+	if currentUsage+requiredBytes <= limitBytes {
+		return nil, nil // enough space
+	}
+
+	// Sort by SyncedAt ascending (oldest first) for LRU eviction.
+	sort.Slice(albums, func(i, j int) bool {
+		return albums[i].SyncedAt.Before(albums[j].SyncedAt)
+	})
+
+	needed := currentUsage + requiredBytes - limitBytes
+	var freed int64
+	var evicted []EvictedAlbum
+
+	for _, a := range albums {
+		if a.ProviderID == excludeProviderID && a.AlbumID == excludeAlbumID {
+			continue
+		}
+		if err := c.DeleteAlbum(a.ProviderID, a.AlbumID); err != nil {
+			return evicted, fmt.Errorf("cache: evict failed: %w", err)
+		}
+		freed += a.SizeBytes
+		evicted = append(evicted, EvictedAlbum{
+			AlbumTitle: a.AlbumTitle,
+			SizeBytes:  a.SizeBytes,
+		})
+		logger.Log.Info("cache: evicted album", "title", a.AlbumTitle, "freed", a.SizeBytes)
+		if freed >= needed {
+			return evicted, nil
+		}
+	}
+
+	return evicted, fmt.Errorf("cache: cannot free enough space (need %d bytes, freed %d bytes)", needed, freed)
+}

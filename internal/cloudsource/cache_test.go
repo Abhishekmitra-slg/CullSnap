@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNewCacheManager(t *testing.T) {
@@ -82,5 +83,123 @@ func TestGetCacheStats_Empty(t *testing.T) {
 	}
 	if stats.LimitBytes != 1024*1024*1024 {
 		t.Errorf("LimitBytes = %d, want %d", stats.LimitBytes, 1024*1024*1024)
+	}
+}
+
+func TestDeleteAlbum(t *testing.T) {
+	base := t.TempDir()
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Create dir and DB record.
+	dir := filepath.Join(base, "prov", "alb")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "photo.jpg"), make([]byte, 50), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveCloudMirror("prov", "alb", "My Album", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cm := NewCacheManager(base, store, 512)
+	if err := cm.DeleteAlbum("prov", "alb"); err != nil {
+		t.Fatalf("DeleteAlbum: %v", err)
+	}
+
+	// Dir should be gone.
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Error("expected dir to be removed")
+	}
+	// DB record should be gone.
+	if _, getErr := store.GetCloudMirror("prov", "alb"); getErr == nil {
+		t.Error("expected mirror record to be deleted")
+	}
+}
+
+func TestDeleteAlbum_Idempotent(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cm := NewCacheManager(t.TempDir(), store, 512)
+	if err := cm.DeleteAlbum("nonexistent", "nope"); err != nil {
+		t.Fatalf("expected no error for non-existent album, got: %v", err)
+	}
+}
+
+func TestEvictIfNeeded_NoEviction(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cm := NewCacheManager(t.TempDir(), store, 1024) // 1 GB limit
+	evicted, err := cm.EvictIfNeeded(100, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(evicted) != 0 {
+		t.Errorf("expected no evictions, got %d", len(evicted))
+	}
+}
+
+func TestEvictIfNeeded_EvictsOldest(t *testing.T) {
+	base := t.TempDir()
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Create two albums: "old" synced earlier, "new" synced later.
+	// Each has 400KB of data. Limit is 1MB. Requesting 400KB more should evict old.
+	for _, album := range []struct {
+		id    string
+		title string
+	}{
+		{"old-album", "Old Album"},
+		{"new-album", "New Album"},
+	} {
+		dir := filepath.Join(base, "prov", album.id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "photo.jpg"), make([]byte, 400*1024), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveCloudMirror("prov", album.id, album.title, dir); err != nil {
+			t.Fatal(err)
+		}
+		// Small delay to ensure different SyncedAt timestamps.
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cm := NewCacheManager(base, store, 1) // 1 MB limit
+
+	// Request 400KB more; currently using ~800KB with 1MB limit.
+	// 800KB + 400KB = 1200KB > 1MB, need to evict oldest (400KB) to fit.
+	evicted, err := cm.EvictIfNeeded(400*1024, "prov", "new-album")
+	if err != nil {
+		t.Fatalf("EvictIfNeeded: %v", err)
+	}
+	if len(evicted) != 1 {
+		t.Fatalf("expected 1 eviction, got %d", len(evicted))
+	}
+	if evicted[0].AlbumTitle != "Old Album" {
+		t.Errorf("expected Old Album evicted, got %q", evicted[0].AlbumTitle)
+	}
+
+	// new-album should still exist (it was excluded).
+	newDir := filepath.Join(base, "prov", "new-album")
+	if _, statErr := os.Stat(newDir); os.IsNotExist(statErr) {
+		t.Error("new-album should not have been evicted")
 	}
 }
