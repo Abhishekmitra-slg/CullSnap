@@ -35,6 +35,7 @@ interface MirrorProgress {
     albumID: string;
     currentFile: string;
     startTime: number;
+    phase: string;
 }
 
 export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) {
@@ -79,7 +80,8 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                 total: data.total || 0,
                 albumID: data.albumID || '',
                 currentFile: data.currentFile || '',
-                startTime: prev?.startTime || Date.now(),
+                phase: data.phase || '',
+                startTime: (data.downloaded > 0 && !prev?.startTime) ? Date.now() : (prev?.startTime || 0),
             }));
         };
 
@@ -249,7 +251,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                         <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                             {mirrorProgress && mirrorProgress.currentFile
                                 ? `Exporting ${mirrorProgress.currentFile}`
-                                : 'Preparing export...'}
+                                : (mirrorProgress?.phase || 'Preparing export...')}
                         </div>
                         {mirrorProgress && mirrorProgress.total > 0 && (() => {
                             const pct = Math.min(100, (mirrorProgress.downloaded / mirrorProgress.total) * 100);

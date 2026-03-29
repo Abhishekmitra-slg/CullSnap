@@ -81,7 +81,16 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 		return "", fmt.Errorf("unknown cloud provider: %s", providerID)
 	}
 
+	emitStatus := func(phase string) {
+		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
+			"provider": providerID,
+			"albumID":  albumID,
+			"phase":    phase,
+		})
+	}
+
 	// Get album info for the mirror
+	emitStatus("Connecting to Photos...")
 	albums, err := source.ListAlbums(a.ctx)
 	if err != nil {
 		return "", err
@@ -96,6 +105,8 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 	if album.ID == "" {
 		return "", fmt.Errorf("album %s not found", albumID)
 	}
+
+	emitStatus("Reading album contents...")
 
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(a.ctx)
