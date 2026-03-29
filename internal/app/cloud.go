@@ -112,14 +112,15 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 	}()
 
 	// Start mirror with progress events
-	mirrorDir, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int) {
+	mirrorDir, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
 		logger.Log.Debug("cloud: mirror progress", "providerID", providerID, "albumID", albumID,
-			"downloaded", downloaded, "total", total)
+			"downloaded", downloaded, "total", total, "file", currentFile)
 		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
-			"provider":   providerID,
-			"albumID":    albumID,
-			"downloaded": downloaded,
-			"total":      total,
+			"provider":    providerID,
+			"albumID":     albumID,
+			"downloaded":  downloaded,
+			"total":       total,
+			"currentFile": currentFile,
 		})
 	})
 	if err != nil {

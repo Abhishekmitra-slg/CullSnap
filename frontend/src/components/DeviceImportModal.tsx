@@ -163,7 +163,7 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                         alignItems: 'center',
                         gap: 12,
                     }}>
-                        <Loader size={24} className="spin-animation" style={{ color: 'var(--accent)' }} />
+                        <Loader size={24} className="spin" style={{ color: 'var(--accent)' }} />
                         <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                             Importing photos...
                         </div>

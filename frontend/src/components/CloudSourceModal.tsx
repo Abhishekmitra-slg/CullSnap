@@ -33,6 +33,8 @@ interface MirrorProgress {
     downloaded: number;
     total: number;
     albumID: string;
+    currentFile: string;
+    startTime: number;
 }
 
 export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) {
@@ -72,11 +74,13 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
 
         const progressHandler = (data: any) => {
             if (!mountedRef.current) return;
-            setMirrorProgress({
+            setMirrorProgress(prev => ({
                 downloaded: data.downloaded || 0,
                 total: data.total || 0,
                 albumID: data.albumID || '',
-            });
+                currentFile: data.currentFile || '',
+                startTime: prev?.startTime || Date.now(),
+            }));
         };
 
         const completeHandler = (data: any) => {
@@ -241,23 +245,39 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                         alignItems: 'center',
                         gap: 12,
                     }}>
-                        <Loader size={24} className="spin-animation" style={{ color: 'var(--accent)' }} />
+                        <Loader size={24} className="spin" style={{ color: 'var(--accent)' }} />
                         <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            Downloading album...
+                            {mirrorProgress && mirrorProgress.currentFile
+                                ? `Exporting ${mirrorProgress.currentFile}`
+                                : 'Preparing export...'}
                         </div>
-                        {mirrorProgress && mirrorProgress.total > 0 && (
-                            <>
-                                <div className="progress-bar-container-large">
-                                    <div className="progress-bar-fill-large" style={{
-                                        width: `${Math.min(100, (mirrorProgress.downloaded / mirrorProgress.total) * 100)}%`,
-                                        transition: 'width 0.3s ease-out',
-                                    }} />
-                                </div>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                    {mirrorProgress.downloaded} / {mirrorProgress.total} files
-                                </div>
-                            </>
-                        )}
+                        {mirrorProgress && mirrorProgress.total > 0 && (() => {
+                            const pct = Math.min(100, (mirrorProgress.downloaded / mirrorProgress.total) * 100);
+                            const elapsed = (Date.now() - mirrorProgress.startTime) / 1000;
+                            const perFile = mirrorProgress.downloaded > 0 ? elapsed / mirrorProgress.downloaded : 0;
+                            const remaining = Math.ceil(perFile * (mirrorProgress.total - mirrorProgress.downloaded));
+                            const eta = mirrorProgress.downloaded > 0 && remaining > 0
+                                ? remaining < 60 ? `~${remaining}s remaining` : `~${Math.ceil(remaining / 60)}m remaining`
+                                : '';
+                            return (
+                                <>
+                                    <div className="progress-bar-container-large">
+                                        <div className="progress-bar-fill-large" style={{
+                                            width: `${pct}%`,
+                                            transition: 'width 0.3s ease-out',
+                                        }} />
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                                        {mirrorProgress.downloaded} / {mirrorProgress.total} files ({Math.round(pct)}%)
+                                    </div>
+                                    {eta && (
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.7 }}>
+                                            {eta}
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()}
                         <button
                             className="btn"
                             style={{ marginTop: 8, backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
