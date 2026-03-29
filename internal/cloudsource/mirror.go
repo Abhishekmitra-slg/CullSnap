@@ -56,13 +56,13 @@ func (m *MirrorManager) EnsureMirrorDir(providerID, albumID string) (string, err
 }
 
 // MirrorAlbum downloads missing/stale files from a cloud album to the local mirror.
-// Returns the mirror directory path. Emits progress via progressFn(downloaded, total).
+// Returns the mirror directory path. Emits progress via progressFn(downloaded, total, currentFile).
 // Supports cancellation via ctx.
 func (m *MirrorManager) MirrorAlbum(
 	ctx context.Context,
 	source CloudSource,
 	album Album,
-	progressFn func(downloaded, total int),
+	progressFn func(downloaded, total int, currentFile string),
 ) (string, error) {
 	providerID := source.ID()
 	mirrorDir, err := m.EnsureMirrorDir(providerID, album.ID)
@@ -106,7 +106,7 @@ func (m *MirrorManager) MirrorAlbum(
 	if len(toDownload) == 0 {
 		// Everything already mirrored
 		if progressFn != nil {
-			progressFn(len(mediaItems), len(mediaItems))
+			progressFn(len(mediaItems), len(mediaItems), "")
 		}
 		return mirrorDir, nil
 	}
@@ -150,7 +150,7 @@ func (m *MirrorManager) MirrorAlbum(
 				mu.Unlock()
 
 				if progressFn != nil {
-					progressFn(len(mediaItems)-len(toDownload)+c, len(mediaItems))
+					progressFn(len(mediaItems)-len(toDownload)+c, len(mediaItems), item.Filename)
 				}
 			}
 		}()

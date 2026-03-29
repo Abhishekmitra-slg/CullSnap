@@ -81,7 +81,16 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 		return "", fmt.Errorf("unknown cloud provider: %s", providerID)
 	}
 
+	emitStatus := func(phase string) {
+		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
+			"provider": providerID,
+			"albumID":  albumID,
+			"phase":    phase,
+		})
+	}
+
 	// Get album info for the mirror
+	emitStatus("Connecting to Photos...")
 	albums, err := source.ListAlbums(a.ctx)
 	if err != nil {
 		return "", err
@@ -96,6 +105,8 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 	if album.ID == "" {
 		return "", fmt.Errorf("album %s not found", albumID)
 	}
+
+	emitStatus("Reading album contents...")
 
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(a.ctx)
@@ -112,14 +123,15 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 	}()
 
 	// Start mirror with progress events
-	mirrorDir, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int) {
+	mirrorDir, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
 		logger.Log.Debug("cloud: mirror progress", "providerID", providerID, "albumID", albumID,
-			"downloaded", downloaded, "total", total)
+			"downloaded", downloaded, "total", total, "file", currentFile)
 		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
-			"provider":   providerID,
-			"albumID":    albumID,
-			"downloaded": downloaded,
-			"total":      total,
+			"provider":    providerID,
+			"albumID":     albumID,
+			"downloaded":  downloaded,
+			"total":       total,
+			"currentFile": currentFile,
 		})
 	})
 	if err != nil {
