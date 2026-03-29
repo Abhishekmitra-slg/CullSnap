@@ -39,7 +39,7 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **Smart Deduplication**: Pure-Go perceptual hashing (dHash) automatically groups duplicate/burst photos and selects the best image using multi-factor quality scoring — weighted combination of sharpness (Laplacian of Gaussian), exposure (highlight/shadow clipping), noise estimation (Immerkaer method), and contrast (RMS). Hashes and scores from cached thumbnails for fast performance even on external drives.
 -   **RAW Image Support**: Native Pure Go support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Zero external dependencies. Extracts embedded JPEG previews using format-specific parsers: TIFF IFD walker (Canon DSLR/Sony/Nikon/Leica), BMFF box walker (Canon mirrorless CR3), Fujifilm RAF header parser, and TIFF-variant handling (Olympus/Panasonic). Includes RAW+JPEG companion pairing and format badges in the UI.
 -   **HEIC/HEIF Support**: Full support for iPhone's default photo format. On macOS, uses the native `sips` decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. Decoder preference is configurable in Settings with a clear performance warning.
--   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain.
+-   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain. Per-album cache management with LRU auto-eviction, configurable cache limits, and individual album deletion from Settings.
 -   **Import from Device (macOS)**: Connect an iPhone or iPad via USB and CullSnap detects it automatically. One-click import via Image Capture to a local staging directory, then scan and cull as usual. Also accessible via the sidebar for manual triggering.
 -   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
@@ -194,8 +194,7 @@ CullSnap is dual-licensed:
 
 This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). Please read it before participating.
 
+
 ---
 
-<div class="legal-footer">
-  <a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a>
-</div>
+<div class="legal-footer"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></div>
