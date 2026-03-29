@@ -19,6 +19,13 @@ type CloudSource interface {
 	Disconnect() error
 }
 
+// SequentialDownloader is implemented by cloud sources that require serial
+// downloads (e.g. iCloud Photos, where Photos.app serializes AppleScript
+// commands and is unreliable with concurrent access).
+type SequentialDownloader interface {
+	IsSequentialDownload() bool
+}
+
 type Album struct {
 	ID         string    `json:"id"`
 	Title      string    `json:"title"`
