@@ -123,7 +123,7 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 	}()
 
 	// Start mirror with progress events
-	mirrorDir, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
+	mirrorDir, evicted, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
 		logger.Log.Debug("cloud: mirror progress", "providerID", providerID, "albumID", albumID,
 			"downloaded", downloaded, "total", total, "file", currentFile)
 		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
@@ -134,6 +134,12 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 			"currentFile": currentFile,
 		})
 	})
+
+	// Notify frontend of evictions
+	if len(evicted) > 0 {
+		runtime.EventsEmit(a.ctx, "cloud-cache-evicted", evicted)
+	}
+
 	if err != nil {
 		logger.Log.Error("cloud: mirror failed", "providerID", providerID, "albumID", albumID, "error", err)
 		runtime.EventsEmit(a.ctx, "cloud-download-error", map[string]string{
@@ -182,22 +188,62 @@ type MirrorStats struct {
 
 // GetMirrorStats returns disk usage of all cloud mirrors.
 func (a *App) GetMirrorStats() (MirrorStats, error) {
-	usage, err := a.mirrorManager.DiskUsage()
+	stats, err := a.mirrorManager.Cache.GetCacheStats()
 	if err != nil {
 		logger.Log.Error("cloud: failed to get mirror stats", "error", err)
 		return MirrorStats{}, err
 	}
-	logger.Log.Debug("cloud: mirror stats", "totalMB", usage/(1024*1024))
-	return MirrorStats{TotalMB: usage / (1024 * 1024)}, nil
+	return MirrorStats{TotalMB: stats.TotalBytes / (1024 * 1024)}, nil
 }
 
 // ClearCloudMirror removes the local mirror for a specific album.
+// If both providerID and albumID are empty, clears all cached albums.
 func (a *App) ClearCloudMirror(providerID, albumID string) error {
-	logger.Log.Info("cloud: clearing mirror", "providerID", providerID, "albumID", albumID)
-	if err := a.mirrorManager.ClearMirror(providerID, albumID); err != nil {
-		logger.Log.Error("cloud: failed to clear mirror", "providerID", providerID, "albumID", albumID, "error", err)
+	if providerID == "" && albumID == "" {
+		return a.ClearAllCache()
+	}
+	return a.DeleteCachedAlbum(providerID, albumID)
+}
+
+// GetCacheStats returns aggregate cache usage information.
+func (a *App) GetCacheStats() (cloudsource.CacheStats, error) {
+	stats, err := a.mirrorManager.Cache.GetCacheStats()
+	if err != nil {
+		logger.Log.Error("cloud: failed to get cache stats", "error", err)
+		return cloudsource.CacheStats{}, err
+	}
+	logger.Log.Debug("cloud: cache stats", "totalBytes", stats.TotalBytes,
+		"albums", stats.AlbumCount, "limitBytes", stats.LimitBytes)
+	return stats, nil
+}
+
+// ListCachedAlbums returns per-album cache details for the settings UI.
+func (a *App) ListCachedAlbums() ([]cloudsource.CachedAlbum, error) {
+	albums, err := a.mirrorManager.Cache.ListCachedAlbums()
+	if err != nil {
+		logger.Log.Error("cloud: failed to list cached albums", "error", err)
+		return nil, err
+	}
+	logger.Log.Debug("cloud: listed cached albums", "count", len(albums))
+	return albums, nil
+}
+
+// DeleteCachedAlbum removes a single album's mirror cache.
+func (a *App) DeleteCachedAlbum(providerID, albumID string) error {
+	logger.Log.Info("cloud: deleting cached album", "providerID", providerID, "albumID", albumID)
+	if err := a.mirrorManager.Cache.DeleteAlbum(providerID, albumID); err != nil {
+		logger.Log.Error("cloud: failed to delete cached album", "error", err)
 		return err
 	}
-	logger.Log.Info("cloud: mirror cleared", "providerID", providerID, "albumID", albumID)
+	return nil
+}
+
+// ClearAllCache removes all cached cloud albums.
+func (a *App) ClearAllCache() error {
+	logger.Log.Info("cloud: clearing all cache")
+	if err := a.mirrorManager.Cache.ClearAll(); err != nil {
+		logger.Log.Error("cloud: failed to clear all cache", "error", err)
+		return err
+	}
 	return nil
 }

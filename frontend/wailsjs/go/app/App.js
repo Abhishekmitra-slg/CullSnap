@@ -30,12 +30,20 @@ export function CheckForUpdate() {
   return window['go']['app']['App']['CheckForUpdate']();
 }
 
+export function ClearAllCache() {
+  return window['go']['app']['App']['ClearAllCache']();
+}
+
 export function ClearCloudMirror(arg1, arg2) {
   return window['go']['app']['App']['ClearCloudMirror'](arg1, arg2);
 }
 
 export function ClearImportCache(arg1) {
   return window['go']['app']['App']['ClearImportCache'](arg1);
+}
+
+export function DeleteCachedAlbum(arg1, arg2) {
+  return window['go']['app']['App']['DeleteCachedAlbum'](arg1, arg2);
 }
 
 export function DisconnectCloudSource(arg1) {
@@ -56,6 +64,10 @@ export function GetAboutInfo() {
 
 export function GetAppConfig() {
   return window['go']['app']['App']['GetAppConfig']();
+}
+
+export function GetCacheStats() {
+  return window['go']['app']['App']['GetCacheStats']();
 }
 
 export function GetChangelog() {
@@ -104,6 +116,10 @@ export function GetSelections(arg1) {
 
 export function ImportFromDevice(arg1) {
   return window['go']['app']['App']['ImportFromDevice'](arg1);
+}
+
+export function ListCachedAlbums() {
+  return window['go']['app']['App']['ListCachedAlbums']();
 }
 
 export function ListCloudAlbums(arg1) {

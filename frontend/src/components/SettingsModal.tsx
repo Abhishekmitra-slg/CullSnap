@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, RotateCcw, Cloud, Trash2, Smartphone } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetMirrorStats, ClearCloudMirror, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetCacheStats, ListCachedAlbums, DeleteCachedAlbum, ClearAllCache, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -14,6 +14,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [clearingMirrors, setClearingMirrors] = useState(false);
     const [importStats, setImportStats] = useState<any>(null);
     const [clearingImport, setClearingImport] = useState<string | null>(null);
+    const [cachedAlbums, setCachedAlbums] = useState<any[]>([]);
+    const [deletingAlbum, setDeletingAlbum] = useState<string | null>(null);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
@@ -23,24 +25,67 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
     const loadMirrorStats = async () => {
         try {
-            const stats = await GetMirrorStats();
+            const stats = await GetCacheStats();
             setMirrorStats(stats);
         } catch (e) {
-            console.error('[settings] failed to load mirror stats:', e);
+            console.error('[settings] failed to load cache stats:', e);
+        }
+        try {
+            const albums = await ListCachedAlbums();
+            setCachedAlbums(albums || []);
+        } catch (e) {
+            console.error('[settings] failed to load cached albums:', e);
         }
     };
 
-    const handleClearAllMirrors = async () => {
-        if (!window.confirm('Clear all mirrored cloud albums? This will delete locally cached files.')) return;
-        setClearingMirrors(true);
-        try {
-            await ClearCloudMirror('', '');
-            await loadMirrorStats();
-        } catch (e) {
-            console.error('[settings] failed to clear mirrors:', e);
-        } finally {
-            setClearingMirrors(false);
-        }
+    const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null);
+
+    const handleClearAllMirrors = () => {
+        setConfirmAction({
+            message: 'Clear all cached cloud albums? Files can be re-mirrored later.',
+            action: async () => {
+                setConfirmAction(null);
+                setClearingMirrors(true);
+                try {
+                    await ClearAllCache();
+                } catch (e) {
+                    console.error('[settings] failed to clear cache:', e);
+                }
+                await loadMirrorStats();
+                setClearingMirrors(false);
+            },
+        });
+    };
+
+    const handleDeleteAlbum = (providerID: string, albumID: string, title: string) => {
+        setConfirmAction({
+            message: `Remove cached files for "${title}"? You can re-mirror later.`,
+            action: async () => {
+                setConfirmAction(null);
+                setDeletingAlbum(albumID);
+                try {
+                    await DeleteCachedAlbum(providerID, albumID);
+                } catch (e) {
+                    console.error('[settings] failed to delete album:', e);
+                }
+                await loadMirrorStats();
+                setDeletingAlbum(null);
+            },
+        });
+    };
+
+    const relativeTime = (dateStr: string): string => {
+        const now = Date.now();
+        const then = new Date(dateStr).getTime();
+        if (isNaN(then)) return 'unknown';
+        const diffSec = Math.floor((now - then) / 1000);
+        if (diffSec < 60) return 'just now';
+        if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+        if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+        const days = Math.floor(diffSec / 86400);
+        if (days === 1) return '1 day ago';
+        if (days < 30) return `${days} days ago`;
+        return `${Math.floor(days / 30)}mo ago`;
     };
 
     const loadImportStats = async () => {
@@ -52,17 +97,22 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         }
     };
 
-    const handleClearImportCache = async (serial: string) => {
-        if (!window.confirm('Clear cached imports for this device? This will delete locally stored files.')) return;
-        setClearingImport(serial);
-        try {
-            await ClearImportCache(serial);
-            await loadImportStats();
-        } catch (e) {
-            console.error('[settings] failed to clear import cache:', e);
-        } finally {
-            setClearingImport(null);
-        }
+    const handleClearImportCache = (serial: string) => {
+        setConfirmAction({
+            message: 'Clear cached imports for this device? This will delete locally stored files.',
+            action: async () => {
+                setConfirmAction(null);
+                setClearingImport(serial);
+                try {
+                    await ClearImportCache(serial);
+                    await loadImportStats();
+                } catch (e) {
+                    console.error('[settings] failed to clear import cache:', e);
+                } finally {
+                    setClearingImport(null);
+                }
+            },
+        });
     };
 
     const formatBytes = (bytes: number): string => {
@@ -110,6 +160,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     <h2>Settings</h2>
                     <button className="btn icon-btn" onClick={onClose}><X size={16} /></button>
                 </div>
+
+                {/* Inline confirmation dialog (window.confirm doesn't work in WKWebView) */}
+                {confirmAction && (
+                    <div style={{
+                        background: 'var(--bg-panel)',
+                        border: '1px solid var(--danger)',
+                        borderRadius: 6,
+                        padding: '12px 16px',
+                        marginBottom: 12,
+                        fontSize: '0.85rem',
+                    }}>
+                        <div style={{ marginBottom: 10, color: 'var(--text-primary)' }}>{confirmAction.message}</div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button className="btn outline" style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                                onClick={() => setConfirmAction(null)}>
+                                Cancel
+                            </button>
+                            <button className="btn" style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
+                                onClick={confirmAction.action}>
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <section className="settings-section">
                     <h3>System Info</h3>
@@ -196,15 +270,18 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                     type="checkbox"
                                     checked={config.useNativeSips}
                                     onChange={(e) => {
-                                        if (!e.target.checked) {
-                                            if (!window.confirm(
-                                                'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. ' +
-                                                'Thumbnail generation for HEIC photos will take significantly longer.'
-                                            )) {
-                                                return;
-                                            }
+                                        const checked = e.target.checked;
+                                        if (!checked) {
+                                            setConfirmAction({
+                                                message: 'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. Thumbnail generation for HEIC photos will take significantly longer.',
+                                                action: () => {
+                                                    setConfirmAction(null);
+                                                    setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: false }));
+                                                },
+                                            });
+                                            return;
                                         }
-                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: e.target.checked }));
+                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: true }));
                                     }}
                                     style={{ opacity: 0, width: 0, height: 0 }}
                                 />
@@ -240,20 +317,109 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         <Cloud size={14} />
                         Cloud Storage
                     </h3>
-                    <div className="settings-info-grid">
-                        <span>Mirror Disk Usage</span>
-                        <span>{mirrorStats ? formatBytes(mirrorStats.totalBytes || 0) : 'Loading...'}</span>
-                        <span>Cached Albums</span>
-                        <span>{mirrorStats ? (mirrorStats.albumCount || 0) : '...'}</span>
-                    </div>
+
+                    {/* Usage bar */}
+                    {mirrorStats && (
+                        <div style={{ marginBottom: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 4 }}>
+                                <span>{formatBytes(mirrorStats.totalBytes || 0)} of {formatBytes(mirrorStats.limitBytes || 0)} used</span>
+                                <span>{mirrorStats.albumCount || 0} album{(mirrorStats.albumCount || 0) !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="progress-bar-container-large" style={{ width: '100%', maxWidth: 'none' }}>
+                                <div className="progress-bar-fill-large" style={{
+                                    width: `${Math.min(100, ((mirrorStats.totalBytes || 0) / (mirrorStats.limitBytes || 1)) * 100)}%`,
+                                    background: ((mirrorStats.totalBytes || 0) / (mirrorStats.limitBytes || 1)) > 0.8
+                                        ? 'var(--danger)' : 'var(--accent-gradient)',
+                                    transition: 'width 0.3s ease',
+                                }} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Cache limit slider */}
+                    {config && (
+                        <div className="settings-info-grid" style={{ marginBottom: 12 }}>
+                            <span>Cache Limit</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                    type="range"
+                                    min={1}
+                                    max={50}
+                                    value={Math.round((config.maxCloudCacheMB || 10240) / 1024)}
+                                    onChange={(e) => {
+                                        const gb = parseInt(e.target.value);
+                                        setConfig(app.AppConfig.createFrom({ ...config, maxCloudCacheMB: gb * 1024 }));
+                                    }}
+                                    onPointerUp={(e) => {
+                                        const gb = parseInt((e.target as HTMLInputElement).value);
+                                        const updated = app.AppConfig.createFrom({ ...config, maxCloudCacheMB: gb * 1024 });
+                                        SaveAppConfig(updated).catch(console.error);
+                                    }}
+                                    style={{ flex: 1 }}
+                                />
+                                <span style={{ minWidth: 40, textAlign: 'right', fontSize: '0.8rem' }}>
+                                    {Math.round((config.maxCloudCacheMB || 10240) / 1024)} GB
+                                </span>
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Cached albums list */}
+                    {cachedAlbums.length > 0 ? (
+                        <div style={{
+                            maxHeight: 200,
+                            overflowY: 'auto',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            marginBottom: 10,
+                        }}>
+                            {cachedAlbums.map((album: any) => (
+                                <div key={`${album.providerID}-${album.albumID}`} style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '8px 12px',
+                                    borderBottom: '1px solid var(--border)',
+                                    fontSize: '0.8rem',
+                                }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {album.albumTitle}
+                                        </div>
+                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                                            {album.providerID === 'icloud' ? 'iCloud Photos' : album.providerID === 'google_drive' ? 'Google Drive' : album.providerID}
+                                            {' \u00B7 '}
+                                            {formatBytes(album.sizeBytes || 0)}, {album.fileCount || 0} files
+                                            {' \u00B7 Synced '}
+                                            {album.syncedAt ? relativeTime(album.syncedAt) : 'unknown'}
+                                        </div>
+                                    </div>
+                                    <button
+                                        className="btn icon-btn"
+                                        style={{ marginLeft: 8, padding: 4 }}
+                                        onClick={() => handleDeleteAlbum(album.providerID, album.albumID, album.albumTitle)}
+                                        disabled={deletingAlbum === album.albumID}
+                                        title="Remove cached files"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '12px 0', textAlign: 'center' }}>
+                            No cached albums
+                        </div>
+                    )}
+
                     <button
                         className="btn outline"
-                        style={{ marginTop: 10, fontSize: '0.8rem' }}
+                        style={{ fontSize: '0.8rem' }}
                         onClick={handleClearAllMirrors}
-                        disabled={clearingMirrors || !mirrorStats || (mirrorStats.totalBytes || 0) === 0}
+                        disabled={clearingMirrors || (cachedAlbums.length === 0 && (!mirrorStats || mirrorStats.albumCount === 0))}
                     >
                         <Trash2 size={12} />
-                        {clearingMirrors ? 'Clearing...' : 'Clear All Mirrors'}
+                        {clearingMirrors ? 'Clearing...' : 'Clear All Cache'}
                     </button>
                 </section>
 

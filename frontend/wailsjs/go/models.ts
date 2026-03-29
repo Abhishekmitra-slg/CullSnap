@@ -293,6 +293,63 @@ export namespace cloudsource {
 		    return a;
 		}
 	}
+	export class CacheStats {
+	    totalBytes: number;
+	    albumCount: number;
+	    limitBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CacheStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalBytes = source["totalBytes"];
+	        this.albumCount = source["albumCount"];
+	        this.limitBytes = source["limitBytes"];
+	    }
+	}
+	export class CachedAlbum {
+	    providerID: string;
+	    albumID: string;
+	    albumTitle: string;
+	    sizeBytes: number;
+	    fileCount: number;
+	    // Go type: time
+	    syncedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new CachedAlbum(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerID = source["providerID"];
+	        this.albumID = source["albumID"];
+	        this.albumTitle = source["albumTitle"];
+	        this.sizeBytes = source["sizeBytes"];
+	        this.fileCount = source["fileCount"];
+	        this.syncedAt = this.convertValues(source["syncedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class CloudSourceStatus {
 	    providerID: string;
 	    displayName: string;

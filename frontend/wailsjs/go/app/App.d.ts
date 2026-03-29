@@ -19,9 +19,13 @@ export function CheckDedupStatus(arg1:string):Promise<app.DedupStatus>;
 
 export function CheckForUpdate():Promise<void>;
 
+export function ClearAllCache():Promise<void>;
+
 export function ClearCloudMirror(arg1:string,arg2:string):Promise<void>;
 
 export function ClearImportCache(arg1:string):Promise<void>;
+
+export function DeleteCachedAlbum(arg1:string,arg2:string):Promise<void>;
 
 export function DisconnectCloudSource(arg1:string):Promise<void>;
 
@@ -32,6 +36,8 @@ export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Pr
 export function GetAboutInfo():Promise<app.AboutInfo>;
 
 export function GetAppConfig():Promise<app.AppConfig>;
+
+export function GetCacheStats():Promise<cloudsource.CacheStats>;
 
 export function GetChangelog():Promise<string>;
 
@@ -56,6 +62,8 @@ export function GetRecentFolders():Promise<Array<string>>;
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 
 export function ImportFromDevice(arg1:string):Promise<string>;
+
+export function ListCachedAlbums():Promise<Array<cloudsource.CachedAlbum>>;
 
 export function ListCloudAlbums(arg1:string):Promise<Array<cloudsource.Album>>;
 

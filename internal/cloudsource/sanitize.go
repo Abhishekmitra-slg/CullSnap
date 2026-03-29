@@ -14,5 +14,9 @@ func SanitizeID(id string) string {
 		return "_"
 	}
 	sanitized := sanitizeRe.ReplaceAllString(id, "_")
-	return filepath.Base(sanitized)
+	result := filepath.Base(sanitized)
+	if result == "." || result == ".." {
+		return "_"
+	}
+	return result
 }
