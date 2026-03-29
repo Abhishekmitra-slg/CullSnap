@@ -178,7 +178,7 @@ type sequentialSource struct {
 func (s *sequentialSource) IsSequentialDownload() bool { return true }
 
 func TestEffectiveWorkers_Default(t *testing.T) {
-	mm := NewMirrorManager("/tmp", nil, 100, 4)
+	mm := NewMirrorManager(t.TempDir(), nil, 100, 4)
 	src := &mockCloudSource{}
 	if w := mm.effectiveWorkers(src); w != 4 {
 		t.Errorf("effectiveWorkers = %d, want 4", w)
@@ -186,7 +186,7 @@ func TestEffectiveWorkers_Default(t *testing.T) {
 }
 
 func TestEffectiveWorkers_Sequential(t *testing.T) {
-	mm := NewMirrorManager("/tmp", nil, 100, 4)
+	mm := NewMirrorManager(t.TempDir(), nil, 100, 4)
 	src := &sequentialSource{}
 	if w := mm.effectiveWorkers(src); w != 1 {
 		t.Errorf("effectiveWorkers = %d, want 1", w)

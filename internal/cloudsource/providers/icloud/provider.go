@@ -12,10 +12,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// validatePhotoID checks that a Photos.app ID contains only safe characters.
+// Photos IDs are UUID-like strings with optional path segments (e.g. "ABC-123/L0/001").
+// Rejecting other characters prevents AppleScript injection.
+var validPhotoIDRe = regexp.MustCompile(`^[A-Za-z0-9\-/_]+$`)
+
+func validatePhotoID(id string) error {
+	if !validPhotoIDRe.MatchString(id) {
+		return fmt.Errorf("icloud: invalid media ID: %q", id)
+	}
+	return nil
+}
 
 // Provider implements cloudsource.CloudSource for iCloud Photos on macOS.
 // It communicates with Photos.app via osascript (AppleScript).
@@ -72,6 +85,10 @@ end tell`
 
 // ListMediaInAlbum queries Photos.app for media items in a specific album.
 func (p *Provider) ListMediaInAlbum(ctx context.Context, albumID string) ([]cloudsource.RemoteMedia, error) {
+	if err := validatePhotoID(albumID); err != nil {
+		return nil, err
+	}
+
 	script := fmt.Sprintf(`
 tell application "Photos"
 	set targetAlbum to album id %q
@@ -109,6 +126,10 @@ func (p *Provider) IsSequentialDownload() bool { return true }
 // AppleScript. If the file already exists it is treated as up-to-date and
 // the call returns nil (idempotent).
 func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, localPath string, _ func(int64, int64)) error {
+	if err := validatePhotoID(media.ID); err != nil {
+		return err
+	}
+
 	// Idempotent: skip if already downloaded.
 	if _, err := os.Stat(localPath); err == nil {
 		logger.Log.Debug("icloud: file already exists, skipping", "path", localPath)
@@ -120,7 +141,7 @@ func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, 
 	if err != nil {
 		return fmt.Errorf("icloud: create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck // best-effort temp cleanup
 
 	absTmpDir, err := filepath.Abs(tmpDir)
 	if err != nil {
@@ -158,11 +179,18 @@ end timeout`, media.ID, absTmpDir)
 		return fmt.Errorf("icloud: Photos.app exported 0 files for %q (id %s)", media.Filename, media.ID)
 	}
 	if len(exported) > 1 {
-		logger.Log.Warn("icloud: Photos.app exported multiple files, using first",
+		logger.Log.Warn("icloud: Photos.app exported multiple files",
 			"count", len(exported), "id", media.ID)
 	}
 
-	srcPath := filepath.Join(absTmpDir, exported[0].Name())
+	selected := exported[0]
+	for _, e := range exported {
+		if strings.EqualFold(e.Name(), media.Filename) {
+			selected = e
+			break
+		}
+	}
+	srcPath := filepath.Join(absTmpDir, selected.Name())
 
 	// Ensure destination directory exists.
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
@@ -173,7 +201,8 @@ end timeout`, media.ID, absTmpDir)
 	if err := os.Rename(srcPath, localPath); err != nil {
 		logger.Log.Debug("icloud: rename failed, falling back to copy", "error", err)
 		if cpErr := copyFile(srcPath, localPath); cpErr != nil {
-			return fmt.Errorf("icloud: copy exported file: %w", cpErr)
+			os.Remove(localPath) //nolint:errcheck,gosec // remove partial file
+			return fmt.Errorf("icloud: failed to move exported file: rename=%w, copy=%v", err, cpErr)
 		}
 	}
 
@@ -187,18 +216,18 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer in.Close() //nolint:errcheck // read-only close
 
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
+		out.Close() //nolint:errcheck,gosec // best-effort close on copy failure
 		return err
 	}
-	return out.Sync()
+	return out.Close() // captures flush error
 }
 
 func (p *Provider) Disconnect() error {
