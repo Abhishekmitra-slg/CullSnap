@@ -173,13 +173,13 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
         loadAlbums(providerID);
     };
 
-    const handleMirror = async (albumID: string) => {
+    const handleMirror = async (albumID: string, albumTitle: string) => {
         if (!selectedProvider) return;
         setMirroring(albumID);
         setMirrorProgress(null);
         setError(null);
         try {
-            const localPath = await MirrorCloudAlbum(selectedProvider, albumID);
+            const localPath = await MirrorCloudAlbum(selectedProvider, albumID, albumTitle);
             if (!mountedRef.current) return;
             // If the backend returns the path directly (no event-based flow)
             if (localPath) {
@@ -436,7 +436,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                                         <button
                                             className="btn btn-gradient"
                                             style={{ fontSize: '0.75rem', padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4 }}
-                                            onClick={() => handleMirror(album.id)}
+                                            onClick={() => handleMirror(album.id, album.title)}
                                         >
                                             <FolderDown size={12} />
                                             Mirror & Open

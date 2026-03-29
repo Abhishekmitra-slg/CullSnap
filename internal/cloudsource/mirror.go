@@ -98,10 +98,15 @@ func (m *MirrorManager) MirrorAlbum(
 	var toDownload []RemoteMedia
 	for _, item := range mediaItems {
 		localPath := filepath.Join(mirrorDir, SanitizeID(item.ID)+filepath.Ext(item.Filename))
+		// Check both: metadata exists AND local file is actually on disk
 		meta, metaErr := m.store.GetCloudMediaMeta(localPath)
 		if metaErr == nil && !meta.RemoteUpdatedAt.Before(item.UpdatedAt) {
-			// Already mirrored and up to date
-			continue
+			if _, statErr := os.Stat(localPath); statErr == nil {
+				// Already mirrored, up to date, and file exists on disk
+				continue
+			}
+			// Metadata exists but file is missing — re-download
+			logger.Log.Info("mirror: file missing despite metadata, re-downloading", "file", item.Filename)
 		}
 		toDownload = append(toDownload, item)
 	}

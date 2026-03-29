@@ -74,8 +74,8 @@ func (a *App) ListCloudAlbums(providerID string) ([]cloudsource.Album, error) {
 
 // MirrorCloudAlbum downloads an album to a local mirror directory.
 // Returns the mirror directory path. Emits progress events.
-func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
-	logger.Log.Info("cloud: starting album mirror", "providerID", providerID, "albumID", albumID)
+func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, error) {
+	logger.Log.Info("cloud: starting album mirror", "providerID", providerID, "albumID", albumID, "title", albumTitle)
 	source, ok := a.cloudRegistry.Get(providerID)
 	if !ok {
 		return "", fmt.Errorf("unknown cloud provider: %s", providerID)
@@ -89,21 +89,11 @@ func (a *App) MirrorCloudAlbum(providerID, albumID string) (string, error) {
 		})
 	}
 
-	// Get album info for the mirror
-	emitStatus("Connecting to Photos...")
-	albums, err := source.ListAlbums(a.ctx)
-	if err != nil {
-		return "", err
-	}
-	var album cloudsource.Album
-	for _, alb := range albums {
-		if alb.ID == albumID {
-			album = alb
-			break
-		}
-	}
-	if album.ID == "" {
-		return "", fmt.Errorf("album %s not found", albumID)
+	// Build album struct from parameters — avoids redundant ListAlbums call
+	// which is expensive for AppleScript-based providers like iCloud (~30-40s)
+	album := cloudsource.Album{
+		ID:    albumID,
+		Title: albumTitle,
 	}
 
 	emitStatus("Reading album contents...")

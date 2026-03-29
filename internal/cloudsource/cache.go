@@ -140,7 +140,7 @@ func (c *CacheManager) GetCacheStats() (CacheStats, error) {
 	}, nil
 }
 
-// DeleteAlbum removes a cached album's files and its database record.
+// DeleteAlbum removes a cached album's files, mirror record, and media metadata.
 // Idempotent: returns nil if the album does not exist.
 func (c *CacheManager) DeleteAlbum(providerID, albumID string) error {
 	dir := filepath.Join(c.baseDir, SanitizeID(providerID), SanitizeID(albumID))
@@ -149,6 +149,10 @@ func (c *CacheManager) DeleteAlbum(providerID, albumID string) error {
 	}
 	if err := c.store.DeleteCloudMirror(providerID, albumID); err != nil {
 		return fmt.Errorf("cache: delete mirror record: %w", err)
+	}
+	// Clean up media metadata (staleness records) for files in this album
+	if err := c.store.DeleteCloudMediaMetaByPrefix(dir); err != nil {
+		logger.Log.Warn("cache: failed to clean media metadata", "dir", dir, "error", err)
 	}
 	logger.Log.Info("cache: deleted album", "provider", providerID, "album", albumID, "dir", dir)
 	return nil

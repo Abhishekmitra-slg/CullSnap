@@ -340,6 +340,19 @@ func (s *SQLiteStore) SaveCloudMediaMeta(localPath, remoteID, providerID string,
 	return nil
 }
 
+// DeleteCloudMediaMetaByPrefix removes all cloud media metadata entries whose
+// local_path starts with the given prefix. Used when deleting an album's cache.
+func (s *SQLiteStore) DeleteCloudMediaMetaByPrefix(pathPrefix string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`DELETE FROM cloud_media_meta WHERE local_path LIKE ?`, pathPrefix+"%")
+	if err != nil {
+		return fmt.Errorf("failed to delete cloud media meta by prefix: %w", err)
+	}
+	return nil
+}
+
 // GetCloudMediaMeta retrieves remote metadata for a local media file.
 func (s *SQLiteStore) GetCloudMediaMeta(localPath string) (CloudMediaMeta, error) {
 	s.mu.Lock()
