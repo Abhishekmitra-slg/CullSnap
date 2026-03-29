@@ -430,7 +430,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                                                 {album.title}
                                             </div>
                                             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                                {album.mediaCount} item{album.mediaCount !== 1 ? 's' : ''}
+                                                {album.mediaCount > 0 ? `${album.mediaCount} item${album.mediaCount !== 1 ? 's' : ''}` : 'Album'}
                                             </div>
                                         </div>
                                         <button
