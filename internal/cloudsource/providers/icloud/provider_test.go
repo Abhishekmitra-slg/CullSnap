@@ -3,9 +3,12 @@
 package icloud
 
 import (
+	"bytes"
+	"context"
 	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/logger"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -214,4 +217,87 @@ func TestProviderInterface(t *testing.T) {
 
 func TestProviderImplementsCloudSource(t *testing.T) {
 	var _ cloudsource.CloudSource = (*Provider)(nil)
+}
+
+func TestDownload_ExistingFile_Skips(t *testing.T) {
+	p := New(nil)
+	tmpFile := filepath.Join(t.TempDir(), "existing.jpg")
+	if err := os.WriteFile(tmpFile, []byte("photo data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	media := cloudsource.RemoteMedia{ID: "test-id", Filename: "IMG_001.jpg"}
+	err := p.Download(context.Background(), media, tmpFile, nil)
+	if err != nil {
+		t.Errorf("expected nil error for existing file, got: %v", err)
+	}
+}
+
+func TestIsSequentialDownload(t *testing.T) {
+	p := New(nil)
+	if !p.IsSequentialDownload() {
+		t.Error("iCloud provider should return true for IsSequentialDownload")
+	}
+}
+
+func TestCopyFile(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	srcPath := filepath.Join(srcDir, "source.jpg")
+	dstPath := filepath.Join(dstDir, "dest.jpg")
+	content := []byte("test photo content 12345")
+
+	if err := os.WriteFile(srcPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyFile(srcPath, dstPath); err != nil {
+		t.Fatalf("copyFile failed: %v", err)
+	}
+
+	got, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("content mismatch: got %q, want %q", string(got), string(content))
+	}
+
+	info, err := os.Stat(dstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("permissions = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestValidatePhotoID_Valid(t *testing.T) {
+	valid := []string{
+		"ABC-123",
+		"B18B4FDD-B235-4255-9CA6-C398E4E42D4A/L0/001",
+		"simple",
+		"with_underscore",
+	}
+	for _, id := range valid {
+		if err := validatePhotoID(id); err != nil {
+			t.Errorf("validatePhotoID(%q) returned unexpected error: %v", id, err)
+		}
+	}
+}
+
+func TestValidatePhotoID_Invalid(t *testing.T) {
+	invalid := []string{
+		`has"quote`,
+		"has space",
+		"has;semicolon",
+		"has\nnewline",
+		"",
+	}
+	for _, id := range invalid {
+		if err := validatePhotoID(id); err == nil {
+			t.Errorf("validatePhotoID(%q) expected error, got nil", id)
+		}
+	}
 }
