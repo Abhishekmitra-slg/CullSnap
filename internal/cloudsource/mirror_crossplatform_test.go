@@ -109,30 +109,6 @@ func TestNewMirrorManager_NegativeWorkers(t *testing.T) {
 	}
 }
 
-func TestCheckDiskSpace_ZeroUsage(t *testing.T) {
-	mm := &MirrorManager{
-		baseDir:    t.TempDir(),
-		maxCacheMB: 10,
-	}
-	// 5 MB request with 10 MB limit and empty dir should pass
-	err := mm.CheckDiskSpace(5 * 1024 * 1024)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestCheckDiskSpace_ExactLimit(t *testing.T) {
-	mm := &MirrorManager{
-		baseDir:    t.TempDir(),
-		maxCacheMB: 1,
-	}
-	// Exactly 1 MB should pass (empty dir + 1MB = 1MB limit)
-	err := mm.CheckDiskSpace(1 * 1024 * 1024)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestMirrorPath_Consistent(t *testing.T) {
 	mm := &MirrorManager{baseDir: "/cache/cloud"}
 	p1 := mm.MirrorPath("provider", "album")

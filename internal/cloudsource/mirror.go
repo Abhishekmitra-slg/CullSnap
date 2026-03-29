@@ -16,6 +16,7 @@ type MirrorManager struct {
 	store      *storage.SQLiteStore
 	maxCacheMB int
 	workers    int
+	Cache      *CacheManager
 }
 
 // NewMirrorManager creates a MirrorManager.
@@ -28,6 +29,7 @@ func NewMirrorManager(baseDir string, store *storage.SQLiteStore, maxCacheMB int
 		store:      store,
 		maxCacheMB: maxCacheMB,
 		workers:    workers,
+		Cache:      NewCacheManager(baseDir, store, maxCacheMB),
 	}
 }
 
@@ -56,37 +58,42 @@ func (m *MirrorManager) EnsureMirrorDir(providerID, albumID string) (string, err
 }
 
 // MirrorAlbum downloads missing/stale files from a cloud album to the local mirror.
-// Returns the mirror directory path. Emits progress via progressFn(downloaded, total, currentFile).
+// Returns the mirror directory path, any evicted albums, and an error.
+// Emits progress via progressFn(downloaded, total, currentFile).
 // Supports cancellation via ctx.
 func (m *MirrorManager) MirrorAlbum(
 	ctx context.Context,
 	source CloudSource,
 	album Album,
 	progressFn func(downloaded, total int, currentFile string),
-) (string, error) {
+) (string, []EvictedAlbum, error) {
 	providerID := source.ID()
 	mirrorDir, err := m.EnsureMirrorDir(providerID, album.ID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	// List remote media
 	mediaItems, err := source.ListMediaInAlbum(ctx, album.ID)
 	if err != nil {
-		return "", fmt.Errorf("mirror: list media failed: %w", err)
+		return "", nil, fmt.Errorf("mirror: list media failed: %w", err)
 	}
 
 	logger.Log.Debug("mirror: starting album mirror",
 		"provider", providerID, "album", album.Title,
 		"items", len(mediaItems), "mirrorDir", mirrorDir)
 
-	// Check disk space
+	// Evict stale albums if needed to free space
 	var totalBytes int64
 	for _, item := range mediaItems {
 		totalBytes += item.SizeBytes
 	}
-	if err := m.CheckDiskSpace(totalBytes); err != nil {
-		return mirrorDir, err // return mirrorDir so partial content is accessible
+	evicted, evictErr := m.Cache.EvictIfNeeded(totalBytes, providerID, album.ID)
+	if evictErr != nil {
+		return mirrorDir, evicted, evictErr
+	}
+	if len(evicted) > 0 {
+		logger.Log.Info("mirror: evicted albums to free space", "count", len(evicted))
 	}
 
 	// Filter to items needing download (not already mirrored or stale)
@@ -108,7 +115,7 @@ func (m *MirrorManager) MirrorAlbum(
 		if progressFn != nil {
 			progressFn(len(mediaItems), len(mediaItems), "")
 		}
-		return mirrorDir, nil
+		return mirrorDir, nil, nil
 	}
 
 	// Download with worker pool
@@ -166,28 +173,11 @@ func (m *MirrorManager) MirrorAlbum(
 	_ = m.store.SaveCloudMirror(providerID, album.ID, album.Title, mirrorDir)
 
 	if firstErr != nil {
-		return mirrorDir, fmt.Errorf("mirror: some downloads failed: %w", firstErr)
+		return mirrorDir, evicted, fmt.Errorf("mirror: some downloads failed: %w", firstErr)
 	}
 
 	logger.Log.Info("mirror: album mirrored", "provider", providerID, "album", album.Title, "files", len(mediaItems))
-	return mirrorDir, nil
-}
-
-// CheckDiskSpace verifies sufficient space for the estimated download.
-func (m *MirrorManager) CheckDiskSpace(estimatedBytes int64) error {
-	// Check against configured max cache size
-	currentUsage, err := m.DiskUsage()
-	if err != nil {
-		logger.Log.Warn("mirror: could not determine disk usage", "error", err)
-		return nil // proceed optimistically
-	}
-
-	maxBytes := int64(m.maxCacheMB) * 1024 * 1024
-	if currentUsage+estimatedBytes > maxBytes {
-		return fmt.Errorf("mirror: download (%d MB) would exceed cache limit (%d MB, %d MB used)",
-			estimatedBytes/(1024*1024), m.maxCacheMB, currentUsage/(1024*1024))
-	}
-	return nil
+	return mirrorDir, evicted, nil
 }
 
 // DiskUsage calculates total bytes used by the mirror directory.
