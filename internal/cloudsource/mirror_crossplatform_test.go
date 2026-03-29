@@ -1,6 +1,7 @@
 package cloudsource
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,5 +148,47 @@ func TestMirrorPath_DifferentAlbums(t *testing.T) {
 	p2 := mm.MirrorPath("provider", "album2")
 	if p1 == p2 {
 		t.Error("different albums should have different paths")
+	}
+}
+
+type mockCloudSource struct{}
+
+func (m *mockCloudSource) ID() string                           { return "mock" }
+func (m *mockCloudSource) DisplayName() string                  { return "Mock" }
+func (m *mockCloudSource) IsAvailable() bool                    { return true }
+func (m *mockCloudSource) Authenticate(_ context.Context) error { return nil }
+func (m *mockCloudSource) IsAuthenticated() bool                { return true }
+func (m *mockCloudSource) ListAlbums(_ context.Context) ([]Album, error) {
+	return nil, nil
+}
+
+func (m *mockCloudSource) ListMediaInAlbum(_ context.Context, _ string) ([]RemoteMedia, error) {
+	return nil, nil
+}
+
+func (m *mockCloudSource) Download(_ context.Context, _ RemoteMedia, _ string, _ func(int64, int64)) error {
+	return nil
+}
+func (m *mockCloudSource) Disconnect() error { return nil }
+
+type sequentialSource struct {
+	mockCloudSource
+}
+
+func (s *sequentialSource) IsSequentialDownload() bool { return true }
+
+func TestEffectiveWorkers_Default(t *testing.T) {
+	mm := NewMirrorManager("/tmp", nil, 100, 4)
+	src := &mockCloudSource{}
+	if w := mm.effectiveWorkers(src); w != 4 {
+		t.Errorf("effectiveWorkers = %d, want 4", w)
+	}
+}
+
+func TestEffectiveWorkers_Sequential(t *testing.T) {
+	mm := NewMirrorManager("/tmp", nil, 100, 4)
+	src := &sequentialSource{}
+	if w := mm.effectiveWorkers(src); w != 1 {
+		t.Errorf("effectiveWorkers = %d, want 1", w)
 	}
 }
