@@ -67,7 +67,7 @@ export function ListCachedAlbums():Promise<Array<cloudsource.CachedAlbum>>;
 
 export function ListCloudAlbums(arg1:string):Promise<Array<cloudsource.Album>>;
 
-export function MirrorCloudAlbum(arg1:string,arg2:string):Promise<string>;
+export function MirrorCloudAlbum(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function OpenFolderInFinder(arg1:string):Promise<void>;
 

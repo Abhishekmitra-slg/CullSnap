@@ -126,8 +126,8 @@ export function ListCloudAlbums(arg1) {
   return window['go']['app']['App']['ListCloudAlbums'](arg1);
 }
 
-export function MirrorCloudAlbum(arg1, arg2) {
-  return window['go']['app']['App']['MirrorCloudAlbum'](arg1, arg2);
+export function MirrorCloudAlbum(arg1, arg2, arg3) {
+  return window['go']['app']['App']['MirrorCloudAlbum'](arg1, arg2, arg3);
 }
 
 export function OpenFolderInFinder(arg1) {
