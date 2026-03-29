@@ -304,7 +304,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                     value={Math.round((config.maxCloudCacheMB || 10240) / 1024)}
                                     onChange={(e) => {
                                         const gb = parseInt(e.target.value);
-                                        const updated = { ...config, maxCloudCacheMB: gb * 1024 };
+                                        const updated = app.AppConfig.createFrom({ ...config, maxCloudCacheMB: gb * 1024 });
                                         setConfig(updated);
                                         SaveAppConfig(updated).catch(console.error);
                                     }}
