@@ -36,3 +36,6 @@ func (p *Provider) Download(_ context.Context, _ cloudsource.RemoteMedia, _ stri
 }
 
 func (p *Provider) Disconnect() error { return nil }
+
+// IsSequentialDownload mirrors the darwin implementation to satisfy the interface.
+func (p *Provider) IsSequentialDownload() bool { return true }

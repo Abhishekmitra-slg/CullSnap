@@ -72,3 +72,7 @@ func TestProviderStub_Download(t *testing.T) {
 func TestProviderImplementsCloudSourceInterface(t *testing.T) {
 	var _ cloudsource.CloudSource = (*Provider)(nil)
 }
+
+func TestProviderImplementsSequentialDownloader(t *testing.T) {
+	var _ cloudsource.SequentialDownloader = (*Provider)(nil)
+}

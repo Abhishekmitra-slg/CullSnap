@@ -31,6 +31,16 @@ func NewMirrorManager(baseDir string, store *storage.SQLiteStore, maxCacheMB int
 	}
 }
 
+// effectiveWorkers returns the worker count for a source. Sources that
+// implement SequentialDownloader with IsSequentialDownload() == true
+// are limited to 1 worker to avoid concurrent access issues.
+func (m *MirrorManager) effectiveWorkers(source CloudSource) int {
+	if seq, ok := source.(SequentialDownloader); ok && seq.IsSequentialDownload() {
+		return 1
+	}
+	return m.workers
+}
+
 // MirrorPath returns the local directory for a provider/album.
 func (m *MirrorManager) MirrorPath(providerID, albumID string) string {
 	return filepath.Join(m.baseDir, SanitizeID(providerID), SanitizeID(albumID))
@@ -110,7 +120,9 @@ func (m *MirrorManager) MirrorAlbum(
 	)
 
 	work := make(chan RemoteMedia, len(toDownload))
-	for i := 0; i < m.workers; i++ {
+	workers := m.effectiveWorkers(source)
+	logger.Log.Debug("mirror: using worker count", "workers", workers, "provider", providerID)
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -45,14 +45,16 @@ var updatePublicKey []byte
 var changelogMD string
 
 // version and Google Drive OAuth credentials are set at build time via ldflags:
-//   -X main.version=vX.Y.Z
-//   -X main.googleDriveClientID=<id>
-//   -X main.googleDriveClientSecret=<secret>
+//
+//	-X main.version=vX.Y.Z
+//	-X main.googleDriveClientID=<id>
+//	-X main.googleDriveClientSecret=<secret>
+//
 // For local development, set GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET env vars.
 var (
-	version                  = "dev"
-	googleDriveClientID      = "" // injected via ldflags in CI
-	googleDriveClientSecret  = "" // injected via ldflags in CI
+	version                 = "dev"
+	googleDriveClientID     = "" // injected via ldflags in CI
+	googleDriveClientSecret = "" // injected via ldflags in CI
 )
 
 type FileLoader struct {
