@@ -12,11 +12,10 @@ import (
 
 // MirrorManager handles downloading cloud files to local mirror directories.
 type MirrorManager struct {
-	baseDir    string // ~/.cache/CullSnap/cloud/
-	store      *storage.SQLiteStore
-	maxCacheMB int
-	workers    int
-	Cache      *CacheManager
+	baseDir string // ~/.cache/CullSnap/cloud/
+	store   *storage.SQLiteStore
+	workers int
+	Cache   *CacheManager
 }
 
 // NewMirrorManager creates a MirrorManager.
@@ -25,11 +24,10 @@ func NewMirrorManager(baseDir string, store *storage.SQLiteStore, maxCacheMB int
 		workers = 4
 	}
 	return &MirrorManager{
-		baseDir:    baseDir,
-		store:      store,
-		maxCacheMB: maxCacheMB,
-		workers:    workers,
-		Cache:      NewCacheManager(baseDir, store, maxCacheMB),
+		baseDir: baseDir,
+		store:   store,
+		workers: workers,
+		Cache:   NewCacheManager(baseDir, store, maxCacheMB),
 	}
 }
 

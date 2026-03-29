@@ -17,6 +17,9 @@ func TestSanitizeID(t *testing.T) {
 		{"file\x00name", "file_name"},
 		{"hello world", "hello_world"},
 		{"", "_"},
+		{"..", "_"},
+		{".", "_"},
+		{"../..", ".._.."},
 	}
 	for _, tt := range tests {
 		got := SanitizeID(tt.input)

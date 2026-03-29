@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, RotateCcw, Cloud, Trash2, Smartphone } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetCacheStats, ListCachedAlbums, DeleteCachedAlbum, ClearAllCache, GetMirrorStats, ClearCloudMirror, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetCacheStats, ListCachedAlbums, DeleteCachedAlbum, ClearAllCache, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -97,17 +97,22 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         }
     };
 
-    const handleClearImportCache = async (serial: string) => {
-        if (!window.confirm('Clear cached imports for this device? This will delete locally stored files.')) return;
-        setClearingImport(serial);
-        try {
-            await ClearImportCache(serial);
-            await loadImportStats();
-        } catch (e) {
-            console.error('[settings] failed to clear import cache:', e);
-        } finally {
-            setClearingImport(null);
-        }
+    const handleClearImportCache = (serial: string) => {
+        setConfirmAction({
+            message: 'Clear cached imports for this device? This will delete locally stored files.',
+            action: async () => {
+                setConfirmAction(null);
+                setClearingImport(serial);
+                try {
+                    await ClearImportCache(serial);
+                    await loadImportStats();
+                } catch (e) {
+                    console.error('[settings] failed to clear import cache:', e);
+                } finally {
+                    setClearingImport(null);
+                }
+            },
+        });
     };
 
     const formatBytes = (bytes: number): string => {
@@ -155,6 +160,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     <h2>Settings</h2>
                     <button className="btn icon-btn" onClick={onClose}><X size={16} /></button>
                 </div>
+
+                {/* Inline confirmation dialog (window.confirm doesn't work in WKWebView) */}
+                {confirmAction && (
+                    <div style={{
+                        background: 'var(--bg-panel)',
+                        border: '1px solid var(--danger)',
+                        borderRadius: 6,
+                        padding: '12px 16px',
+                        marginBottom: 12,
+                        fontSize: '0.85rem',
+                    }}>
+                        <div style={{ marginBottom: 10, color: 'var(--text-primary)' }}>{confirmAction.message}</div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button className="btn outline" style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                                onClick={() => setConfirmAction(null)}>
+                                Cancel
+                            </button>
+                            <button className="btn" style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
+                                onClick={confirmAction.action}>
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <section className="settings-section">
                     <h3>System Info</h3>
@@ -241,15 +270,18 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                     type="checkbox"
                                     checked={config.useNativeSips}
                                     onChange={(e) => {
-                                        if (!e.target.checked) {
-                                            if (!window.confirm(
-                                                'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. ' +
-                                                'Thumbnail generation for HEIC photos will take significantly longer.'
-                                            )) {
-                                                return;
-                                            }
+                                        const checked = e.target.checked;
+                                        if (!checked) {
+                                            setConfirmAction({
+                                                message: 'Are you sure? FFmpeg HEIC decoding is 3-5x slower than the native macOS decoder. Thumbnail generation for HEIC photos will take significantly longer.',
+                                                action: () => {
+                                                    setConfirmAction(null);
+                                                    setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: false }));
+                                                },
+                                            });
+                                            return;
                                         }
-                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: e.target.checked }));
+                                        setConfig(app.AppConfig.createFrom({ ...config, useNativeSips: true }));
                                     }}
                                     style={{ opacity: 0, width: 0, height: 0 }}
                                 />
@@ -286,30 +318,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         Cloud Storage
                     </h3>
 
-                    {/* Inline confirmation dialog (window.confirm doesn't work in WKWebView) */}
-                    {confirmAction && (
-                        <div style={{
-                            background: 'var(--bg-panel)',
-                            border: '1px solid var(--danger)',
-                            borderRadius: 6,
-                            padding: '12px 16px',
-                            marginBottom: 12,
-                            fontSize: '0.85rem',
-                        }}>
-                            <div style={{ marginBottom: 10, color: 'var(--text-primary)' }}>{confirmAction.message}</div>
-                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                                <button className="btn outline" style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                                    onClick={() => setConfirmAction(null)}>
-                                    Cancel
-                                </button>
-                                <button className="btn" style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
-                                    onClick={confirmAction.action}>
-                                    Confirm
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Usage bar */}
                     {mirrorStats && (
                         <div style={{ marginBottom: 12 }}>
@@ -340,8 +348,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                     value={Math.round((config.maxCloudCacheMB || 10240) / 1024)}
                                     onChange={(e) => {
                                         const gb = parseInt(e.target.value);
+                                        setConfig(app.AppConfig.createFrom({ ...config, maxCloudCacheMB: gb * 1024 }));
+                                    }}
+                                    onPointerUp={(e) => {
+                                        const gb = parseInt((e.target as HTMLInputElement).value);
                                         const updated = app.AppConfig.createFrom({ ...config, maxCloudCacheMB: gb * 1024 });
-                                        setConfig(updated);
                                         SaveAppConfig(updated).catch(console.error);
                                     }}
                                     style={{ flex: 1 }}
@@ -376,7 +387,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                             {album.albumTitle}
                                         </div>
                                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                                            {album.providerID === 'icloud' ? 'iCloud Photos' : 'Google Drive'}
+                                            {album.providerID === 'icloud' ? 'iCloud Photos' : album.providerID === 'google_drive' ? 'Google Drive' : album.providerID}
                                             {' \u00B7 '}
                                             {formatBytes(album.sizeBytes || 0)}, {album.fileCount || 0} files
                                             {' \u00B7 Synced '}
