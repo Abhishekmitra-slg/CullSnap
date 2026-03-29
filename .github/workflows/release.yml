@@ -232,6 +232,14 @@ jobs:
             | sed 's/^## ✨ /## /; s/^## 🏗️ /## /; s/^## 🛠️ /## /; s/^## 🎮 /## /; s/^## 📷 /## /; s/^## 📁 /## /; s/^## 🔒 /## /; s/^## 🤝 /## /; s/^## 📄 /## /; s/^## ⚖️ /## /' \
             | sed 's/^### 🍎 /### /' \
             >> docs/index.md
+          cat >> docs/index.md << 'LEGAL'
+
+---
+
+<div class="legal-footer">
+  <a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a>
+</div>
+LEGAL
 
       - name: Create pull request
         env:

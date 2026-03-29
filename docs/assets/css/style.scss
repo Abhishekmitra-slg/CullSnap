@@ -79,3 +79,20 @@ footer {
   font-size: 0.85em;
   opacity: 0.85;
 }
+
+/* Legal footer — privacy policy and terms links */
+.legal-footer {
+  text-align: center;
+  padding: 1.5em 0 0.5em;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.legal-footer a {
+  color: #4183c4;
+  text-decoration: none;
+}
+
+.legal-footer a:hover {
+  text-decoration: underline;
+}
