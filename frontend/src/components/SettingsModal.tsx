@@ -38,30 +38,40 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         }
     };
 
-    const handleClearAllMirrors = async () => {
-        if (!window.confirm('Clear all cached cloud albums? This cannot be undone.')) return;
-        setClearingMirrors(true);
-        try {
-            await ClearAllCache();
-        } catch (e) {
-            console.error('[settings] failed to clear cache:', e);
-            alert('Failed to clear cache. Check logs for details.');
-        }
-        await loadMirrorStats();
-        setClearingMirrors(false);
+    const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null);
+
+    const handleClearAllMirrors = () => {
+        setConfirmAction({
+            message: 'Clear all cached cloud albums? Files can be re-mirrored later.',
+            action: async () => {
+                setConfirmAction(null);
+                setClearingMirrors(true);
+                try {
+                    await ClearAllCache();
+                } catch (e) {
+                    console.error('[settings] failed to clear cache:', e);
+                }
+                await loadMirrorStats();
+                setClearingMirrors(false);
+            },
+        });
     };
 
-    const handleDeleteAlbum = async (providerID: string, albumID: string, title: string) => {
-        if (!window.confirm(`Remove cached files for "${title}"?`)) return;
-        setDeletingAlbum(albumID);
-        try {
-            await DeleteCachedAlbum(providerID, albumID);
-        } catch (e) {
-            console.error('[settings] failed to delete album:', e);
-            alert(`Failed to delete "${title}". Check logs for details.`);
-        }
-        await loadMirrorStats();
-        setDeletingAlbum(null);
+    const handleDeleteAlbum = (providerID: string, albumID: string, title: string) => {
+        setConfirmAction({
+            message: `Remove cached files for "${title}"? You can re-mirror later.`,
+            action: async () => {
+                setConfirmAction(null);
+                setDeletingAlbum(albumID);
+                try {
+                    await DeleteCachedAlbum(providerID, albumID);
+                } catch (e) {
+                    console.error('[settings] failed to delete album:', e);
+                }
+                await loadMirrorStats();
+                setDeletingAlbum(null);
+            },
+        });
     };
 
     const relativeTime = (dateStr: string): string => {
@@ -275,6 +285,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         <Cloud size={14} />
                         Cloud Storage
                     </h3>
+
+                    {/* Inline confirmation dialog (window.confirm doesn't work in WKWebView) */}
+                    {confirmAction && (
+                        <div style={{
+                            background: 'var(--bg-panel)',
+                            border: '1px solid var(--danger)',
+                            borderRadius: 6,
+                            padding: '12px 16px',
+                            marginBottom: 12,
+                            fontSize: '0.85rem',
+                        }}>
+                            <div style={{ marginBottom: 10, color: 'var(--text-primary)' }}>{confirmAction.message}</div>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                <button className="btn outline" style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                                    onClick={() => setConfirmAction(null)}>
+                                    Cancel
+                                </button>
+                                <button className="btn" style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'var(--danger)', borderColor: 'var(--danger)' }}
+                                    onClick={confirmAction.action}>
+                                    Confirm
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Usage bar */}
                     {mirrorStats && (
