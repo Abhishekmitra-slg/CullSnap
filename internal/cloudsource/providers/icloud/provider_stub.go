@@ -36,3 +36,5 @@ func (p *Provider) Download(_ context.Context, _ cloudsource.RemoteMedia, _ stri
 }
 
 func (p *Provider) Disconnect() error { return nil }
+
+func (p *Provider) IsSequentialDownload() bool { return true }
