@@ -25,14 +25,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
     const loadMirrorStats = async () => {
         try {
-            const [stats, albums] = await Promise.all([
-                GetCacheStats(),
-                ListCachedAlbums(),
-            ]);
+            const stats = await GetCacheStats();
             setMirrorStats(stats);
-            setCachedAlbums(albums || []);
         } catch (e) {
             console.error('[settings] failed to load cache stats:', e);
+        }
+        try {
+            const albums = await ListCachedAlbums();
+            setCachedAlbums(albums || []);
+        } catch (e) {
+            console.error('[settings] failed to load cached albums:', e);
         }
     };
 
@@ -41,12 +43,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         setClearingMirrors(true);
         try {
             await ClearAllCache();
-            await loadMirrorStats();
         } catch (e) {
             console.error('[settings] failed to clear cache:', e);
-        } finally {
-            setClearingMirrors(false);
+            alert('Failed to clear cache. Check logs for details.');
         }
+        await loadMirrorStats();
+        setClearingMirrors(false);
     };
 
     const handleDeleteAlbum = async (providerID: string, albumID: string, title: string) => {
@@ -54,12 +56,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         setDeletingAlbum(albumID);
         try {
             await DeleteCachedAlbum(providerID, albumID);
-            await loadMirrorStats();
         } catch (e) {
             console.error('[settings] failed to delete album:', e);
-        } finally {
-            setDeletingAlbum(null);
+            alert(`Failed to delete "${title}". Check logs for details.`);
         }
+        await loadMirrorStats();
+        setDeletingAlbum(null);
     };
 
     const relativeTime = (dateStr: string): string => {
@@ -369,7 +371,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         className="btn outline"
                         style={{ fontSize: '0.8rem' }}
                         onClick={handleClearAllMirrors}
-                        disabled={clearingMirrors || cachedAlbums.length === 0}
+                        disabled={clearingMirrors || (cachedAlbums.length === 0 && (!mirrorStats || mirrorStats.albumCount === 0))}
                     >
                         <Trash2 size={12} />
                         {clearingMirrors ? 'Clearing...' : 'Clear All Cache'}

@@ -265,6 +265,11 @@ func (a *App) SaveAppConfig(cfg AppConfig) error {
 	cfg.Probe = a.cfg.Probe
 	a.cfg = &cfg
 	a.persistConfig(&cfg)
+
+	// Propagate cache limit change to the live CacheManager
+	if a.mirrorManager != nil && a.mirrorManager.Cache != nil {
+		a.mirrorManager.Cache.SetMaxCacheMB(cfg.MaxCloudCacheMB)
+	}
 	return nil
 }
 
