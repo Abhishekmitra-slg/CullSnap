@@ -13,26 +13,26 @@ import (
 
 // CachedAlbum represents a cloud album cached on disk.
 type CachedAlbum struct {
-	ProviderID string    `json:"provider_id"`
-	AlbumID    string    `json:"album_id"`
-	AlbumTitle string    `json:"album_title"`
+	ProviderID string    `json:"providerID"`
+	AlbumID    string    `json:"albumID"`
+	AlbumTitle string    `json:"albumTitle"`
 	LocalPath  string    `json:"-"`
-	SizeBytes  int64     `json:"size_bytes"`
-	FileCount  int       `json:"file_count"`
-	SyncedAt   time.Time `json:"synced_at"`
+	SizeBytes  int64     `json:"sizeBytes"`
+	FileCount  int       `json:"fileCount"`
+	SyncedAt   time.Time `json:"syncedAt"`
 }
 
 // CacheStats summarises overall cloud cache usage.
 type CacheStats struct {
-	TotalBytes int64 `json:"total_bytes"`
-	AlbumCount int   `json:"album_count"`
-	LimitBytes int64 `json:"limit_bytes"`
+	TotalBytes int64 `json:"totalBytes"`
+	AlbumCount int   `json:"albumCount"`
+	LimitBytes int64 `json:"limitBytes"`
 }
 
 // EvictedAlbum records an album removed during LRU eviction.
 type EvictedAlbum struct {
-	AlbumTitle string `json:"album_title"`
-	SizeBytes  int64  `json:"size_bytes"`
+	AlbumTitle string `json:"albumTitle"`
+	SizeBytes  int64  `json:"sizeBytes"`
 }
 
 // CacheManager provides disk-usage tracking, listing and LRU eviction for

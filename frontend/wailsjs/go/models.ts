@@ -294,9 +294,9 @@ export namespace cloudsource {
 		}
 	}
 	export class CacheStats {
-	    total_bytes: number;
-	    album_count: number;
-	    limit_bytes: number;
+	    totalBytes: number;
+	    albumCount: number;
+	    limitBytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new CacheStats(source);
@@ -304,19 +304,19 @@ export namespace cloudsource {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.total_bytes = source["total_bytes"];
-	        this.album_count = source["album_count"];
-	        this.limit_bytes = source["limit_bytes"];
+	        this.totalBytes = source["totalBytes"];
+	        this.albumCount = source["albumCount"];
+	        this.limitBytes = source["limitBytes"];
 	    }
 	}
 	export class CachedAlbum {
-	    provider_id: string;
-	    album_id: string;
-	    album_title: string;
-	    size_bytes: number;
-	    file_count: number;
+	    providerID: string;
+	    albumID: string;
+	    albumTitle: string;
+	    sizeBytes: number;
+	    fileCount: number;
 	    // Go type: time
-	    synced_at: any;
+	    syncedAt: any;
 	
 	    static createFrom(source: any = {}) {
 	        return new CachedAlbum(source);
@@ -324,12 +324,12 @@ export namespace cloudsource {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.provider_id = source["provider_id"];
-	        this.album_id = source["album_id"];
-	        this.album_title = source["album_title"];
-	        this.size_bytes = source["size_bytes"];
-	        this.file_count = source["file_count"];
-	        this.synced_at = this.convertValues(source["synced_at"], null);
+	        this.providerID = source["providerID"];
+	        this.albumID = source["albumID"];
+	        this.albumTitle = source["albumTitle"];
+	        this.sizeBytes = source["sizeBytes"];
+	        this.fileCount = source["fileCount"];
+	        this.syncedAt = this.convertValues(source["syncedAt"], null);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
