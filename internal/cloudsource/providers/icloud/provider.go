@@ -8,6 +8,7 @@ import (
 	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/logger"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,49 +101,104 @@ end tell`, albumID)
 	return media, nil
 }
 
-// Download checks if the file already exists at localPath (placed there by
-// ExportAlbum), and returns nil if so. If the file does not exist, it returns
-// an error indicating that ExportAlbum should be called first.
-func (p *Provider) Download(_ context.Context, media cloudsource.RemoteMedia, localPath string, _ func(int64, int64)) error {
+// IsSequentialDownload implements cloudsource.SequentialDownloader. Photos.app
+// serializes AppleScript commands and is unreliable with concurrent access.
+func (p *Provider) IsSequentialDownload() bool { return true }
+
+// Download exports a single media item from Photos.app to localPath via
+// AppleScript. If the file already exists it is treated as up-to-date and
+// the call returns nil (idempotent).
+func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, localPath string, _ func(int64, int64)) error {
+	// Idempotent: skip if already downloaded.
 	if _, err := os.Stat(localPath); err == nil {
-		logger.Log.Debug("icloud: file already exists (from bulk export)", "path", localPath)
+		logger.Log.Debug("icloud: file already exists, skipping", "path", localPath)
 		return nil
 	}
-	return fmt.Errorf("icloud: file %q not found at %s — call ExportAlbum first", media.Filename, localPath)
-}
 
-// ExportAlbum performs a bulk export of all media items in an album to destDir
-// using Photos.app's native export. This is the primary export mechanism for
-// iCloud since Photos.app exports are inherently bulk operations.
-func (p *Provider) ExportAlbum(ctx context.Context, albumID, destDir string) error {
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return fmt.Errorf("icloud: failed to create export dir: %w", err)
-	}
-
-	absDir, err := filepath.Abs(destDir)
+	// Create an isolated temp dir for the export.
+	tmpDir, err := os.MkdirTemp("", "cullsnap-icloud-export-*")
 	if err != nil {
-		return fmt.Errorf("icloud: failed to resolve export dir: %w", err)
+		return fmt.Errorf("icloud: create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	absTmpDir, err := filepath.Abs(tmpDir)
+	if err != nil {
+		return fmt.Errorf("icloud: resolve temp dir: %w", err)
 	}
 
 	script := fmt.Sprintf(`
-tell application "Photos"
-	set targetAlbum to album id %q
-	set targetItems to media items of targetAlbum
-	if (count of targetItems) = 0 then
-		return "0"
-	end if
-	export targetItems to POSIX file %q with using originals
-	return (count of targetItems) as text
-end tell`, albumID, absDir)
+with timeout of 300 seconds
+	tell application "Photos"
+		set targetItem to media item id %q
+		export {targetItem} to POSIX file %q with using originals
+	end tell
+end timeout`, media.ID, absTmpDir)
 
-	output, err := runOsascript(ctx, script)
-	if err != nil {
-		return fmt.Errorf("icloud: export failed for album %s: %w", albumID, err)
+	logger.Log.Debug("icloud: exporting media item", "id", media.ID, "filename", media.Filename)
+
+	if _, err := runOsascript(ctx, script); err != nil {
+		return fmt.Errorf("icloud: export failed for %q (id %s): %w", media.Filename, media.ID, err)
 	}
 
-	count := strings.TrimSpace(output)
-	logger.Log.Info("icloud: exported album", "albumID", albumID, "destDir", absDir, "count", count)
+	// Read exported files, filtering hidden entries (.DS_Store, etc.).
+	entries, err := os.ReadDir(absTmpDir)
+	if err != nil {
+		return fmt.Errorf("icloud: read temp dir: %w", err)
+	}
+
+	var exported []os.DirEntry
+	for _, e := range entries {
+		if !e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			exported = append(exported, e)
+		}
+	}
+
+	if len(exported) == 0 {
+		return fmt.Errorf("icloud: Photos.app exported 0 files for %q (id %s)", media.Filename, media.ID)
+	}
+	if len(exported) > 1 {
+		logger.Log.Warn("icloud: Photos.app exported multiple files, using first",
+			"count", len(exported), "id", media.ID)
+	}
+
+	srcPath := filepath.Join(absTmpDir, exported[0].Name())
+
+	// Ensure destination directory exists.
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
+		return fmt.Errorf("icloud: create dest dir: %w", err)
+	}
+
+	// Prefer rename (atomic, fast); fall back to copy for cross-filesystem moves.
+	if err := os.Rename(srcPath, localPath); err != nil {
+		logger.Log.Debug("icloud: rename failed, falling back to copy", "error", err)
+		if cpErr := copyFile(srcPath, localPath); cpErr != nil {
+			return fmt.Errorf("icloud: copy exported file: %w", cpErr)
+		}
+	}
+
+	logger.Log.Debug("icloud: exported media item", "id", media.ID, "path", localPath)
 	return nil
+}
+
+// copyFile copies src to dst using buffered I/O.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 func (p *Provider) Disconnect() error {
