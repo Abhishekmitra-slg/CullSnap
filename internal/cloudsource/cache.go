@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,22 +40,23 @@ type EvictedAlbum struct {
 type CacheManager struct {
 	baseDir    string
 	store      *storage.SQLiteStore
-	maxCacheMB int
+	maxCacheMB atomic.Int64
 }
 
 // NewCacheManager creates a CacheManager.
 func NewCacheManager(baseDir string, store *storage.SQLiteStore, maxCacheMB int) *CacheManager {
-	return &CacheManager{
-		baseDir:    baseDir,
-		store:      store,
-		maxCacheMB: maxCacheMB,
+	cm := &CacheManager{
+		baseDir: baseDir,
+		store:   store,
 	}
+	cm.maxCacheMB.Store(int64(maxCacheMB))
+	return cm
 }
 
 // SetMaxCacheMB updates the cache size limit.
 func (c *CacheManager) SetMaxCacheMB(mb int) {
-	c.maxCacheMB = mb
-	logger.Log.Debug("cache: updated max cache size", "maxCacheMB", mb)
+	c.maxCacheMB.Store(int64(mb))
+	logger.Log.Debug("cache: limit updated", "maxCacheMB", mb)
 }
 
 // AlbumDiskUsage returns the total bytes and file count for a cached album directory.
@@ -134,7 +136,7 @@ func (c *CacheManager) GetCacheStats() (CacheStats, error) {
 	return CacheStats{
 		TotalBytes: total,
 		AlbumCount: len(albums),
-		LimitBytes: int64(c.maxCacheMB) * 1024 * 1024,
+		LimitBytes: c.maxCacheMB.Load() * 1024 * 1024,
 	}, nil
 }
 
@@ -158,13 +160,15 @@ func (c *CacheManager) ClearAll() error {
 	if err != nil {
 		return err
 	}
+	var lastErr error
 	for _, a := range albums {
 		if delErr := c.DeleteAlbum(a.ProviderID, a.AlbumID); delErr != nil {
-			return delErr
+			logger.Log.Error("cache: failed to delete album during clear-all",
+				"album", a.AlbumTitle, "error", delErr)
+			lastErr = delErr
 		}
 	}
-	logger.Log.Info("cache: cleared all albums", "count", len(albums))
-	return nil
+	return lastErr
 }
 
 // EvictIfNeeded frees space using LRU eviction until currentUsage + requiredBytes
@@ -182,7 +186,7 @@ func (c *CacheManager) EvictIfNeeded(requiredBytes int64, excludeProviderID, exc
 		currentUsage += a.SizeBytes
 	}
 
-	limitBytes := int64(c.maxCacheMB) * 1024 * 1024
+	limitBytes := c.maxCacheMB.Load() * 1024 * 1024
 	if currentUsage+requiredBytes <= limitBytes {
 		return nil, nil // enough space
 	}
@@ -208,7 +212,7 @@ func (c *CacheManager) EvictIfNeeded(requiredBytes int64, excludeProviderID, exc
 			AlbumTitle: a.AlbumTitle,
 			SizeBytes:  a.SizeBytes,
 		})
-		logger.Log.Info("cache: evicted album", "title", a.AlbumTitle, "freed", a.SizeBytes)
+		logger.Log.Info("cache: evicted album (LRU)", "album", a.AlbumTitle, "sizeBytes", a.SizeBytes)
 		if freed >= needed {
 			return evicted, nil
 		}

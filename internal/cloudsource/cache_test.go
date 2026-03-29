@@ -13,16 +13,16 @@ func TestNewCacheManager(t *testing.T) {
 	if cm.baseDir != "/tmp/test" {
 		t.Errorf("baseDir = %q, want /tmp/test", cm.baseDir)
 	}
-	if cm.maxCacheMB != 512 {
-		t.Errorf("maxCacheMB = %d, want 512", cm.maxCacheMB)
+	if cm.maxCacheMB.Load() != 512 {
+		t.Errorf("maxCacheMB = %d, want 512", cm.maxCacheMB.Load())
 	}
 }
 
 func TestSetMaxCacheMB(t *testing.T) {
 	cm := NewCacheManager("/tmp/test", nil, 512)
 	cm.SetMaxCacheMB(1024)
-	if cm.maxCacheMB != 1024 {
-		t.Errorf("maxCacheMB = %d, want 1024", cm.maxCacheMB)
+	if cm.maxCacheMB.Load() != 1024 {
+		t.Errorf("maxCacheMB = %d, want 1024", cm.maxCacheMB.Load())
 	}
 }
 
@@ -122,15 +122,23 @@ func TestDeleteAlbum(t *testing.T) {
 }
 
 func TestDeleteAlbum_Idempotent(t *testing.T) {
-	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "test.db"))
+	base := t.TempDir()
+	dbPath := filepath.Join(base, "test.db")
+	store, err := storage.NewSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
-	cm := NewCacheManager(t.TempDir(), store, 512)
-	if err := cm.DeleteAlbum("nonexistent", "nope"); err != nil {
-		t.Fatalf("expected no error for non-existent album, got: %v", err)
+	cm := NewCacheManager(base, store, 100)
+	// Deleting a non-existent album should not error
+	if err := cm.DeleteAlbum("nonexistent", "album"); err != nil {
+		t.Errorf("expected nil error for idempotent delete, got: %v", err)
+	}
+	// DB should still have no record
+	_, getErr := store.GetCloudMirror("nonexistent", "album")
+	if getErr == nil {
+		t.Error("expected error getting non-existent mirror after delete")
 	}
 }
 
