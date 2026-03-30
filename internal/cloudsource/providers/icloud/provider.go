@@ -23,6 +23,14 @@ import (
 // Rejecting other characters prevents AppleScript injection.
 var validPhotoIDRe = regexp.MustCompile(`^[A-Za-z0-9\-/_]+$`)
 
+// maxDownloadAttempts is the number of times to attempt a single photo export
+// before giving up. Exponential backoff is applied between attempts.
+const maxDownloadAttempts = 3
+
+// downloadBackoffSeconds defines the wait time (seconds) before each retry attempt.
+// downloadBackoffSeconds[0] is the wait before attempt 2, [1] before attempt 3, etc.
+var downloadBackoffSeconds = []int{1, 3, 9}
+
 func validatePhotoID(id string) error {
 	if !validPhotoIDRe.MatchString(id) {
 		return fmt.Errorf("icloud: invalid media ID: %q", id)
@@ -227,8 +235,9 @@ func (p *Provider) ListMediaInAlbum(ctx context.Context, albumID string) ([]clou
 func (p *Provider) IsSequentialDownload() bool { return true }
 
 // Download exports a single media item from Photos.app to localPath via
-// AppleScript. If the file already exists it is treated as up-to-date and
-// the call returns nil (idempotent).
+// AppleScript. Up to maxDownloadAttempts are made with exponential backoff
+// (downloadBackoffSeconds). If the file already exists it is treated as
+// up-to-date and the call returns nil (idempotent).
 func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, localPath string, _ func(int64, int64)) error {
 	if err := validatePhotoID(media.ID); err != nil {
 		return err
@@ -240,6 +249,58 @@ func (p *Provider) Download(ctx context.Context, media cloudsource.RemoteMedia, 
 		return nil
 	}
 
+	var lastErr error
+	for attempt := 1; attempt <= maxDownloadAttempts; attempt++ {
+		// Respect context cancellation before each attempt.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		logger.Log.Debug("icloud: export attempt",
+			"file", media.Filename, "id", media.ID,
+			"attempt", fmt.Sprintf("%d/%d", attempt, maxDownloadAttempts))
+
+		lastErr = p.downloadOnce(ctx, media, localPath)
+		if lastErr == nil {
+			logger.Log.Debug("icloud: exported media item", "id", media.ID, "path", localPath)
+			return nil
+		}
+
+		logger.Log.Error("icloud: export failed",
+			"file", media.Filename, "id", media.ID,
+			"attempt", fmt.Sprintf("%d/%d", attempt, maxDownloadAttempts),
+			"reason", lastErr)
+
+		if attempt < maxDownloadAttempts {
+			backoff := downloadBackoffSeconds[attempt-1]
+			logger.Log.Debug("icloud: retrying export",
+				"file", media.Filename, "id", media.ID,
+				"attempt", fmt.Sprintf("%d/%d", attempt+1, maxDownloadAttempts),
+				"backoff", fmt.Sprintf("%ds", backoff))
+			timer := time.NewTimer(time.Duration(backoff) * time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+
+	logger.Log.Error("icloud: export permanently failed",
+		"file", media.Filename, "id", media.ID,
+		"attempts", maxDownloadAttempts,
+		"reason", lastErr)
+	return fmt.Errorf("icloud: export permanently failed for %q (id %s) after %d attempts: %w",
+		media.Filename, media.ID, maxDownloadAttempts, lastErr)
+}
+
+// downloadOnce performs a single export attempt using AppleScript. It creates
+// an isolated temp directory per attempt so partial results from previous
+// attempts do not interfere.
+func (p *Provider) downloadOnce(ctx context.Context, media cloudsource.RemoteMedia, localPath string) error {
 	// Create an isolated temp dir for the export.
 	tmpDir, err := os.MkdirTemp("", "cullsnap-icloud-export-*")
 	if err != nil {
@@ -259,8 +320,6 @@ with timeout of 300 seconds
 		export {targetItem} to POSIX file %q with using originals
 	end tell
 end timeout`, media.ID, absTmpDir)
-
-	logger.Log.Debug("icloud: exporting media item", "id", media.ID, "filename", media.Filename)
 
 	if _, err := runOsascript(ctx, script); err != nil {
 		return fmt.Errorf("icloud: export failed for %q (id %s): %w", media.Filename, media.ID, err)
@@ -310,7 +369,6 @@ end timeout`, media.ID, absTmpDir)
 		}
 	}
 
-	logger.Log.Debug("icloud: exported media item", "id", media.ID, "path", localPath)
 	return nil
 }
 

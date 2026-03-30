@@ -7,6 +7,7 @@ import (
 	"context"
 	"cullsnap/internal/cloudsource"
 	"cullsnap/internal/logger"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -422,6 +423,84 @@ func TestBuildPageRanges(t *testing.T) {
 		if last[0] != tc.last[0] || last[1] != tc.last[1] {
 			t.Errorf("total=%d: last range got [%d,%d], want [%d,%d]",
 				tc.total, last[0], last[1], tc.last[0], tc.last[1])
+		}
+	}
+}
+
+// attemptLog records calls to a simulated export function.
+type attemptLog struct {
+	calls     int
+	failUntil int // fail for calls < failUntil, succeed after
+}
+
+func (a *attemptLog) try() error {
+	a.calls++
+	if a.calls < a.failUntil {
+		return fmt.Errorf("icloud: Photos.app exported 0 files for %q (id %s)", "IMG.HEIC", "abc")
+	}
+	return nil
+}
+
+func TestRetryLogic_SucceedsOnFirstAttempt(t *testing.T) {
+	log := &attemptLog{failUntil: 0} // always succeed
+	var err error
+	for attempt := 1; attempt <= maxDownloadAttempts; attempt++ {
+		err = log.try()
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if log.calls != 1 {
+		t.Fatalf("expected 1 call, got %d", log.calls)
+	}
+}
+
+func TestRetryLogic_SucceedsOnThirdAttempt(t *testing.T) {
+	log := &attemptLog{failUntil: 3} // fail attempts 1 and 2, succeed on 3
+	var err error
+	for attempt := 1; attempt <= maxDownloadAttempts; attempt++ {
+		err = log.try()
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("expected success on attempt 3, got: %v", err)
+	}
+	if log.calls != 3 {
+		t.Fatalf("expected 3 calls, got %d", log.calls)
+	}
+}
+
+func TestRetryLogic_ExhaustsAllAttempts(t *testing.T) {
+	log := &attemptLog{failUntil: 999} // always fail
+	var err error
+	for attempt := 1; attempt <= maxDownloadAttempts; attempt++ {
+		err = log.try()
+		if err == nil {
+			break
+		}
+	}
+	if err == nil {
+		t.Fatal("expected permanent failure, got nil")
+	}
+	if log.calls != maxDownloadAttempts {
+		t.Fatalf("expected %d calls, got %d", maxDownloadAttempts, log.calls)
+	}
+}
+
+func TestRetryBackoffDelays(t *testing.T) {
+	expected := []int{1, 3, 9}
+	delays := downloadBackoffSeconds
+	if len(delays) != len(expected) {
+		t.Fatalf("expected %d backoff delays, got %d", len(expected), len(delays))
+	}
+	for i, d := range expected {
+		if delays[i] != d {
+			t.Errorf("delay[%d]: got %d, want %d", i, delays[i], d)
 		}
 	}
 }
