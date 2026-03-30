@@ -124,7 +124,7 @@ export function Sidebar({
                     Cloud Albums
                 </button>
 
-                {probe?.OS === 'darwin' && onOpenDeviceImport && (
+                {(probe?.OS === 'darwin' || probe?.OS === 'windows') && onOpenDeviceImport && (
                     <button className="btn w-full mt-2" onClick={onOpenDeviceImport}>
                         <Smartphone size={16} />
                         Import from Device

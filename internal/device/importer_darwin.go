@@ -59,6 +59,3 @@ func ImportFromDevice(ctx context.Context, serial, baseDir string) (string, int,
 	logger.Log.Info("device: import complete", "serial", serial, "files", count)
 	return importDir, count, nil
 }
-
-// countFiles returns the number of non-directory entries in dir.
-// countFiles is in utils.go (shared, cross-platform)
