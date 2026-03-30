@@ -113,7 +113,7 @@ func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, 
 	}()
 
 	// Start mirror with progress events
-	mirrorDir, evicted, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
+	result, err := a.mirrorManager.MirrorAlbum(ctx, source, album, func(downloaded, total int, currentFile string) {
 		logger.Log.Debug("cloud: mirror progress", "providerID", providerID, "albumID", albumID,
 			"downloaded", downloaded, "total", total, "file", currentFile)
 		runtime.EventsEmit(a.ctx, "cloud-download-progress", map[string]interface{}{
@@ -126,8 +126,8 @@ func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, 
 	})
 
 	// Notify frontend of evictions
-	if len(evicted) > 0 {
-		runtime.EventsEmit(a.ctx, "cloud-cache-evicted", evicted)
+	if len(result.Evicted) > 0 {
+		runtime.EventsEmit(a.ctx, "cloud-cache-evicted", result.Evicted)
 	}
 
 	if err != nil {
@@ -138,23 +138,30 @@ func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, 
 			"error":    err.Error(),
 		})
 		// Still return mirrorDir — partial content may be usable
-		if mirrorDir != "" {
-			a.OnAllowDir(mirrorDir)
+		if result.Dir != "" {
+			a.OnAllowDir(result.Dir)
 		}
-		return mirrorDir, err
+		return result.Dir, err
 	}
 
 	// Register mirror dir with media server
-	a.OnAllowDir(mirrorDir)
+	a.OnAllowDir(result.Dir)
 
-	logger.Log.Info("cloud: album mirrored successfully", "providerID", providerID, "albumID", albumID, "path", mirrorDir)
+	if result.Failed > 0 {
+		logger.Log.Warn("cloud: album mirrored with partial failures",
+			"providerID", providerID, "albumID", albumID,
+			"succeeded", result.Succeeded, "failed", result.Failed, "path", result.Dir)
+	} else {
+		logger.Log.Info("cloud: album mirrored successfully", "providerID", providerID, "albumID", albumID, "path", result.Dir)
+	}
+
 	runtime.EventsEmit(a.ctx, "cloud-download-complete", map[string]string{
 		"provider": providerID,
 		"albumID":  albumID,
-		"path":     mirrorDir,
+		"path":     result.Dir,
 	})
 
-	return mirrorDir, nil
+	return result.Dir, nil
 }
 
 // CancelMirror cancels an in-progress mirror download.
