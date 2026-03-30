@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Cloud, RefreshCw, FolderDown, LogOut, Loader } from 'lucide-react';
+import { X, Cloud, RefreshCw, FolderDown, LogOut, Loader, Check, AlertTriangle, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import {
     GetCloudSources,
     AuthenticateCloudSource,
@@ -38,6 +38,18 @@ interface MirrorProgress {
     phase: string;
 }
 
+interface MirrorResultData {
+    provider: string;
+    albumID: string;
+    albumTitle: string;
+    path: string;
+    succeeded: number;
+    skipped: number;
+    failed: number;
+    total: number;
+    errors: Array<{ filename: string; mediaID: string; reason: string }>;
+}
+
 export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) {
     const [providers, setProviders] = useState<CloudProvider[]>([]);
     const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -47,6 +59,8 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
     const [authenticating, setAuthenticating] = useState<string | null>(null);
     const [mirroring, setMirroring] = useState<string | null>(null);
     const [mirrorProgress, setMirrorProgress] = useState<MirrorProgress | null>(null);
+    const [mirrorResult, setMirrorResult] = useState<MirrorResultData | null>(null);
+    const [errorsExpanded, setErrorsExpanded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const mountedRef = useRef(true);
 
@@ -96,14 +110,27 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
             }
         };
 
+        const resultHandler = (data: MirrorResultData) => {
+            if (!mountedRef.current) return;
+            console.log('[cloud] download result:', data);
+            setMirroring(null);
+            setMirrorProgress(null);
+            setMirrorResult(data);
+            if (data.path) {
+                onLoadDir(data.path);
+            }
+        };
+
         EventsOn('cloud-auth-complete', authHandler);
         EventsOn('cloud-download-progress', progressHandler);
         EventsOn('cloud-download-complete', completeHandler);
+        EventsOn('cloud-download-result', resultHandler);
 
         return () => {
             EventsOff('cloud-auth-complete');
             EventsOff('cloud-download-progress');
             EventsOff('cloud-download-complete');
+            EventsOff('cloud-download-result');
         };
     }, [onLoadDir, onClose]);
 
@@ -177,6 +204,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
         if (!selectedProvider) return;
         setMirroring(albumID);
         setMirrorProgress(null);
+        setMirrorResult(null);
         setError(null);
         try {
             const localPath = await MirrorCloudAlbum(selectedProvider, albumID, albumTitle);
@@ -291,7 +319,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                 )}
 
                 {/* Provider list */}
-                {!mirroring && (
+                {!mirroring && !mirrorResult && (
                     <section className="settings-section">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <h3>Sources</h3>
@@ -383,7 +411,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                 )}
 
                 {/* Album list */}
-                {!mirroring && selectedProviderObj?.isConnected && (
+                {!mirroring && !mirrorResult && selectedProviderObj?.isConnected && (
                     <section className="settings-section">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <h3>Albums — {selectedProviderObj.displayName}</h3>
@@ -447,6 +475,233 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                         )}
                     </section>
                 )}
+                {/* Mirror result panel */}
+                {mirrorResult && (() => {
+                    const { albumTitle, succeeded, failed, total, errors, path } = mirrorResult;
+                    const isFullSuccess = failed === 0;
+                    const isTotalFailure = succeeded === 0 && failed > 0;
+                    const isPartial = !isFullSuccess && !isTotalFailure;
+
+                    // Group errors by reason
+                    const reasonCounts: Record<string, number> = {};
+                    for (const e of errors) {
+                        reasonCounts[e.reason] = (reasonCounts[e.reason] || 0) + 1;
+                    }
+                    const topReason = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+
+                    const getActionableHint = (reason: string): string | null => {
+                        if (reason === 'not_local' || reason === 'exported_0_files') {
+                            return 'Open Photos.app > Settings > iCloud > select "Download Originals to this Mac", then try again.';
+                        }
+                        if (reason === 'timeout') {
+                            return 'Some photos took too long to export. Try again — previously failed files will be retried automatically.';
+                        }
+                        return null;
+                    };
+
+                    const hint = getActionableHint(topReason);
+
+                    const bannerBg = isFullSuccess
+                        ? 'rgba(34, 197, 94, 0.1)'
+                        : isPartial
+                            ? 'rgba(245, 158, 11, 0.1)'
+                            : 'rgba(239, 68, 68, 0.1)';
+                    const bannerBorder = isFullSuccess
+                        ? '1px solid rgba(34, 197, 94, 0.3)'
+                        : isPartial
+                            ? '1px solid rgba(245, 158, 11, 0.3)'
+                            : '1px solid rgba(239, 68, 68, 0.3)';
+                    const bannerColor = isFullSuccess ? '#4ade80' : isPartial ? '#fbbf24' : '#f87171';
+                    const BannerIcon = isFullSuccess ? Check : isPartial ? AlertTriangle : XCircle;
+
+                    const COLLAPSE_THRESHOLD = 10;
+                    const visibleErrors = errorsExpanded ? errors : errors.slice(0, COLLAPSE_THRESHOLD);
+                    const hiddenCount = errors.length - COLLAPSE_THRESHOLD;
+
+                    return (
+                        <section className="settings-section">
+                            {/* Banner */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '12px 14px',
+                                borderRadius: 8,
+                                background: bannerBg,
+                                border: bannerBorder,
+                                marginBottom: 14,
+                            }}>
+                                <BannerIcon size={18} style={{ color: bannerColor, flexShrink: 0 }} />
+                                <div>
+                                    {isFullSuccess && (
+                                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: bannerColor }}>
+                                            Import complete
+                                        </div>
+                                    )}
+                                    {isPartial && (
+                                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: bannerColor }}>
+                                            Partial import
+                                        </div>
+                                    )}
+                                    {isTotalFailure && (
+                                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: bannerColor }}>
+                                            Import failed
+                                        </div>
+                                    )}
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                        {isFullSuccess && `Imported ${succeeded} photo${succeeded !== 1 ? 's' : ''} from "${albumTitle}"`}
+                                        {isPartial && `Imported ${succeeded} of ${total} photos from "${albumTitle}" — ${failed} failed`}
+                                        {isTotalFailure && `All ${failed} photo${failed !== 1 ? 's' : ''} failed to import from "${albumTitle}"`}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Error summary (partial or total failure) */}
+                            {!isFullSuccess && errors.length > 0 && (
+                                <div style={{ marginBottom: 14 }}>
+                                    {/* Reason summary */}
+                                    {Object.entries(reasonCounts).length > 0 && (
+                                        <div style={{
+                                            fontSize: '0.8rem',
+                                            color: 'var(--text-secondary)',
+                                            marginBottom: 8,
+                                        }}>
+                                            {Object.entries(reasonCounts).map(([reason, count]) => (
+                                                <div key={reason} style={{ marginBottom: 3 }}>
+                                                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{count}</span>
+                                                    {' '}
+                                                    {reason === 'exported_0_files' || reason === 'not_local'
+                                                        ? 'not available locally (iCloud only)'
+                                                        : reason === 'timeout'
+                                                            ? 'timed out during export'
+                                                            : reason === 'cancelled'
+                                                                ? 'cancelled'
+                                                                : `failed (${reason})`}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Actionable hint */}
+                                    {hint && (
+                                        <div style={{
+                                            padding: '8px 12px',
+                                            borderRadius: 6,
+                                            background: 'rgba(255, 255, 255, 0.04)',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                            fontSize: '0.78rem',
+                                            color: 'var(--text-secondary)',
+                                            marginBottom: 8,
+                                        }}>
+                                            {hint}
+                                        </div>
+                                    )}
+
+                                    {isTotalFailure && (
+                                        <div style={{
+                                            padding: '8px 12px',
+                                            borderRadius: 6,
+                                            background: 'rgba(255, 255, 255, 0.04)',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                            fontSize: '0.78rem',
+                                            color: 'var(--text-secondary)',
+                                            marginBottom: 8,
+                                        }}>
+                                            Try restarting Photos.app and trying again. If the album is large, consider importing a smaller selection first.
+                                        </div>
+                                    )}
+
+                                    {/* Collapsible error list */}
+                                    <div>
+                                        <button
+                                            className="btn icon-btn"
+                                            style={{ fontSize: '0.78rem', padding: '3px 8px', gap: 4, display: 'flex', alignItems: 'center', marginBottom: 4 }}
+                                            onClick={() => setErrorsExpanded(prev => !prev)}
+                                        >
+                                            {errorsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                            {errorsExpanded ? 'Hide failed files' : `Show ${errors.length} failed file${errors.length !== 1 ? 's' : ''}`}
+                                        </button>
+                                        {errorsExpanded && (
+                                            <div style={{
+                                                maxHeight: 160,
+                                                overflowY: 'auto',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 3,
+                                            }}>
+                                                {visibleErrors.map((e, i) => (
+                                                    <div key={i} style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        padding: '4px 8px',
+                                                        borderRadius: 4,
+                                                        background: 'rgba(255, 255, 255, 0.03)',
+                                                        fontSize: '0.75rem',
+                                                        color: 'var(--text-secondary)',
+                                                    }}>
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                                                            {e.filename}
+                                                        </span>
+                                                        <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                                                            {e.reason}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {!errorsExpanded && hiddenCount > 0 && (
+                                                    <button
+                                                        className="btn icon-btn"
+                                                        style={{ fontSize: '0.75rem', padding: '3px 8px', alignSelf: 'flex-start' }}
+                                                        onClick={() => setErrorsExpanded(true)}
+                                                    >
+                                                        Show {hiddenCount} more...
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                    className="btn"
+                                    style={{ fontSize: '0.82rem', padding: '5px 12px' }}
+                                    onClick={() => {
+                                        setMirrorResult(null);
+                                        setErrorsExpanded(false);
+                                    }}
+                                >
+                                    Back to Albums
+                                </button>
+                                {!isFullSuccess && mirrorResult.albumID && (
+                                    <button
+                                        className="btn"
+                                        style={{ fontSize: '0.82rem', padding: '5px 12px' }}
+                                        onClick={() => {
+                                            const { albumID, albumTitle: title } = mirrorResult;
+                                            setMirrorResult(null);
+                                            setErrorsExpanded(false);
+                                            handleMirror(albumID, title);
+                                        }}
+                                    >
+                                        Try Again
+                                    </button>
+                                )}
+                                {path && (isFullSuccess || isPartial) && (
+                                    <button
+                                        className="btn btn-gradient"
+                                        style={{ fontSize: '0.82rem', padding: '5px 12px' }}
+                                        onClick={onClose}
+                                    >
+                                        {isFullSuccess ? 'Open' : 'Open Imported Photos'}
+                                    </button>
+                                )}
+                            </div>
+                        </section>
+                    );
+                })()}
             </div>
         </div>
     );
