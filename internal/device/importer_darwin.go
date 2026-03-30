@@ -9,22 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 )
-
-var sanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
-
-// SanitizeSerial strips unsafe characters from a device serial number,
-// returning a safe directory name component. Path traversal sequences
-// like "../" are neutralized by replacing special chars and calling
-// filepath.Base.
-func SanitizeSerial(serial string) string {
-	if serial == "" {
-		return "_"
-	}
-	cleaned := sanitizeRe.ReplaceAllString(serial, "_")
-	return filepath.Base(cleaned)
-}
 
 // ImportFromDevice imports photos from a connected iPhone/iPad using
 // Image Capture via osascript. Returns the import directory path and
