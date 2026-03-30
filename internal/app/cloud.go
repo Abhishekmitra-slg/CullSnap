@@ -73,7 +73,10 @@ func (a *App) ListCloudAlbums(providerID string) ([]cloudsource.Album, error) {
 }
 
 // MirrorCloudAlbum downloads an album to a local mirror directory.
-// Returns the mirror directory path. Emits progress events.
+// Returns the mirror directory path. Emits progress and result events.
+// Partial success (some photos failed) returns the mirror path without error;
+// the frontend receives a cloud-download-result event with failure details.
+// Total failure (listing crash, dir creation failure) returns an error.
 func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, error) {
 	logger.Log.Info("cloud: starting album mirror", "providerID", providerID, "albumID", albumID, "title", albumTitle)
 	source, ok := a.cloudRegistry.Get(providerID)
@@ -125,19 +128,20 @@ func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, 
 		})
 	})
 
-	// Notify frontend of evictions
+	// Notify frontend of evictions regardless of error
 	if len(result.Evicted) > 0 {
 		runtime.EventsEmit(a.ctx, "cloud-cache-evicted", result.Evicted)
 	}
 
 	if err != nil {
-		logger.Log.Error("cloud: mirror failed", "providerID", providerID, "albumID", albumID, "error", err)
+		// Total failure — listing crash, Photos.app not running, dir creation failure
+		logger.Log.Error("cloud: mirror failed (total)", "providerID", providerID, "albumID", albumID, "error", err)
 		runtime.EventsEmit(a.ctx, "cloud-download-error", map[string]string{
 			"provider": providerID,
 			"albumID":  albumID,
 			"error":    err.Error(),
 		})
-		// Still return mirrorDir — partial content may be usable
+		// Still register mirrorDir — partial content may be usable
 		if result.Dir != "" {
 			a.OnAllowDir(result.Dir)
 		}
@@ -147,18 +151,52 @@ func (a *App) MirrorCloudAlbum(providerID, albumID, albumTitle string) (string, 
 	// Register mirror dir with media server
 	a.OnAllowDir(result.Dir)
 
-	if result.Failed > 0 {
-		logger.Log.Warn("cloud: album mirrored with partial failures",
-			"providerID", providerID, "albumID", albumID,
-			"succeeded", result.Succeeded, "failed", result.Failed, "path", result.Dir)
-	} else {
-		logger.Log.Info("cloud: album mirrored successfully", "providerID", providerID, "albumID", albumID, "path", result.Dir)
+	// Build error list for frontend
+	type downloadErrorJSON struct {
+		Filename string `json:"filename"`
+		MediaID  string `json:"mediaID"`
+		Reason   string `json:"reason"`
+	}
+	errorList := make([]downloadErrorJSON, 0, len(result.Errors))
+	for _, e := range result.Errors {
+		errorList = append(errorList, downloadErrorJSON{
+			Filename: e.Filename,
+			MediaID:  e.MediaID,
+			Reason:   e.Reason,
+		})
 	}
 
-	runtime.EventsEmit(a.ctx, "cloud-download-complete", map[string]string{
-		"provider": providerID,
-		"albumID":  albumID,
-		"path":     result.Dir,
+	// Emit structured result event for 3-state frontend UX
+	runtime.EventsEmit(a.ctx, "cloud-download-result", map[string]interface{}{
+		"provider":   providerID,
+		"albumID":    albumID,
+		"albumTitle": albumTitle,
+		"path":       result.Dir,
+		"succeeded":  result.Succeeded,
+		"skipped":    result.Skipped,
+		"failed":     result.Failed,
+		"total":      result.Succeeded + result.Skipped + result.Failed,
+		"errors":     errorList,
+	})
+
+	if result.Failed == 0 {
+		logger.Log.Info("cloud: album mirrored successfully",
+			"providerID", providerID, "albumID", albumID,
+			"succeeded", result.Succeeded, "skipped", result.Skipped)
+	} else {
+		logger.Log.Warn("cloud: album mirrored with partial failures",
+			"providerID", providerID, "albumID", albumID,
+			"succeeded", result.Succeeded, "skipped", result.Skipped, "failed", result.Failed)
+	}
+
+	// Also emit legacy cloud-download-complete with result counts for backward compat
+	runtime.EventsEmit(a.ctx, "cloud-download-complete", map[string]interface{}{
+		"provider":  providerID,
+		"albumID":   albumID,
+		"path":      result.Dir,
+		"succeeded": result.Succeeded,
+		"skipped":   result.Skipped,
+		"failed":    result.Failed,
 	})
 
 	return result.Dir, nil
