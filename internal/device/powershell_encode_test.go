@@ -176,3 +176,105 @@ func TestParseProgressLine_EmptyLine(t *testing.T) {
 		t.Fatal("expected error for empty line, got nil")
 	}
 }
+
+// --- parseWPDDevices tests ---
+
+func TestParseWPDDevices_FindsIPhoneAndIPad(t *testing.T) {
+	input := []byte(`[
+		{"name":"Apple iPhone","serial":"AABBCC112233","vendorID":"0x05ac","productID":"0x12a8"},
+		{"name":"Apple iPad","serial":"DDEEFF445566","vendorID":"0x05ac","productID":"0x029a"}
+	]`)
+	devices, err := parseWPDDevices(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(devices))
+	}
+	// Check iPhone
+	iphone := devices[0]
+	if iphone.Name != "Apple iPhone" {
+		t.Errorf("Name = %q, want %q", iphone.Name, "Apple iPhone")
+	}
+	if iphone.Serial != "AABBCC112233" {
+		t.Errorf("Serial = %q, want %q", iphone.Serial, "AABBCC112233")
+	}
+	if iphone.VendorID != "0x05ac" {
+		t.Errorf("VendorID = %q, want %q", iphone.VendorID, "0x05ac")
+	}
+	if iphone.ProductID != "0x12a8" {
+		t.Errorf("ProductID = %q, want %q", iphone.ProductID, "0x12a8")
+	}
+	if iphone.DetectedAt.IsZero() {
+		t.Error("DetectedAt should not be zero")
+	}
+	// Check iPad
+	ipad := devices[1]
+	if ipad.Name != "Apple iPad" {
+		t.Errorf("Name = %q, want %q", ipad.Name, "Apple iPad")
+	}
+	if ipad.Serial != "DDEEFF445566" {
+		t.Errorf("Serial = %q, want %q", ipad.Serial, "DDEEFF445566")
+	}
+}
+
+func TestParseWPDDevices_SingleDevice(t *testing.T) {
+	// PowerShell ConvertTo-Json outputs a single object (not array) for 1 item.
+	input := []byte(`{"name":"Apple iPhone","serial":"XXYYZZ998877","vendorID":"0x05ac","productID":"0x12a8"}`)
+	devices, err := parseWPDDevices(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(devices))
+	}
+	if devices[0].Serial != "XXYYZZ998877" {
+		t.Errorf("Serial = %q, want %q", devices[0].Serial, "XXYYZZ998877")
+	}
+}
+
+func TestParseWPDDevices_EmptyArray(t *testing.T) {
+	input := []byte(`[]`)
+	devices, err := parseWPDDevices(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 0 {
+		t.Fatalf("expected 0 devices, got %d", len(devices))
+	}
+}
+
+func TestParseWPDDevices_NullOutput(t *testing.T) {
+	devices, err := parseWPDDevices([]byte{})
+	if err != nil {
+		t.Fatalf("unexpected error for empty input: %v", err)
+	}
+	if devices != nil {
+		t.Fatalf("expected nil slice for empty input, got %v", devices)
+	}
+}
+
+func TestParseWPDDevices_InvalidJSON(t *testing.T) {
+	_, err := parseWPDDevices([]byte(`{not valid json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestParseWPDDevices_MissingSerial(t *testing.T) {
+	// Device with empty serial should still be returned.
+	input := []byte(`[{"name":"Apple iPhone","serial":"","vendorID":"0x05ac","productID":"0x12a8"}]`)
+	devices, err := parseWPDDevices(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(devices))
+	}
+	if devices[0].Serial != "" {
+		t.Errorf("Serial = %q, want empty string", devices[0].Serial)
+	}
+	if devices[0].Name != "Apple iPhone" {
+		t.Errorf("Name = %q, want %q", devices[0].Name, "Apple iPhone")
+	}
+}
