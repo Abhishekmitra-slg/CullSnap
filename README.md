@@ -39,7 +39,7 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **RAW Image Support**: Native Pure Go support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Zero external dependencies. Extracts embedded JPEG previews using format-specific parsers: TIFF IFD walker (Canon DSLR/Sony/Nikon/Leica), BMFF box walker (Canon mirrorless CR3), Fujifilm RAF header parser, and TIFF-variant handling (Olympus/Panasonic). Includes RAW+JPEG companion pairing and format badges in the UI.
 -   **HEIC/HEIF Support**: Full support for iPhone's default photo format. On macOS, uses the native `sips` decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. Decoder preference is configurable in Settings with a clear performance warning.
 -   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain. Per-album cache management with LRU auto-eviction, configurable cache limits, and individual album deletion from Settings.
--   **Import from Device (macOS)**: Connect an iPhone or iPad via USB and CullSnap detects it automatically. One-click import via Image Capture to a local staging directory, then scan and cull as usual. Also accessible via the sidebar for manual triggering.
+-   **Import from Device (macOS & Windows)**: Connect an iPhone or iPad via USB and CullSnap detects it automatically. On macOS, imports via Image Capture; on Windows, imports via MTP using Shell.Application with a [5-layer security architecture](#-windows-device-import-security). One-click import to a local staging directory, then scan and cull as usual.
 -   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
 -   **Stable Media Architecture**: Dedicated high-speed server on port `34342` with panic recovery, connection semaphore, structured shutdown, and MIME-correct headers for all video formats.
@@ -109,7 +109,7 @@ make dev
 
 1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, HEIC, RAW, and video files.
 2.  **Cloud Albums**: Click **Cloud Albums** in the sidebar to connect Google Drive or iCloud Photos. Browse folders/albums and mirror them locally for culling.
-3.  **Import from Device** (macOS): Connect an iPhone via USB. CullSnap detects it and offers one-click import, or use the **Import from Device** sidebar button anytime.
+3.  **Import from Device** (macOS & Windows): Connect an iPhone via USB. CullSnap detects it and offers one-click import, or use the **Import from Device** sidebar button anytime. On Windows, ensure the iPhone is unlocked and "Trust This Computer" is accepted.
 4.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
 5.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
 6.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
@@ -153,7 +153,7 @@ CullSnap/
 │   ├── heic/                       # HEIC/HEIF decoder (sips on macOS, FFmpeg fallback)
 │   ├── cloudsource/                # Cloud source framework (OAuth, mirror, token store)
 │   │   └── providers/              # Google Drive, iCloud (macOS) providers
-│   ├── device/                     # USB device detection + import (macOS)
+│   ├── device/                     # USB device detection + import (macOS + Windows)
 │   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png/heic + RAW + video)
 │   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
 │   ├── export/copier.go            # File copy with flush-error checking + video trim
@@ -173,6 +173,16 @@ CullSnap/
 ```
 
 ## 🔒 Security
+
+### Windows Device Import Security
+
+CullSnap's Windows device import uses a 5-layer defense model to ensure zero attack surface when executing PowerShell scripts for MTP device access:
+
+<p align="center">
+  <img src="docs/assets/windows-security-architecture.svg" alt="Windows Device Import 5-Layer Security Architecture" width="100%" />
+</p>
+
+The PowerShell scripts are compiled into the signed binary as Go constants. External data (device serials, file paths) is passed via stdin JSON — never interpolated into scripts. This provides the same security guarantee as parameterized SQL queries: data is always data, never code.
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
 
