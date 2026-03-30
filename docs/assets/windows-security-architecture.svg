@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif">
+  <defs>
+    <linearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="layerGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f3460" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0f3460" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="520" rx="12" fill="#fafbfc" stroke="#e1e4e8" stroke-width="1"/>
+
+  <!-- Title -->
+  <rect x="0" y="0" width="800" height="52" rx="12" fill="url(#headerGrad)"/>
+  <rect x="0" y="40" width="800" height="12" fill="url(#headerGrad)"/>
+  <text x="400" y="33" text-anchor="middle" fill="white" font-size="16" font-weight="600">Windows Device Import - 5-Layer Security Architecture</text>
+
+  <!-- Layer 1: Hardcoded Scripts -->
+  <rect x="30" y="70" width="740" height="72" rx="8" fill="#e8f5e9" stroke="#4caf50" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="70" width="36" height="72" rx="8" fill="#4caf50"/>
+  <rect x="58" y="70" width="8" height="72" fill="#4caf50"/>
+  <text x="48" y="112" text-anchor="middle" fill="white" font-size="14" font-weight="700">1</text>
+  <text x="82" y="92" fill="#1b5e20" font-size="13" font-weight="600">Hardcoded Scripts</text>
+  <text x="82" y="110" fill="#2e7d32" font-size="11">PowerShell scripts are Go const strings compiled into the binary.</text>
+  <text x="82" y="126" fill="#2e7d32" font-size="11">Never generated, modified, or loaded from external files at runtime.</text>
+  <text x="610" y="108" fill="#1b5e20" font-size="10" font-weight="600" text-anchor="middle">Prevents: Script Injection</text>
+  <rect x="540" y="114" width="140" height="18" rx="9" fill="#4caf50" opacity="0.15"/>
+  <text x="610" y="127" fill="#2e7d32" font-size="9" text-anchor="middle">Binary code signing verifies</text>
+
+  <!-- Layer 2: Stdin Parameters -->
+  <rect x="30" y="152" width="740" height="72" rx="8" fill="#e3f2fd" stroke="#2196f3" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="152" width="36" height="72" rx="8" fill="#2196f3"/>
+  <rect x="58" y="152" width="8" height="72" fill="#2196f3"/>
+  <text x="48" y="194" text-anchor="middle" fill="white" font-size="14" font-weight="700">2</text>
+  <text x="82" y="174" fill="#0d47a1" font-size="13" font-weight="600">Stdin JSON Parameters</text>
+  <text x="82" y="192" fill="#1565c0" font-size="11">External data (paths, serials) passed via stdin as JSON, parsed by ConvertFrom-Json.</text>
+  <text x="82" y="208" fill="#1565c0" font-size="11">PowerShell variables are data, never re-evaluated as code. Like parameterized SQL.</text>
+  <text x="610" y="190" fill="#0d47a1" font-size="10" font-weight="600" text-anchor="middle">Prevents: Metachar Injection</text>
+  <rect x="540" y="196" width="140" height="18" rx="9" fill="#2196f3" opacity="0.15"/>
+  <text x="610" y="209" fill="#1565c0" font-size="9" text-anchor="middle">$() ; | ` &amp; all neutralized</text>
+
+  <!-- Layer 3: Input Sanitization -->
+  <rect x="30" y="234" width="740" height="72" rx="8" fill="#fff3e0" stroke="#ff9800" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="234" width="36" height="72" rx="8" fill="#ff9800"/>
+  <rect x="58" y="234" width="8" height="72" fill="#ff9800"/>
+  <text x="48" y="276" text-anchor="middle" fill="white" font-size="14" font-weight="700">3</text>
+  <text x="82" y="256" fill="#e65100" font-size="13" font-weight="600">Input Sanitization</text>
+  <text x="82" y="274" fill="#ef6c00" font-size="11">SanitizeSerial: regex allowlist [a-zA-Z0-9._-] strips all special characters.</text>
+  <text x="82" y="290" fill="#ef6c00" font-size="11">validateDestDir: filepath containment check ensures dest is under cache directory.</text>
+  <text x="610" y="272" fill="#e65100" font-size="10" font-weight="600" text-anchor="middle">Prevents: Path Traversal</text>
+  <rect x="540" y="278" width="140" height="18" rx="9" fill="#ff9800" opacity="0.15"/>
+  <text x="610" y="291" fill="#ef6c00" font-size="9" text-anchor="middle">Defense-in-depth layer</text>
+
+  <!-- Layer 4: Full Binary Path -->
+  <rect x="30" y="316" width="740" height="72" rx="8" fill="#f3e5f5" stroke="#9c27b0" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="316" width="36" height="72" rx="8" fill="#9c27b0"/>
+  <rect x="58" y="316" width="8" height="72" fill="#9c27b0"/>
+  <text x="48" y="358" text-anchor="middle" fill="white" font-size="14" font-weight="700">4</text>
+  <text x="82" y="338" fill="#4a148c" font-size="13" font-weight="600">Full Binary Path</text>
+  <text x="82" y="356" fill="#6a1b9a" font-size="11">Always C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</text>
+  <text x="82" y="372" fill="#6a1b9a" font-size="11">Combined with -NoProfile (no profile injection) and -NonInteractive (no prompts).</text>
+  <text x="610" y="354" fill="#4a148c" font-size="10" font-weight="600" text-anchor="middle">Prevents: PATH Hijacking</text>
+  <rect x="540" y="360" width="140" height="18" rx="9" fill="#9c27b0" opacity="0.15"/>
+  <text x="610" y="373" fill="#6a1b9a" font-size="9" text-anchor="middle">+ AMSI scans at runtime</text>
+
+  <!-- Layer 5: Post-Copy Verification -->
+  <rect x="30" y="398" width="740" height="72" rx="8" fill="#fce4ec" stroke="#e91e63" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="398" width="36" height="72" rx="8" fill="#e91e63"/>
+  <rect x="58" y="398" width="8" height="72" fill="#e91e63"/>
+  <text x="48" y="440" text-anchor="middle" fill="white" font-size="14" font-weight="700">5</text>
+  <text x="82" y="420" fill="#880e4f" font-size="13" font-weight="600">Post-Copy Verification</text>
+  <text x="82" y="438" fill="#ad1457" font-size="11">After MTP file copy, walks import directory and resolves all symlinks.</text>
+  <text x="82" y="454" fill="#ad1457" font-size="11">Removes any file whose resolved path escapes the expected root directory.</text>
+  <text x="610" y="436" fill="#880e4f" font-size="10" font-weight="600" text-anchor="middle">Prevents: Malicious MTP Files</text>
+  <rect x="540" y="442" width="140" height="18" rx="9" fill="#e91e63" opacity="0.15"/>
+  <text x="610" y="455" fill="#ad1457" font-size="9" text-anchor="middle">Defends against BadUSB</text>
+
+  <!-- Footer -->
+  <text x="400" y="498" text-anchor="middle" fill="#586069" font-size="10">Zero CGo dependencies | Pure Go + PowerShell subprocess | Windows 10+ compatible</text>
+  <text x="400" y="512" text-anchor="middle" fill="#8b949e" font-size="9">CullSnap Windows Device Import Security Model</text>
+</svg>
