@@ -301,3 +301,127 @@ func TestValidatePhotoID_Invalid(t *testing.T) {
 		}
 	}
 }
+
+// canned osascript output fixtures
+
+const cannedCountOutput = "9247"
+
+const cannedPageOutput = `IMG_0001.HEIC|||ABC-001|||Sunday, January 5, 2025 at 10:15:30 AM|||3145728###IMG_0002.JPG|||ABC-002|||Monday, January 6, 2025 at 11:20:45 AM|||2097152###IMG_0003.MOV|||ABC-003|||Tuesday, January 7, 2025 at 2:30:00 PM|||52428800`
+
+const cannedPageOutputEmpty = ""
+
+const cannedPageOutputMalformed = `IMG_0004.HEIC|||ABC-004|||Wednesday, January 8, 2025 at 8:00:00 AM|||1048576###malformed_no_pipe`
+
+func TestParseItemCount(t *testing.T) {
+	count, err := parseItemCount(cannedCountOutput)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 9247 {
+		t.Fatalf("expected 9247, got %d", count)
+	}
+}
+
+func TestParseItemCount_Zero(t *testing.T) {
+	count, err := parseItemCount("0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0, got %d", count)
+	}
+}
+
+func TestParseItemCount_Invalid(t *testing.T) {
+	_, err := parseItemCount("not-a-number")
+	if err == nil {
+		t.Fatal("expected error for non-numeric input, got nil")
+	}
+}
+
+func TestParseMediaOutput_ThreeItems(t *testing.T) {
+	media, err := parseMediaOutput(cannedPageOutput)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(media) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(media))
+	}
+
+	// first item
+	if media[0].Filename != "IMG_0001.HEIC" {
+		t.Errorf("item 0 filename: got %q, want %q", media[0].Filename, "IMG_0001.HEIC")
+	}
+	if media[0].ID != "ABC-001" {
+		t.Errorf("item 0 ID: got %q, want %q", media[0].ID, "ABC-001")
+	}
+	if media[0].SizeBytes != 3145728 {
+		t.Errorf("item 0 size: got %d, want 3145728", media[0].SizeBytes)
+	}
+
+	// third item (video)
+	if media[2].Filename != "IMG_0003.MOV" {
+		t.Errorf("item 2 filename: got %q, want %q", media[2].Filename, "IMG_0003.MOV")
+	}
+}
+
+func TestParseMediaOutput_Empty(t *testing.T) {
+	media, err := parseMediaOutput(cannedPageOutputEmpty)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if media != nil && len(media) != 0 {
+		t.Fatalf("expected nil or empty slice, got %v", media)
+	}
+}
+
+func TestParseMediaOutput_SkipsMalformed(t *testing.T) {
+	// The fixture has one valid 4-part entry and one malformed 2-part entry.
+	// parseMediaOutput must skip the malformed one silently.
+	media, err := parseMediaOutput(cannedPageOutputMalformed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(media) != 1 {
+		t.Fatalf("expected 1 valid item (malformed skipped), got %d", len(media))
+	}
+	if media[0].Filename != "IMG_0004.HEIC" {
+		t.Errorf("unexpected filename: %q", media[0].Filename)
+	}
+}
+
+func TestBuildPageRanges(t *testing.T) {
+	cases := []struct {
+		total    int
+		pageSize int
+		wantLen  int
+		first    [2]int // [start, end] of first range (1-based AppleScript)
+		last     [2]int // [start, end] of last range
+	}{
+		{total: 3, pageSize: 500, wantLen: 1, first: [2]int{1, 3}, last: [2]int{1, 3}},
+		{total: 500, pageSize: 500, wantLen: 1, first: [2]int{1, 500}, last: [2]int{1, 500}},
+		{total: 501, pageSize: 500, wantLen: 2, first: [2]int{1, 500}, last: [2]int{501, 501}},
+		{total: 1000, pageSize: 500, wantLen: 2, first: [2]int{1, 500}, last: [2]int{501, 1000}},
+		{total: 1001, pageSize: 500, wantLen: 3, first: [2]int{1, 500}, last: [2]int{1001, 1001}},
+		{total: 9247, pageSize: 500, wantLen: 19, first: [2]int{1, 500}, last: [2]int{9001, 9247}},
+	}
+
+	for _, tc := range cases {
+		ranges := buildPageRanges(tc.total, tc.pageSize)
+		if len(ranges) != tc.wantLen {
+			t.Errorf("total=%d pageSize=%d: got %d ranges, want %d",
+				tc.total, tc.pageSize, len(ranges), tc.wantLen)
+			continue
+		}
+		first := ranges[0]
+		if first[0] != tc.first[0] || first[1] != tc.first[1] {
+			t.Errorf("total=%d: first range got [%d,%d], want [%d,%d]",
+				tc.total, first[0], first[1], tc.first[0], tc.first[1])
+		}
+		last := ranges[len(ranges)-1]
+		if last[0] != tc.last[0] || last[1] != tc.last[1] {
+			t.Errorf("total=%d: last range got [%d,%d], want [%d,%d]",
+				tc.total, last[0], last[1], tc.last[0], tc.last[1])
+		}
+	}
+}
