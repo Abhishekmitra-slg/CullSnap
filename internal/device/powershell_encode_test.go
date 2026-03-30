@@ -3,6 +3,8 @@ package device
 import (
 	"encoding/base64"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"unicode/utf16"
 )
@@ -276,5 +278,79 @@ func TestParseWPDDevices_MissingSerial(t *testing.T) {
 	}
 	if devices[0].Name != "Apple iPhone" {
 		t.Errorf("Name = %q, want %q", devices[0].Name, "Apple iPhone")
+	}
+}
+
+// --- validateDestDir tests ---
+
+func TestValidateDestDir_ValidPath(t *testing.T) {
+	cacheDir := t.TempDir()
+	destDir := filepath.Join(cacheDir, "ABC123")
+	if err := validateDestDir(destDir, cacheDir); err != nil {
+		t.Errorf("expected valid subdir to pass, got: %v", err)
+	}
+}
+
+func TestValidateDestDir_EscapesCache(t *testing.T) {
+	cacheDir := t.TempDir()
+	destDir := filepath.Join(cacheDir, "..", "etc", "passwd")
+	if err := validateDestDir(destDir, cacheDir); err == nil {
+		t.Error("expected error for path traversal, got nil")
+	}
+}
+
+func TestValidateDestDir_ExactCacheDir(t *testing.T) {
+	cacheDir := t.TempDir()
+	if err := validateDestDir(cacheDir, cacheDir); err == nil {
+		t.Error("expected error when destDir equals cacheDir, got nil")
+	}
+}
+
+func TestValidateDestDir_PrefixAttack(t *testing.T) {
+	// Create a temp dir, then use cacheDir + "-evil" which shares prefix but is not under it.
+	cacheDir := t.TempDir()
+	evilDir := cacheDir + "-evil"
+	if err := os.MkdirAll(evilDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(evilDir)
+	if err := validateDestDir(evilDir, cacheDir); err == nil {
+		t.Error("expected error for prefix attack path, got nil")
+	}
+}
+
+// --- verifyNoPathTraversal tests ---
+
+func TestVerifyNoPathTraversal_Clean(t *testing.T) {
+	dir := t.TempDir()
+	// Create normal files.
+	for _, name := range []string{"photo1.jpg", "photo2.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("data"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed := verifyNoPathTraversal(dir)
+	if removed != 0 {
+		t.Errorf("expected 0 removals for clean dir, got %d", removed)
+	}
+	// Verify files still exist.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 files to remain, got %d", len(entries))
+	}
+}
+
+func TestVerifyNoPathTraversal_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	removed := verifyNoPathTraversal(dir)
+	if removed != 0 {
+		t.Errorf("expected 0 removals for empty dir, got %d", removed)
+	}
+}
+
+func TestVerifyNoPathTraversal_NonexistentDir(t *testing.T) {
+	removed := verifyNoPathTraversal("/nonexistent/path/should/not/exist")
+	if removed != 0 {
+		t.Errorf("expected 0 removals for nonexistent dir, got %d", removed)
 	}
 }
