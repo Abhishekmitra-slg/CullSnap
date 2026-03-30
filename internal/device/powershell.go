@@ -16,7 +16,9 @@ import (
 const powershellExe = `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
 
 // powershellExePath verifies that the PowerShell binary exists and is a regular
-// file. Returns the verified path or an error.
+// file. This is a pre-flight diagnostic check for better error messages — not
+// an atomic security gate (the binary could theoretically be removed between
+// this check and exec). Returns the verified path or an error.
 func powershellExePath() (string, error) {
 	info, err := os.Stat(powershellExe)
 	if err != nil {
@@ -29,7 +31,8 @@ func powershellExePath() (string, error) {
 }
 
 // runPowerShell executes a PowerShell script with hardened flags and no stdin.
-// The script is encoded as base64 UTF-16LE to avoid quoting issues.
+// Used by the device detection script which produces JSON output but takes no
+// parameters. The script is encoded as base64 UTF-16LE to avoid quoting issues.
 // Returns combined stdout output. Stderr is captured separately and logged on
 // error to aid debugging.
 func runPowerShell(ctx context.Context, script string) ([]byte, error) {

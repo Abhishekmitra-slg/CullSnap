@@ -54,14 +54,9 @@ func TestEncodePowerShellScript_Unicode(t *testing.T) {
 
 func TestEncodePowerShellScript_EmptyString(t *testing.T) {
 	encoded := encodePowerShellScript("")
-	// base64 of zero bytes is the empty string; either empty or valid base64 is acceptable,
-	// but it must not panic and must decode to empty.
-	if encoded == "" {
-		return // acceptable: nothing to encode
-	}
-	got := decodePS(t, encoded)
-	if got != "" {
-		t.Errorf("empty input roundtrip: got %q, want %q", got, "")
+	// base64 of zero bytes is the empty string.
+	if encoded != "" {
+		t.Errorf("expected empty base64 for empty script, got %q", encoded)
 	}
 }
 
@@ -78,8 +73,9 @@ func mustMarshal(t *testing.T, v any) []byte {
 
 func TestParseProgressLine_EnumerateDone(t *testing.T) {
 	line := mustMarshal(t, map[string]any{
-		"type":  "enumerate_done",
-		"total": 42,
+		"type":   "enumerate_done",
+		"total":  42,
+		"device": "Apple iPhone",
 	})
 	ev, err := parseProgressLine(line)
 	if err != nil {
@@ -90,6 +86,9 @@ func TestParseProgressLine_EnumerateDone(t *testing.T) {
 	}
 	if ev.Total != 42 {
 		t.Errorf("Total = %d, want 42", ev.Total)
+	}
+	if ev.Device != "Apple iPhone" {
+		t.Errorf("Device = %q, want %q", ev.Device, "Apple iPhone")
 	}
 }
 
