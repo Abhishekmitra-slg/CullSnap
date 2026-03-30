@@ -1132,3 +1132,26 @@ h2 {
   background: var(--accent-violet);
   box-shadow: 0 0 4px rgba(167, 139, 250, 0.5);
 }
+
+.viewer-selected-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: rgba(79, 140, 255, 0.9);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+.viewer-selected-bar.visible {
+  opacity: 1;
+}

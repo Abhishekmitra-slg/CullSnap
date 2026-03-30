@@ -50,6 +50,7 @@ function App() {
     const [whatsNewOpen, setWhatsNewOpen] = useState(false);
     const [probe, setProbe] = useState<{ OS: string } | undefined>(undefined);
     const [deviceToast, setDeviceToast] = useState<{ name: string; serial: string } | null>(null);
+    const [gridColumns, setGridColumns] = useState(1);
 
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
@@ -172,24 +173,50 @@ function App() {
                 if (activePhotoPath) {
                     handleToggleSelection(activePhotoPath);
                 }
-            } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
                 if (photos.length > 0) {
                     const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex < photos.length - 1) {
                         const nextPhoto = photos[currentIndex + 1];
-                        setActivePhotoPath(nextPhoto.Path);          // immediate — grid highlight
-                        setActivePhotoDebounced(nextPhoto);           // 80ms — viewer load
+                        setActivePhotoPath(nextPhoto.Path);
+                        setActivePhotoDebounced(nextPhoto);
                         document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
                             ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
                 }
-            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 if (photos.length > 0) {
                     const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex > 0) {
                         const prevPhoto = photos[currentIndex - 1];
+                        setActivePhotoPath(prevPhoto.Path);
+                        setActivePhotoDebounced(prevPhoto);
+                        document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (photos.length > 0) {
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
+                    const targetIndex = Math.min(currentIndex + gridColumns, photos.length - 1);
+                    if (targetIndex !== currentIndex) {
+                        const nextPhoto = photos[targetIndex];
+                        setActivePhotoPath(nextPhoto.Path);
+                        setActivePhotoDebounced(nextPhoto);
+                        document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (photos.length > 0) {
+                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
+                    const targetIndex = currentIndex - gridColumns;
+                    if (targetIndex >= 0) {
+                        const prevPhoto = photos[targetIndex];
                         setActivePhotoPath(prevPhoto.Path);
                         setActivePhotoDebounced(prevPhoto);
                         document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
@@ -210,7 +237,7 @@ function App() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activePhotoPath, selectedPaths, photos, currentDir, ratings, setActivePhotoDebounced]);
+    }, [activePhotoPath, selectedPaths, photos, currentDir, ratings, setActivePhotoDebounced, gridColumns]);
 
     const handleOpenFolder = async () => {
         try {
@@ -486,9 +513,10 @@ function App() {
                     onPhotoClick={handlePhotoClick}
                     ratings={ratings}
                     onRatingChange={handleRatingChange}
+                    onColumnsChange={setGridColumns}
                 />
 
-                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} />
+                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} isSelected={selectedPaths.has(activePhotoPath || '')} />
             </div>
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>

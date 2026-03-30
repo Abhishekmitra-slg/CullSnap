@@ -12,6 +12,7 @@ interface GridProps {
     onPhotoClick: (photo: model.Photo) => void;
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
+    onColumnsChange?: (cols: number) => void;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -31,6 +32,7 @@ export function Grid({
     onPhotoClick,
     ratings,
     onRatingChange,
+    onColumnsChange,
 }: GridProps) {
     const parentRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +53,12 @@ export function Grid({
     const CARD_HEIGHT = 176; // 160px card + 16px gap
     const columns = Math.max(1, Math.floor(containerWidth / CARD_WIDTH));
     const rows = chunk(photos, columns);
+
+    useEffect(() => {
+        if (onColumnsChange) {
+            onColumnsChange(columns);
+        }
+    }, [columns, onColumnsChange]);
 
     const rowVirtualizer = useVirtualizer({
         count: rows.length,

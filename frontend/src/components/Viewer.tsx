@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Check } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 
 interface PhotoEXIF {
@@ -13,9 +14,10 @@ interface PhotoEXIF {
 interface ViewerProps {
     photo: model.Photo | null;
     onTrimChange?: (path: string, start: number, end: number) => void;
+    isSelected?: boolean;
 }
 
-export function Viewer({ photo, onTrimChange }: ViewerProps) {
+export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
     const [exif, setExif] = useState<PhotoEXIF | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -122,6 +124,10 @@ export function Viewer({ photo, onTrimChange }: ViewerProps) {
 
     return (
         <div className="viewer-panel" style={{ position: 'relative' }}>
+            <div className={`viewer-selected-bar ${isSelected ? 'visible' : ''}`}>
+                <Check size={14} />
+                Selected
+            </div>
             {/* Main media */}
             <div className="viewer-image-container" style={{ position: 'relative' }}>
                 {photo.isRAW && photo.rawFormat && (
