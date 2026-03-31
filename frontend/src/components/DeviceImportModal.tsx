@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Smartphone, RefreshCw, Loader, FolderOpen, AlertTriangle } from 'lucide-react';
-import { GetConnectedDevices, ImportFromDevice } from '../../wailsjs/go/app/App';
-import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
+import { X, Smartphone, RefreshCw, Loader, FolderOpen, AlertTriangle, Camera, HardDrive, Copy, Terminal } from 'lucide-react';
+import { GetConnectedDevices, ImportFromDevice, CheckDeviceDependencies } from '../../wailsjs/go/app/App';
+import { EventsOn, EventsOff, ClipboardSetText } from '../../wailsjs/runtime/runtime';
 
 interface DeviceImportModalProps {
     onClose: () => void;
     onLoadDir: (dir: string) => void;
+    probe?: { OS: string };
 }
 
 interface DeviceInfo {
@@ -13,15 +14,47 @@ interface DeviceInfo {
     vendorID: string;
     productID: string;
     serial: string;
+    type: string;
+    mountPath: string;
     detectedAt: string;
 }
 
-export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps) {
+interface DependencyStatusInfo {
+    usbmuxdRunning: boolean;
+    gvfsAvailable: boolean;
+    gphoto2Path: string;
+    ideviceInfoPath: string;
+    distroID: string;
+    distroFamily: string;
+    distroName: string;
+    installCommand: string;
+    missingPackages: string[];
+}
+
+const allInstallCommands = [
+    { label: 'Debian/Ubuntu', cmd: 'sudo apt install libimobiledevice-utils usbmuxd gphoto2' },
+    { label: 'Fedora/RHEL', cmd: 'sudo dnf install libimobiledevice-utils usbmuxd gphoto2' },
+    { label: 'Arch', cmd: 'sudo pacman -S libimobiledevice usbmuxd gphoto2' },
+    { label: 'openSUSE', cmd: 'sudo zypper install libimobiledevice-utils usbmuxd gphoto2' },
+];
+
+function deviceIcon(type: string) {
+    switch (type) {
+        case 'camera': return <Camera size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
+        case 'storage': return <HardDrive size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
+        default: return <Smartphone size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />;
+    }
+}
+
+export function DeviceImportModal({ onClose, onLoadDir, probe }: DeviceImportModalProps) {
     const [devices, setDevices] = useState<DeviceInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<{ serial: string; count: number; path: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [depStatus, setDepStatus] = useState<DependencyStatusInfo | null>(null);
+    const [depChecking, setDepChecking] = useState(false);
+    const [copied, setCopied] = useState(false);
     const mountedRef = useRef(true);
 
     useEffect(() => {
@@ -33,6 +66,13 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
     useEffect(() => {
         loadDevices();
     }, []);
+
+    // Check dependencies on Linux
+    useEffect(() => {
+        if (probe?.OS === 'linux') {
+            checkDeps();
+        }
+    }, [probe?.OS]);
 
     // Listen for device events
     useEffect(() => {
@@ -65,7 +105,6 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
             setImporting(null);
             const errMsg = data?.error || 'Import failed';
             setError(errMsg);
-            // If there were partial files, still show result
             if (data?.count > 0 && data?.path) {
                 setImportResult({
                     serial: data?.serial || '',
@@ -103,13 +142,33 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
         }
     };
 
+    const checkDeps = async () => {
+        setDepChecking(true);
+        try {
+            const status = await CheckDeviceDependencies();
+            if (mountedRef.current) setDepStatus(status);
+        } catch (e) {
+            console.error('[device] dep check failed:', e);
+        } finally {
+            if (mountedRef.current) setDepChecking(false);
+        }
+    };
+
+    const handleCopyCommand = async (cmd?: string) => {
+        const text = cmd || depStatus?.installCommand;
+        if (text) {
+            await ClipboardSetText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
     const handleImport = async (serial: string) => {
         setImporting(serial);
         setError(null);
         setImportResult(null);
         try {
             await ImportFromDevice(serial);
-            // Result handled via events
         } catch (e) {
             console.error('[device] import call failed:', e);
             if (mountedRef.current) {
@@ -125,6 +184,8 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
             onClose();
         }
     };
+
+    const showDepGuide = probe?.OS === 'linux' && depStatus && depStatus.missingPackages && depStatus.missingPackages.length > 0;
 
     return (
         <div className="settings-overlay" onClick={onClose}>
@@ -168,8 +229,10 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                             Importing photos...
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                            Image Capture will open to import photos from your device.
-                            <br />This may take a moment.
+                            {probe?.OS === 'darwin'
+                                ? <>Image Capture will open to import photos from your device.<br />This may take a moment.</>
+                                : <>Copying photos from your device.<br />This may take a moment.</>
+                            }
                         </div>
                     </div>
                 )}
@@ -204,6 +267,89 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                     </div>
                 )}
 
+                {/* Linux dependency setup guide */}
+                {!importing && !importResult && showDepGuide && (
+                    <section className="settings-section">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <Terminal size={16} style={{ color: 'var(--accent)' }} />
+                            <h3 style={{ margin: 0 }}>Device Import Setup</h3>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 12px 0' }}>
+                            CullSnap needs a few system packages to communicate with your device.
+                        </p>
+
+                        {depStatus!.installCommand ? (
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                padding: '10px 12px',
+                                background: 'rgba(0, 0, 0, 0.2)',
+                                borderRadius: 8,
+                                fontFamily: 'monospace',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-primary)',
+                                marginBottom: 8,
+                            }}>
+                                <code style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                                    {depStatus!.installCommand}
+                                </code>
+                                <button
+                                    className="btn icon-btn"
+                                    onClick={() => handleCopyCommand()}
+                                    title="Copy to clipboard"
+                                    style={{ padding: 4, flexShrink: 0 }}
+                                >
+                                    <Copy size={14} style={{ color: copied ? '#22c55e' : 'var(--text-secondary)' }} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                                {allInstallCommands.map(({ label, cmd }) => (
+                                    <div key={label} style={{
+                                        padding: '8px 10px',
+                                        background: 'rgba(0, 0, 0, 0.2)',
+                                        borderRadius: 6,
+                                        fontSize: '0.72rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                    }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}>{label}:</div>
+                                            <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{cmd}</code>
+                                        </div>
+                                        <button
+                                            className="btn icon-btn"
+                                            onClick={() => handleCopyCommand(cmd)}
+                                            title="Copy"
+                                            style={{ padding: 3, flexShrink: 0 }}
+                                        >
+                                            <Copy size={12} style={{ color: 'var(--text-secondary)' }} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {depStatus!.distroName && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                                Detected: {depStatus!.distroName}
+                            </div>
+                        )}
+
+                        <button
+                            className="btn w-full"
+                            onClick={checkDeps}
+                            disabled={depChecking}
+                            style={{ marginTop: 4 }}
+                        >
+                            <RefreshCw size={14} className={depChecking ? 'spin' : ''} />
+                            {depChecking ? 'Checking...' : 'Check Again'}
+                        </button>
+                    </section>
+                )}
+
                 {/* Device list */}
                 {!importing && !importResult && (
                     <section className="settings-section">
@@ -230,9 +376,15 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                                     No devices detected
                                 </div>
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', lineHeight: 1.6 }}>
-                                    Connect your iPhone or iPad via USB and unlock it.
+                                    Connect your device via USB and unlock it.
                                     <br />
                                     If prompted, tap "Trust This Computer" on your device.
+                                    {probe?.OS === 'linux' && (
+                                        <>
+                                            <br />
+                                            For Android, select "File Transfer" mode when prompted.
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ) : (
@@ -251,13 +403,13 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            <Smartphone size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                                            {deviceIcon(dev.type || '')}
                                             <div>
                                                 <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                                                     {dev.name}
                                                 </div>
                                                 <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                                    {dev.serial.substring(0, 12)}...
+                                                    {dev.serial.substring(0, 12)}{dev.serial.length > 12 ? '...' : ''}
                                                 </div>
                                             </div>
                                         </div>
@@ -285,8 +437,10 @@ export function DeviceImportModal({ onClose, onLoadDir }: DeviceImportModalProps
                         color: 'var(--text-secondary)',
                         lineHeight: 1.6,
                     }}>
-                        <strong>Manual import:</strong> Open Image Capture from Spotlight,
-                        select your device, drag photos to a folder, then open that folder in CullSnap.
+                        <strong>Manual import:</strong>{' '}
+                        {probe?.OS === 'darwin'
+                            ? 'Open Image Capture from Spotlight, select your device, drag photos to a folder, then open that folder in CullSnap.'
+                            : 'Connect your device, find its DCIM folder in your file manager, copy photos to a folder, then open that folder in CullSnap.'}
                     </div>
                 )}
             </div>
