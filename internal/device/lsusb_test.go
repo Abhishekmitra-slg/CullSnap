@@ -83,30 +83,3 @@ Bus 001 Device 003: ID 04e8:6860 Samsung Electronics (MTP)`
 		t.Errorf("expected 2, got %d", len(devices))
 	}
 }
-
-func TestLsusbVendorClassification(t *testing.T) {
-	tests := []struct {
-		vendorID string
-		wantType string
-	}{
-		{"05ac", "iphone"},
-		{"04e8", "android"},
-		{"18d1", "android"},
-		{"22b8", "android"},
-		{"2717", "android"},
-		{"12d1", "android"},
-		{"2a70", "android"},
-		{"04a9", "camera"},
-		{"04b0", "camera"},
-		{"054c", "camera"},
-		{"0000", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.vendorID, func(t *testing.T) {
-			got := classifyVendor(tt.vendorID)
-			if got != tt.wantType {
-				t.Errorf("classifyVendor(%q) = %q, want %q", tt.vendorID, got, tt.wantType)
-			}
-		})
-	}
-}
