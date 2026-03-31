@@ -112,6 +112,21 @@ func (a *App) GetImportStats() (ImportStats, error) {
 	return stats, nil
 }
 
+// CheckDeviceDependencies checks for optional system packages needed for Linux
+// device import. On macOS/Windows, returns an all-satisfied status.
+func (a *App) CheckDeviceDependencies() device.DependencyStatus {
+	logger.Log.Debug("device: checking dependencies")
+	status := device.CheckDependencies()
+	logger.Log.Info("device: dependency check complete",
+		"distroFamily", status.DistroFamily,
+		"gvfs", status.GVFSAvailable,
+		"usbmuxd", status.UsbmuxdRunning,
+		"gphoto2", status.Gphoto2Path,
+		"missing", status.MissingPackages,
+	)
+	return status
+}
+
 // ClearImportCache removes the cached import directory for a specific device.
 func (a *App) ClearImportCache(serial string) error {
 	importDir := filepath.Join(a.cfg.CacheDir, "imports", device.SanitizeSerial(serial))

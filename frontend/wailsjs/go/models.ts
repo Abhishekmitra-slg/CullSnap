@@ -373,11 +373,41 @@ export namespace cloudsource {
 
 export namespace device {
 	
+	export class DependencyStatus {
+	    usbmuxdRunning: boolean;
+	    gvfsAvailable: boolean;
+	    gphoto2Path: string;
+	    ideviceInfoPath: string;
+	    distroID: string;
+	    distroFamily: string;
+	    distroName: string;
+	    installCommand: string;
+	    missingPackages: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DependencyStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.usbmuxdRunning = source["usbmuxdRunning"];
+	        this.gvfsAvailable = source["gvfsAvailable"];
+	        this.gphoto2Path = source["gphoto2Path"];
+	        this.ideviceInfoPath = source["ideviceInfoPath"];
+	        this.distroID = source["distroID"];
+	        this.distroFamily = source["distroFamily"];
+	        this.distroName = source["distroName"];
+	        this.installCommand = source["installCommand"];
+	        this.missingPackages = source["missingPackages"];
+	    }
+	}
 	export class Device {
 	    name: string;
 	    vendorID: string;
 	    productID: string;
 	    serial: string;
+	    type: string;
+	    mountPath: string;
 	    // Go type: time
 	    detectedAt: any;
 	
@@ -391,6 +421,8 @@ export namespace device {
 	        this.vendorID = source["vendorID"];
 	        this.productID = source["productID"];
 	        this.serial = source["serial"];
+	        this.type = source["type"];
+	        this.mountPath = source["mountPath"];
 	        this.detectedAt = this.convertValues(source["detectedAt"], null);
 	    }
 	

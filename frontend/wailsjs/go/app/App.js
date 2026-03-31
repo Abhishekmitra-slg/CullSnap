@@ -26,6 +26,10 @@ export function CheckDedupStatus(arg1) {
   return window['go']['app']['App']['CheckDedupStatus'](arg1);
 }
 
+export function CheckDeviceDependencies() {
+  return window['go']['app']['App']['CheckDeviceDependencies']();
+}
+
 export function CheckForUpdate() {
   return window['go']['app']['App']['CheckForUpdate']();
 }

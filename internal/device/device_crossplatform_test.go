@@ -67,6 +67,33 @@ func TestDeviceStruct_ZeroValue(t *testing.T) {
 	}
 }
 
+func TestDeviceStruct_TypeAndMountPath(t *testing.T) {
+	d := Device{
+		Name:      "Samsung Galaxy S24",
+		VendorID:  "0x04e8",
+		ProductID: "0x6860",
+		Serial:    "R5CN123ABC",
+		Type:      "android",
+		MountPath: "/run/user/1000/gvfs/mtp:host=SAMSUNG_Galaxy_S24_R5CN123ABC",
+	}
+	if d.Type != "android" {
+		t.Errorf("Type = %q, want %q", d.Type, "android")
+	}
+	if d.MountPath == "" {
+		t.Error("MountPath should not be empty")
+	}
+}
+
+func TestDeviceStruct_TypeZeroValue(t *testing.T) {
+	var d Device
+	if d.Type != "" {
+		t.Errorf("zero value Type should be empty, got %q", d.Type)
+	}
+	if d.MountPath != "" {
+		t.Errorf("zero value MountPath should be empty, got %q", d.MountPath)
+	}
+}
+
 func TestSanitizeSerial_CrossPlatform(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -555,7 +555,7 @@ function App() {
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
             {cloudOpen && <CloudSourceModal onClose={() => setCloudOpen(false)} onLoadDir={loadDirectory} />}
-            {deviceImportOpen && <DeviceImportModal onClose={() => setDeviceImportOpen(false)} onLoadDir={loadDirectory} />}
+            {deviceImportOpen && <DeviceImportModal onClose={() => setDeviceImportOpen(false)} onLoadDir={loadDirectory} probe={probe} />}
             {whatsNewOpen && <WhatsNewModal onClose={() => setWhatsNewOpen(false)} />}
 
             {/* Device auto-detect toast */}

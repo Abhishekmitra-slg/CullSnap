@@ -5,12 +5,14 @@ import (
 	"time"
 )
 
-// Device represents a detected USB device (iPhone or iPad).
+// Device represents a detected USB device (iPhone, iPad, Android phone, camera, or storage).
 type Device struct {
 	Name       string    `json:"name"`
 	VendorID   string    `json:"vendorID"`
 	ProductID  string    `json:"productID"`
 	Serial     string    `json:"serial"`
+	Type       string    `json:"type"`      // "iphone", "android", "camera", "storage", "" (legacy)
+	MountPath  string    `json:"mountPath"` // Filesystem mount path (GVFS on Linux, empty on macOS/Windows)
 	DetectedAt time.Time `json:"detectedAt"`
 }
 
