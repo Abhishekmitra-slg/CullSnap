@@ -5,8 +5,6 @@ package device
 import (
 	"bufio"
 	"bytes"
-	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -87,17 +85,4 @@ func parseLsusb(data []byte) []Device {
 	}
 
 	return devices
-}
-
-// runLsusb executes the lsusb command and returns parsed devices.
-func runLsusb() ([]Device, error) {
-	path, err := exec.LookPath("lsusb")
-	if err != nil {
-		return nil, fmt.Errorf("lsusb not found: %w", err)
-	}
-	out, err := exec.Command(path).Output() //nolint:gosec // path resolved via LookPath above
-	if err != nil {
-		return nil, fmt.Errorf("lsusb failed: %w", err)
-	}
-	return parseLsusb(out), nil
 }

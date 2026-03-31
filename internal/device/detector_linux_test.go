@@ -3,10 +3,16 @@
 package device
 
 import (
+	"cullsnap/internal/logger"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	logger.Init("/dev/null") //nolint:errcheck // test init
+	os.Exit(m.Run())
+}
 
 func TestParseGVFSMounts_AFC(t *testing.T) {
 	gvfsDir := t.TempDir()

@@ -39,7 +39,7 @@ func NewDetector() Detector {
 
 	mediaDir := ""
 	if u, err := user.Current(); err == nil {
-		mediaDir = filepath.Join("/media", u.Username)
+		mediaDir = "/media/" + u.Username
 	}
 
 	d := &LinuxDetector{
