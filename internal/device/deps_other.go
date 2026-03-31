@@ -1,8 +1,8 @@
-//go:build !linux
+//go:build !linux && !darwin && !windows
 
 package device
 
-// CheckDependencies returns an all-satisfied status on non-Linux platforms.
+// CheckDependencies returns an all-satisfied status on unsupported platforms.
 func CheckDependencies() DependencyStatus {
 	return DependencyStatus{
 		UsbmuxdRunning: true,
