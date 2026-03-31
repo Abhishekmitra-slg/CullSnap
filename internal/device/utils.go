@@ -3,10 +3,45 @@ package device
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+var allowedBinDirs = []string{
+	"/usr/bin/",
+	"/usr/local/bin/",
+	"/usr/sbin/",
+	"/bin/",
+	"/sbin/",
+	"/opt/homebrew/bin/",
+}
+
+func resolveSecureBinary(name string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s not found: %w", name, err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve absolute path for %s: %w", name, err)
+	}
+
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve symlinks for %s: %w", name, err)
+	}
+
+	for _, prefix := range allowedBinDirs {
+		if strings.HasPrefix(realPath, prefix) {
+			return realPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s found at %s which is not in a trusted directory", name, realPath)
+}
 
 var sanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
