@@ -11,25 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
-- *(device)* Add Linux USB device import with multi-device support
-- *(device)* Three-tier detection: GVFS mount scanning, lsusb parsing, mass storage
-- *(device)* Three-tier import: GVFS filesystem copy, gphoto2 CLI fallback, mass storage
-- *(device)* Support iPhone (AFC), Android (MTP), cameras (PTP), and USB storage on Linux
-- *(device)* Distro-specific dependency setup guide (Debian, Fedora, Arch, openSUSE)
-- *(device)* Device type icons (phone, camera, storage) in import modal
-- *(device)* Add Type and MountPath fields to Device struct for cross-platform extensibility
+- *(device)* Add Linux device import UI with dependency setup guide
+- *(device)* Add Linux importer with GVFS, gphoto2, and mass storage support
+- *(device)* Add Linux detector with GVFS, lsusb, and mass storage scanning
+- *(device)* Add Linux dependency checker with distro detection
+- *(device)* Add Type and MountPath fields to Device struct
 
-### Security
+### Bug Fixes
 
-- Binary path validation restricts gphoto2/ideviceinfo to trusted system directories
-- GVFS mount path validation prevents symlink escape attacks
-- Post-copy path traversal verification on all import paths
+- *(device)* Resolve CI lint and test failures
+- Update tsconfig for TypeScript 6.0 compatibility
 
 ### Miscellaneous
 
-- Refactor shared security utilities (validateDestDir, verifyNoPathTraversal) to utils.go
-- Update stub build tags to exclude Linux
-- Bump dependencies: actions/setup-go 6.4, modernc.org/sqlite 1.48, wails/v2 2.12, vite 8.0.3, golang.org/x/oauth2 0.36, lucide-react 1.7.0, typescript 6.0.2
+- *(device)* Move shared security utils to utils.go
+- *(deps-dev)* Bump typescript from 5.9.3 to 6.0.2 in /frontend
+- *(deps)* Bump lucide-react from 0.577.0 to 1.7.0 in /frontend
+- *(deps)* Bump github.com/wailsapp/wails/v2 from 2.11.0 to 2.12.0
+- *(deps)* Bump golang.org/x/oauth2 from 0.34.0 to 0.36.0
+- *(deps-dev)* Bump vite from 8.0.1 to 8.0.3 in /frontend
+- *(deps)* Bump modernc.org/sqlite from 1.47.0 to 1.48.0
+- *(deps)* Bump actions/setup-go from 6.3.0 to 6.4.0
+
+### Build
+
+- *(device)* Exclude Linux from stub build tags
 
 ## [v2.9.0] - 2026-03-30
 
