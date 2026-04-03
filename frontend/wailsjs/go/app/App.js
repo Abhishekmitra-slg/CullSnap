@@ -10,6 +10,10 @@ export function AuthenticateCloudSource(arg1) {
   return window['go']['app']['App']['AuthenticateCloudSource'](arg1);
 }
 
+export function CancelAIAnalysis() {
+  return window['go']['app']['App']['CancelAIAnalysis']();
+}
+
 export function CancelDeduplicate() {
   return window['go']['app']['App']['CancelDeduplicate']();
 }
@@ -54,12 +58,24 @@ export function DisconnectCloudSource(arg1) {
   return window['go']['app']['App']['DisconnectCloudSource'](arg1);
 }
 
+export function DownloadAIModels() {
+  return window['go']['app']['App']['DownloadAIModels']();
+}
+
 export function DownloadUpdate() {
   return window['go']['app']['App']['DownloadUpdate']();
 }
 
 export function ExportPhotos(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportPhotos'](arg1, arg2, arg3);
+}
+
+export function GetAIResults(arg1) {
+  return window['go']['app']['App']['GetAIResults'](arg1);
+}
+
+export function GetAIScoringStatus() {
+  return window['go']['app']['App']['GetAIScoringStatus']();
 }
 
 export function GetAboutInfo() {
@@ -102,6 +118,10 @@ export function GetMirrorStats() {
   return window['go']['app']['App']['GetMirrorStats']();
 }
 
+export function GetPhotoAIScore(arg1) {
+  return window['go']['app']['App']['GetPhotoAIScore'](arg1);
+}
+
 export function GetPhotoEXIF(arg1) {
   return window['go']['app']['App']['GetPhotoEXIF'](arg1);
 }
@@ -118,6 +138,10 @@ export function GetSelections(arg1) {
   return window['go']['app']['App']['GetSelections'](arg1);
 }
 
+export function HideFaceCluster(arg1, arg2) {
+  return window['go']['app']['App']['HideFaceCluster'](arg1, arg2);
+}
+
 export function ImportFromDevice(arg1) {
   return window['go']['app']['App']['ImportFromDevice'](arg1);
 }
@@ -128,6 +152,10 @@ export function ListCachedAlbums() {
 
 export function ListCloudAlbums(arg1) {
   return window['go']['app']['App']['ListCloudAlbums'](arg1);
+}
+
+export function MergeFaceClusters(arg1, arg2) {
+  return window['go']['app']['App']['MergeFaceClusters'](arg1, arg2);
 }
 
 export function MirrorCloudAlbum(arg1, arg2, arg3) {
@@ -146,12 +174,20 @@ export function PreloadThumbnails(arg1) {
   return window['go']['app']['App']['PreloadThumbnails'](arg1);
 }
 
+export function RenameFaceCluster(arg1, arg2) {
+  return window['go']['app']['App']['RenameFaceCluster'](arg1, arg2);
+}
+
 export function ResetAppConfig() {
   return window['go']['app']['App']['ResetAppConfig']();
 }
 
 export function RestartForUpdate() {
   return window['go']['app']['App']['RestartForUpdate']();
+}
+
+export function RunAIAnalysis(arg1) {
+  return window['go']['app']['App']['RunAIAnalysis'](arg1);
 }
 
 export function SaveAppConfig(arg1) {
@@ -174,12 +210,24 @@ export function SelectExportDirectory() {
   return window['go']['app']['App']['SelectExportDirectory']();
 }
 
+export function SetAIScoringEnabled(arg1) {
+  return window['go']['app']['App']['SetAIScoringEnabled'](arg1);
+}
+
+export function SetCloudAPIKey(arg1, arg2) {
+  return window['go']['app']['App']['SetCloudAPIKey'](arg1, arg2);
+}
+
 export function SetPhotoRating(arg1, arg2) {
   return window['go']['app']['App']['SetPhotoRating'](arg1, arg2);
 }
 
 export function ShouldShowWhatsNew() {
   return window['go']['app']['App']['ShouldShowWhatsNew']();
+}
+
+export function TestCloudConnection(arg1) {
+  return window['go']['app']['App']['TestCloudConnection'](arg1);
 }
 
 export function ToggleSelection(arg1, arg2, arg3) {

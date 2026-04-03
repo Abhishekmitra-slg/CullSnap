@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Eye, EyeOff } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 
 interface PhotoEXIF {
@@ -11,15 +11,37 @@ interface PhotoEXIF {
     dateTaken: string;
 }
 
+interface FaceDetection {
+    bboxX: number;
+    bboxY: number;
+    bboxW: number;
+    bboxH: number;
+    eyeSharpness: number;
+    eyesOpen: boolean;
+    expression: number;
+    confidence: number;
+    clusterId?: number;
+}
+
 interface ViewerProps {
     photo: model.Photo | null;
     onTrimChange?: (path: string, start: number, end: number) => void;
     isSelected?: boolean;
+    faceDetections?: FaceDetection[];
+    aiPanelVisible?: boolean;
+    onFaceClick?: (clusterId: number) => void;
 }
 
-export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
+// Thumbnail width used by ThumbCache for coordinate mapping
+const THUMB_WIDTH = 300;
+
+export function Viewer({ photo, onTrimChange, isSelected, faceDetections, aiPanelVisible, onFaceClick }: ViewerProps) {
     const [exif, setExif] = useState<PhotoEXIF | null>(null);
+    const [showFaceOverlay, setShowFaceOverlay] = useState(true);
+    const [hoveredFace, setHoveredFace] = useState<number | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const imageRef = useRef<HTMLImageElement>(null);
+    const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
     useEffect(() => {
         if (!photo || photo.IsVideo) {
@@ -49,6 +71,32 @@ export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
         loadExif();
         return () => { cancelled = true; };
     }, [photo?.Path, photo?.IsVideo]);
+
+    // Track displayed image dimensions via ResizeObserver
+    useEffect(() => {
+        const el = imageRef.current;
+        if (!el) return;
+
+        const observer = new ResizeObserver(() => {
+            if (imageRef.current) {
+                setImageSize({
+                    width: imageRef.current.offsetWidth,
+                    height: imageRef.current.offsetHeight,
+                });
+            }
+        });
+        observer.observe(el);
+
+        // Set initial size
+        setImageSize({ width: el.offsetWidth, height: el.offsetHeight });
+
+        return () => observer.disconnect();
+    }, [photo?.Path]);
+
+    // Reset image size when photo changes
+    useEffect(() => {
+        setImageSize({ width: 0, height: 0 });
+    }, [photo?.Path]);
 
     // Compute media URL inline — no state needed, avoids extra render cycle
     const mediaUrl = photo && !photo.IsVideo
@@ -122,6 +170,36 @@ export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
         }
     };
 
+    // Compute face box color based on eyeSharpness quality score
+    const faceBoxColor = (eyeSharpness: number): string => {
+        if (eyeSharpness >= 80) return '#22c55e'; // green
+        if (eyeSharpness >= 50) return '#eab308'; // yellow
+        return '#ef4444'; // red
+    };
+
+    // Scale face bounding box coords from 300px thumbnail space to displayed image size
+    const scaleFaceBox = (face: FaceDetection) => {
+        if (imageSize.width === 0 || imageSize.height === 0) return null;
+
+        // Bounding boxes are in 300px thumbnail coordinate space.
+        // The thumbnail is 300px wide; height is proportional.
+        // We only know the width (THUMB_WIDTH), so scale by width ratio and apply to both axes
+        // (thumbnails are generated with fixed width, proportional height).
+        const scaleX = imageSize.width / THUMB_WIDTH;
+        // Height of thumbnail is proportional: thumbH = THUMB_WIDTH * (naturalH / naturalW)
+        // For displayed image the same ratio applies, so we use scaleX for both axes.
+        const scaleY = scaleX;
+
+        return {
+            left: face.bboxX * scaleX,
+            top: face.bboxY * scaleY,
+            width: face.bboxW * scaleX,
+            height: face.bboxH * scaleY,
+        };
+    };
+
+    const hasFaces = faceDetections && faceDetections.length > 0 && !photo.IsVideo;
+
     return (
         <div className="viewer-panel" style={{ position: 'relative' }}>
             <div className={`viewer-selected-bar ${isSelected ? 'visible' : ''}`}>
@@ -145,13 +223,120 @@ export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
                         style={{ maxHeight: 'calc(100vh - 120px)' }}
                     />
                 ) : (
-                    <img
-                        src={mediaUrl}
-                        alt={filename}
-                        className="viewer-image"
-                    />
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                        <img
+                            ref={imageRef}
+                            src={mediaUrl}
+                            alt={filename}
+                            className="viewer-image"
+                            onLoad={() => {
+                                if (imageRef.current) {
+                                    setImageSize({
+                                        width: imageRef.current.offsetWidth,
+                                        height: imageRef.current.offsetHeight,
+                                    });
+                                }
+                            }}
+                        />
+                        {/* Face bounding box overlay */}
+                        {hasFaces && showFaceOverlay && imageSize.width > 0 && (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: imageSize.width,
+                                    height: imageSize.height,
+                                    pointerEvents: 'none',
+                                }}
+                            >
+                                {faceDetections!.map((face, idx) => {
+                                    const scaled = scaleFaceBox(face);
+                                    if (!scaled) return null;
+                                    const color = faceBoxColor(face.eyeSharpness);
+                                    const isHovered = hoveredFace === idx;
+                                    return (
+                                        <div
+                                            key={idx}
+                                            style={{
+                                                position: 'absolute',
+                                                left: scaled.left,
+                                                top: scaled.top,
+                                                width: scaled.width,
+                                                height: scaled.height,
+                                                border: `2px solid ${color}`,
+                                                borderRadius: 3,
+                                                boxShadow: isHovered ? `0 0 0 1px ${color}` : undefined,
+                                                cursor: face.clusterId !== undefined ? 'pointer' : 'default',
+                                                pointerEvents: 'all',
+                                                transition: 'box-shadow 0.15s ease',
+                                            }}
+                                            onMouseEnter={() => setHoveredFace(idx)}
+                                            onMouseLeave={() => setHoveredFace(null)}
+                                            onClick={() => {
+                                                if (face.clusterId !== undefined && onFaceClick) {
+                                                    onFaceClick(face.clusterId);
+                                                }
+                                            }}
+                                        >
+                                            {/* Hover label */}
+                                            {isHovered && (
+                                                <div
+                                                    style={{
+                                                        position: 'absolute',
+                                                        bottom: '100%',
+                                                        left: 0,
+                                                        marginBottom: 4,
+                                                        background: 'rgba(0,0,0,0.75)',
+                                                        color: '#fff',
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 6px',
+                                                        borderRadius: 4,
+                                                        whiteSpace: 'nowrap',
+                                                        pointerEvents: 'none',
+                                                    }}
+                                                >
+                                                    {face.eyeSharpness}% sharpness
+                                                    {!face.eyesOpen && ' · eyes closed'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 )}
             </div>
+
+            {/* Face overlay toggle — top-left of viewer, only shown when AI panel visible and faces present */}
+            {hasFaces && aiPanelVisible && (
+                <button
+                    onClick={() => setShowFaceOverlay(v => !v)}
+                    title={showFaceOverlay ? 'Hide face boxes' : 'Show face boxes'}
+                    style={{
+                        position: 'absolute',
+                        top: 12,
+                        left: 12,
+                        background: 'rgba(0,0,0,0.55)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: 6,
+                        color: '#fff',
+                        width: 32,
+                        height: 32,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        zIndex: 10,
+                        transition: 'background 0.15s ease',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.75)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
+                >
+                    {showFaceOverlay ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+            )}
 
             {/* Video Trimmer UI - Docked at bottom when viewing video */}
             {photo.IsVideo && (
@@ -167,7 +352,7 @@ export function Viewer({ photo, onTrimChange, isSelected }: ViewerProps) {
                             </button>
                         </div>
                     </div>
-                    
+
                     {/* Dual slider trick using two range inputs overlayed */}
                     {(() => {
                         const dur = getEffectiveDuration();

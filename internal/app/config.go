@@ -29,6 +29,8 @@ type AppConfig struct {
 	AutoUpdate           string      `json:"autoUpdate"` // "off", "notify", "auto"
 	UseNativeSips        bool        `json:"useNativeSips"`
 	MaxCloudCacheMB      int         `json:"maxCloudCacheMB"`
+	AIScoringEnabled     bool        `json:"aiScoringEnabled"`
+	AIProvider           string      `json:"aiProvider"` // "local" or "cloud"
 	Probe                SystemProbe `json:"probe"`
 }
 

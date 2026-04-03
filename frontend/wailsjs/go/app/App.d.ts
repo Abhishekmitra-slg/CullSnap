@@ -9,6 +9,8 @@ export function AcknowledgeWhatsNew():Promise<void>;
 
 export function AuthenticateCloudSource(arg1:string):Promise<void>;
 
+export function CancelAIAnalysis():Promise<void>;
+
 export function CancelDeduplicate():Promise<void>;
 
 export function CancelImport(arg1:string):Promise<void>;
@@ -31,9 +33,15 @@ export function DeleteCachedAlbum(arg1:string,arg2:string):Promise<void>;
 
 export function DisconnectCloudSource(arg1:string):Promise<void>;
 
+export function DownloadAIModels():Promise<void>;
+
 export function DownloadUpdate():Promise<void>;
 
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
+
+export function GetAIResults(arg1:string):Promise<app.AIResults>;
+
+export function GetAIScoringStatus():Promise<app.AIScoringStatus>;
 
 export function GetAboutInfo():Promise<app.AboutInfo>;
 
@@ -55,6 +63,8 @@ export function GetImportStats():Promise<app.ImportStats>;
 
 export function GetMirrorStats():Promise<app.MirrorStats>;
 
+export function GetPhotoAIScore(arg1:string):Promise<app.PhotoAIScore>;
+
 export function GetPhotoEXIF(arg1:string):Promise<app.PhotoEXIF>;
 
 export function GetRatingsForDirectory(arg1:string):Promise<Record<string, number>>;
@@ -63,11 +73,15 @@ export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
 
+export function HideFaceCluster(arg1:number,arg2:boolean):Promise<void>;
+
 export function ImportFromDevice(arg1:string):Promise<string>;
 
 export function ListCachedAlbums():Promise<Array<cloudsource.CachedAlbum>>;
 
 export function ListCloudAlbums(arg1:string):Promise<Array<cloudsource.Album>>;
+
+export function MergeFaceClusters(arg1:number,arg2:number):Promise<void>;
 
 export function MirrorCloudAlbum(arg1:string,arg2:string,arg3:string):Promise<string>;
 
@@ -77,9 +91,13 @@ export function OpenLog():Promise<void>;
 
 export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
 
+export function RenameFaceCluster(arg1:number,arg2:string):Promise<void>;
+
 export function ResetAppConfig():Promise<app.AppConfig>;
 
 export function RestartForUpdate():Promise<void>;
+
+export function RunAIAnalysis(arg1:string):Promise<void>;
 
 export function SaveAppConfig(arg1:app.AppConfig):Promise<void>;
 
@@ -91,8 +109,14 @@ export function SelectDirectory():Promise<string>;
 
 export function SelectExportDirectory():Promise<string>;
 
+export function SetAIScoringEnabled(arg1:boolean):Promise<void>;
+
+export function SetCloudAPIKey(arg1:string,arg2:string):Promise<void>;
+
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ShouldShowWhatsNew():Promise<boolean>;
+
+export function TestCloudConnection(arg1:string):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;

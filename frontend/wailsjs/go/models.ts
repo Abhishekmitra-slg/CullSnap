@@ -1,5 +1,51 @@
 export namespace app {
 	
+	export class AIResults {
+	    scores: storage.AIScore[];
+	    clusters: storage.FaceCluster[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AIResults(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scores = this.convertValues(source["scores"], storage.AIScore);
+	        this.clusters = this.convertValues(source["clusters"], storage.FaceCluster);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AIScoringStatus {
+	    enabled: boolean;
+	    providers: any[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AIScoringStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.providers = source["providers"];
+	    }
+	}
 	export class Contributor {
 	    name: string;
 	    github: string;
@@ -97,6 +143,8 @@ export namespace app {
 	    autoUpdate: string;
 	    useNativeSips: boolean;
 	    maxCloudCacheMB: number;
+	    aiScoringEnabled: boolean;
+	    aiProvider: string;
 	    probe: SystemProbe;
 	
 	    static createFrom(source: any = {}) {
@@ -113,6 +161,8 @@ export namespace app {
 	        this.autoUpdate = source["autoUpdate"];
 	        this.useNativeSips = source["useNativeSips"];
 	        this.maxCloudCacheMB = source["maxCloudCacheMB"];
+	        this.aiScoringEnabled = source["aiScoringEnabled"];
+	        this.aiProvider = source["aiProvider"];
 	        this.probe = this.convertValues(source["probe"], SystemProbe);
 	    }
 	
@@ -226,6 +276,38 @@ export namespace app {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.totalMB = source["totalMB"];
 	    }
+	}
+	export class PhotoAIScore {
+	    score?: storage.AIScore;
+	    detections: storage.FaceDetection[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PhotoAIScore(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.score = this.convertValues(source["score"], storage.AIScore);
+	        this.detections = this.convertValues(source["detections"], storage.FaceDetection);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class PhotoEXIF {
 	    camera: string;
@@ -505,6 +587,106 @@ export namespace model {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace storage {
+	
+	export class AIScore {
+	    photoPath: string;
+	    overallScore: number;
+	    faceCount: number;
+	    provider: string;
+	    // Go type: time
+	    scoredAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIScore(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.photoPath = source["photoPath"];
+	        this.overallScore = source["overallScore"];
+	        this.faceCount = source["faceCount"];
+	        this.provider = source["provider"];
+	        this.scoredAt = this.convertValues(source["scoredAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FaceCluster {
+	    id: number;
+	    folderPath: string;
+	    label: string;
+	    representativePath: string;
+	    photoCount: number;
+	    hidden: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FaceCluster(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.folderPath = source["folderPath"];
+	        this.label = source["label"];
+	        this.representativePath = source["representativePath"];
+	        this.photoCount = source["photoCount"];
+	        this.hidden = source["hidden"];
+	    }
+	}
+	export class FaceDetection {
+	    id: number;
+	    photoPath: string;
+	    clusterId?: number;
+	    bboxX: number;
+	    bboxY: number;
+	    bboxW: number;
+	    bboxH: number;
+	    eyeSharpness: number;
+	    eyesOpen: boolean;
+	    expression: number;
+	    confidence: number;
+	    embedding?: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new FaceDetection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.photoPath = source["photoPath"];
+	        this.clusterId = source["clusterId"];
+	        this.bboxX = source["bboxX"];
+	        this.bboxY = source["bboxY"];
+	        this.bboxW = source["bboxW"];
+	        this.bboxH = source["bboxH"];
+	        this.eyeSharpness = source["eyeSharpness"];
+	        this.eyesOpen = source["eyesOpen"];
+	        this.expression = source["expression"];
+	        this.confidence = source["confidence"];
+	        this.embedding = source["embedding"];
+	    }
 	}
 
 }
