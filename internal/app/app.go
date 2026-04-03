@@ -203,6 +203,18 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 	if cfg.ThumbnailWorkers < 2 {
 		cfg.ThumbnailWorkers = 2
 	}
+	// Cap workers at CPU count to prevent memory pressure from parallel image processing.
+	maxWorkers := stdruntime.NumCPU()
+	if maxWorkers < 2 {
+		maxWorkers = 2
+	}
+	if cfg.ThumbnailWorkers > maxWorkers {
+		logger.Log.Info("app: capping ThumbnailWorkers to CPU count",
+			"configured", cfg.ThumbnailWorkers,
+			"maxWorkers", maxWorkers,
+		)
+		cfg.ThumbnailWorkers = maxWorkers
+	}
 	if cfg.ScannerWorkers < 1 {
 		cfg.ScannerWorkers = 1
 	}
