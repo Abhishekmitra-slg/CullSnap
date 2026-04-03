@@ -344,6 +344,12 @@ h2 {
   position: relative;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .main-content {
+    transition: none !important;
+  }
+}
+
 /* ═══════════════════════════════════════════════
    PHOTO GRID — Masonry Style
    ═══════════════════════════════════════════════ */

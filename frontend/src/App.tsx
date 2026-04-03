@@ -11,6 +11,7 @@ import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore } from '../wailsjs/go/app/App';
 import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import AIPanel from './components/AIPanel';
 
 interface SystemMetrics {
@@ -21,7 +22,6 @@ interface SystemMetrics {
     netSent: number;
     netRecv: number;
 }
-import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
     const [photos, setPhotos] = useState<appModel.Photo[]>([]);
@@ -598,7 +598,14 @@ function App() {
                 onToggleAIPanel={() => setAiPanelVisible(prev => !prev)}
             />
 
-            <div className="main-content" style={{ position: 'relative' }}>
+            <div
+                className="main-content"
+                style={{
+                    position: 'relative',
+                    marginRight: aiPanelVisible ? 300 : 0,
+                    transition: 'margin-right 200ms ease-out',
+                }}
+            >
                 <Grid
                     photos={photos}
                     duplicateGroups={duplicateGroups}
@@ -612,8 +619,39 @@ function App() {
                     aiScores={aiScores}
                 />
 
-                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} isSelected={selectedPaths.has(activePhotoPath || '')} />
+                <Viewer
+                    photo={activePhoto}
+                    onTrimChange={handleTrimChange}
+                    isSelected={selectedPaths.has(activePhotoPath || '')}
+                    faceDetections={activePhotoDetections}
+                    aiPanelVisible={aiPanelVisible}
+                    onFaceClick={(clusterId) => {
+                        setAiFaceFilter([clusterId]);
+                        setAiPanelVisible(true);
+                    }}
+                />
             </div>
+
+            <AIPanel
+                visible={aiPanelVisible}
+                onClose={() => setAiPanelVisible(false)}
+                activePhotoPath={activePhotoPath}
+                analysisProgress={aiProgress}
+                isAnalyzing={isAnalyzing}
+                clusters={aiClusters.map(c => ({
+                    id: c.id,
+                    label: c.label,
+                    count: c.photoCount,
+                    thumbnail: c.representativePath,
+                }))}
+                aiScores={aiScores}
+                onFilterByFace={setAiFaceFilter}
+                onSortByScore={setAiSortByScore}
+                onMinQuality={setAiMinQuality}
+                onHasFacesFilter={setAiHasFaces}
+                providerName={aiProviderName}
+                providerReady={aiProviderReady}
+            />
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>
                 <div style={{ flex: 1 }}>
