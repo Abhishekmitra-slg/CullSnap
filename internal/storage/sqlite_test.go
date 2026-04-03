@@ -190,7 +190,7 @@ func TestSQLiteConcurrentReads(t *testing.T) {
 	defer store.Close()
 
 	for i := 0; i < 10; i++ {
-		err := store.SaveSelection(filepath.Join("/photos", fmt.Sprintf("img_%d.jpg", i)), "session1", true)
+		err := store.SaveSelection(fmt.Sprintf("/photos/img_%d.jpg", i), "session1", true)
 		if err != nil {
 			t.Fatalf("failed to save selection: %v", err)
 		}
