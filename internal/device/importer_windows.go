@@ -9,14 +9,16 @@ import (
 	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
 
-// importScript is the PowerShell script that imports photos from an iPhone/iPad
-// via MTP using the Windows Shell.Application COM object. It reads a JSON object
-// with a "destDir" field from stdin, enumerates DCIM subfolders, and copies each
-// file to the destination directory. Progress is reported as NDJSON lines on stdout.
+// importScript is the PowerShell script that imports photos from a device via MTP
+// using the Windows Shell.Application COM object. It reads a JSON object with
+// "destDir" and "deviceName" fields from stdin, finds the device by name,
+// discovers the DCIM folder dynamically, and copies each file to the destination.
+// Progress is reported as NDJSON lines on stdout.
 //
 // Security: this script is a compile-time constant and is never modified at runtime.
 // Parameters are passed via stdin JSON, never interpolated into the script text.
@@ -26,25 +28,43 @@ const importScript = `$ErrorActionPreference = 'Stop'
 $inputJson = [Console]::In.ReadToEnd()
 $params = $inputJson | ConvertFrom-Json
 $destDir = $params.destDir
+$deviceName = $params.deviceName
 
 $shell = New-Object -ComObject Shell.Application
 
 $myComputer = $shell.Namespace(0x11)
-$device = $myComputer.Items() | Where-Object {
-    $_.Name -match 'iPhone|iPad'
-} | Select-Object -First 1
+$device = $null
+foreach ($item in $myComputer.Items()) {
+    if ($item.Name -eq $deviceName -or $item.Name -match [regex]::Escape($deviceName)) {
+        $device = $item
+        break
+    }
+}
 
 if (-not $device) {
-    @{ type = 'error'; code = 'no_device'; message = 'No iPhone or iPad found. Connect your device via USB.' } |
+    @{ type = 'error'; code = 'no_device'; message = "Device '$deviceName' not found. Connect it via USB and try again." } |
         ConvertTo-Json -Compress
     exit 1
 }
 
-$storage = $device.GetFolder.Items() |
-    Where-Object { $_.Name -eq 'Internal Storage' }
+# Find storage that contains DCIM (handles "Internal Storage", "Internal shared storage", "Phone", "SD Card", etc.)
+$storage = $null
+foreach ($storageItem in $device.GetFolder.Items()) {
+    $sub = $storageItem.GetFolder
+    if ($sub) {
+        foreach ($child in $sub.Items()) {
+            if ($child.Name -eq 'DCIM') {
+                $storage = $storageItem
+                break
+            }
+        }
+    }
+    if ($storage) { break }
+}
+
 if (-not $storage) {
     @{ type = 'error'; code = 'not_trusted';
-       message = 'Cannot access device storage. Please unlock your iPhone and tap Trust when prompted, then try again.' } |
+       message = 'Cannot access device storage. Ensure the device is unlocked and has granted file access, then try again.' } |
         ConvertTo-Json -Compress
     exit 1
 }
@@ -123,9 +143,10 @@ foreach ($subfolder in $dcimFolder.Items()) {
 // the import is aborted before any files are copied.
 const maxFileCount = 50000
 
-// ImportFromDevice imports photos from a connected iPhone/iPad via MTP on Windows.
-// It uses a PowerShell script that leverages the Shell.Application COM object to
-// enumerate and copy files from the device's DCIM folder.
+// ImportFromDevice imports photos from a connected device via MTP or direct copy
+// on Windows. For mass storage devices (SD cards, USB drives), it copies files
+// directly. For MTP devices (phones, cameras), it uses a PowerShell script with
+// the Shell.Application COM object.
 //
 // Returns the import directory path, count of imported files, and any error.
 //
@@ -146,17 +167,43 @@ func ImportFromDevice(ctx context.Context, serial, baseDir string) (string, int,
 		return "", 0, fmt.Errorf("device: failed to create import dir: %w", err)
 	}
 
-	logger.Log.Info("device: starting MTP import via PowerShell",
+	// Look up device in detector state for type and mount path.
+	dev, found := lookupDeviceBySerial(serial)
+	if !found {
+		// Fall back to original behavior — assume MTP device, use serial only.
+		dev = Device{Name: "", Serial: serial, Type: "iphone"}
+	}
+
+	logger.Log.Info("device: starting Windows import",
 		"serial", serial,
-		"cleanSerial", cleanSerial,
+		"type", dev.Type,
+		"mountPath", dev.MountPath,
 		"importDir", importDir,
 	)
 
-	// Marshal parameters as JSON for stdin.
-	type importParams struct {
-		DestDir string `json:"destDir"`
+	// Mass storage: direct file copy (no Shell.Application needed).
+	if dev.Type == "storage" && dev.MountPath != "" {
+		count, err := importFromDrive(ctx, dev.MountPath, importDir)
+		if err != nil {
+			verifyNoPathTraversal(importDir)
+			return importDir, count, err
+		}
+		removed := verifyNoPathTraversal(importDir)
+		if removed > 0 {
+			logger.Log.Warn("device: removed files that escaped import directory", "removed", removed)
+		}
+		return importDir, count, nil
 	}
-	paramsJSON, err := json.Marshal(importParams{DestDir: importDir})
+
+	// MTP/PTP devices: Shell.Application via PowerShell.
+	type importParams struct {
+		DestDir    string `json:"destDir"`
+		DeviceName string `json:"deviceName"`
+	}
+	paramsJSON, err := json.Marshal(importParams{
+		DestDir:    importDir,
+		DeviceName: dev.Name,
+	})
 	if err != nil {
 		return "", 0, fmt.Errorf("device: failed to marshal import params: %w", err)
 	}
@@ -316,12 +363,85 @@ func countFilesRecursive(dir string) int {
 func userFriendlyError(evt ProgressEvent) string {
 	switch evt.Code {
 	case "no_device":
-		return "No iPhone or iPad found. Connect your device via USB and try again."
+		return "Device not found. Connect your device via USB and try again."
 	case "not_trusted":
-		return "Please unlock your iPhone and tap 'Trust' when prompted, then try again."
+		return "Cannot access device storage. Ensure the device is unlocked and has granted file access, then try again."
 	case "no_dcim":
 		return "No photos found on device."
 	default:
 		return evt.Message
 	}
+}
+
+// importFromDrive copies files from a mounted removable drive's DCIM folder.
+func importFromDrive(ctx context.Context, drivePath, destDir string) (int, error) {
+	dcimPath := drivePath + string(filepath.Separator) + "DCIM"
+	if _, err := os.Stat(dcimPath); os.IsNotExist(err) {
+		logger.Log.Info("device: no DCIM folder on drive", "path", drivePath)
+		return 0, nil
+	}
+
+	total := countFilesRecursive(dcimPath)
+	logger.Log.Info("device: drive DCIM enumeration complete", "total", total)
+	if total > maxFileCount {
+		return 0, fmt.Errorf("device: too many files (%d, limit is %d)", total, maxFileCount)
+	}
+
+	copied := 0
+	err := filepath.Walk(dcimPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(dcimPath, path)
+		if relErr != nil {
+			return nil
+		}
+
+		destPath := filepath.Join(destDir, relPath)
+
+		if existingInfo, statErr := os.Stat(destPath); statErr == nil {
+			if existingInfo.Size() == info.Size() {
+				copied++
+				return nil
+			}
+		}
+
+		if mkdirErr := os.MkdirAll(filepath.Dir(destPath), 0o700); mkdirErr != nil {
+			return nil
+		}
+
+		srcFile, openErr := os.Open(path) //nolint:gosec // G304: path from DCIM walk
+		if openErr != nil {
+			return nil
+		}
+		defer func() { _ = srcFile.Close() }()
+
+		dstFile, createErr := os.Create(destPath) //nolint:gosec // G304: destPath validated
+		if createErr != nil {
+			return nil
+		}
+		defer func() { _ = dstFile.Close() }()
+
+		if _, copyErr := io.Copy(dstFile, srcFile); copyErr != nil {
+			return nil
+		}
+		_ = dstFile.Close()
+
+		copied++
+		if copied%100 == 0 {
+			logger.Log.Debug("device: drive copy progress", "copied", copied, "total", total)
+		}
+		return nil
+	})
+
+	return copied, err
 }
