@@ -9,7 +9,6 @@ import (
 	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -138,11 +137,6 @@ foreach ($subfolder in $dcimFolder.Items()) {
     ConvertTo-Json -Compress
 `
 
-// maxFileCount is a safety limit to prevent runaway imports from consuming
-// excessive disk space or time. If the device reports more files than this,
-// the import is aborted before any files are copied.
-const maxFileCount = 50000
-
 // ImportFromDevice imports photos from a connected device via MTP or direct copy
 // on Windows. For mass storage devices (SD cards, USB drives), it copies files
 // directly. For MTP devices (phones, cameras), it uses a PowerShell script with
@@ -169,9 +163,8 @@ func ImportFromDevice(ctx context.Context, serial, baseDir string) (string, int,
 
 	// Look up device in detector state for type and mount path.
 	dev, found := lookupDeviceBySerial(serial)
-	if !found {
-		// Fall back to original behavior — assume MTP device, use serial only.
-		dev = Device{Name: "", Serial: serial, Type: "iphone"}
+	if !found || dev.Name == "" {
+		return "", 0, fmt.Errorf("device: device with serial %q not found in detector state — reconnect and try again", serial)
 	}
 
 	logger.Log.Info("device: starting Windows import",
@@ -343,22 +336,6 @@ func ImportFromDevice(ctx context.Context, serial, baseDir string) (string, int,
 	return importDir, finalCount, nil
 }
 
-// countFilesRecursive counts all non-directory entries under dir, recursively.
-// Returns 0 if the directory does not exist or cannot be read.
-func countFilesRecursive(dir string) int {
-	count := 0
-	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
-	return count
-}
-
 // userFriendlyError maps PowerShell error codes to user-friendly messages.
 func userFriendlyError(evt ProgressEvent) string {
 	switch evt.Code {
@@ -375,7 +352,7 @@ func userFriendlyError(evt ProgressEvent) string {
 
 // importFromDrive copies files from a mounted removable drive's DCIM folder.
 func importFromDrive(ctx context.Context, drivePath, destDir string) (int, error) {
-	dcimPath := drivePath + string(filepath.Separator) + "DCIM"
+	dcimPath := filepath.Join(drivePath, string(filepath.Separator), "DCIM")
 	if _, err := os.Stat(dcimPath); os.IsNotExist(err) {
 		logger.Log.Info("device: no DCIM folder on drive", "path", drivePath)
 		return 0, nil
@@ -419,22 +396,10 @@ func importFromDrive(ctx context.Context, drivePath, destDir string) (int, error
 			return nil
 		}
 
-		srcFile, openErr := os.Open(path) //nolint:gosec // G304: path from DCIM walk
-		if openErr != nil {
+		if cpErr := copyFile(path, destPath); cpErr != nil {
+			logger.Log.Warn("device: failed to copy file", "name", info.Name(), "error", cpErr)
 			return nil
 		}
-		defer func() { _ = srcFile.Close() }()
-
-		dstFile, createErr := os.Create(destPath) //nolint:gosec // G304: destPath validated
-		if createErr != nil {
-			return nil
-		}
-		defer func() { _ = dstFile.Close() }()
-
-		if _, copyErr := io.Copy(dstFile, srcFile); copyErr != nil {
-			return nil
-		}
-		_ = dstFile.Close()
 
 		copied++
 		if copied%100 == 0 {

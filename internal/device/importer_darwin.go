@@ -6,14 +6,11 @@ import (
 	"context"
 	"cullsnap/internal/logger"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 )
-
-const maxFileCount = 50000
 
 // ImportFromDevice imports photos from a connected device on macOS.
 // It determines the import strategy based on the device's type and mount path.
@@ -126,7 +123,7 @@ func importFromVolume(ctx context.Context, mountPath, destDir string) (int, erro
 		return 0, nil
 	}
 
-	total := countDCIMFiles(dcimPath)
+	total := countFilesRecursive(dcimPath)
 	logger.Log.Info("device: DCIM enumeration complete", "total", total)
 	if total > maxFileCount {
 		return 0, fmt.Errorf("device: too many files (%d, limit is %d)", total, maxFileCount)
@@ -219,52 +216,4 @@ func importFromGphoto2Darwin(ctx context.Context, destDir string) (int, error) {
 
 	count := countFilesRecursive(destDir)
 	return count, nil
-}
-
-func countDCIMFiles(dcimDir string) int {
-	count := 0
-	_ = filepath.Walk(dcimDir, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
-	return count
-}
-
-func countFilesRecursive(dir string) int {
-	count := 0
-	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
-	return count
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // G304: src from DCIM walk
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.Create(dst) //nolint:gosec // G304: dst validated by validateDestDir
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-
-	return out.Close()
 }

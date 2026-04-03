@@ -6,14 +6,11 @@ import (
 	"context"
 	"cullsnap/internal/logger"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 )
-
-const maxFileCount = 50000
 
 // ImportFromDevice imports photos from a connected device on Linux.
 func ImportFromDevice(ctx context.Context, serial, baseDir string) (string, int, error) {
@@ -203,38 +200,4 @@ func countDCIMFiles(dcimDir string) int {
 		return nil
 	})
 	return count
-}
-
-func countFilesRecursive(dir string) int {
-	count := 0
-	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
-	return count
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // G304: src is validated by the caller via DCIM walk
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.Create(dst) //nolint:gosec // G304: dst is validated by validateDestDir + verifyNoPathTraversal
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-
-	return out.Close()
 }
