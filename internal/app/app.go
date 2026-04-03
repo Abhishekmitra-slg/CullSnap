@@ -562,7 +562,7 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
 	}
 
-	thumbnailMap := a.thumbCache.GenerateBatch(items, numWorkers, func(completed, total int) {
+	thumbnailMap := a.thumbCache.GenerateBatch(a.ctx, items, numWorkers, func(completed, total int) {
 		payload := map[string]interface{}{
 			"current": completed,
 			"total":   total,

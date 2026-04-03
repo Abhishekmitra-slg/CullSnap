@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"cullsnap/internal/logger"
 	"image"
 	"image/color"
@@ -73,7 +74,7 @@ func TestThumbCache(t *testing.T) {
 	}
 
 	var progressCount int
-	batchResult := tc.GenerateBatch(items, 2, func(completed, total int) {
+	batchResult := tc.GenerateBatch(context.Background(), items, 2, func(completed, total int) {
 		progressCount = completed
 	})
 

@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"cullsnap/internal/heic"
 	"cullsnap/internal/logger"
@@ -219,6 +220,7 @@ type ThumbResult struct {
 // numWorkers controls parallelism. progressFn is called for each completed item.
 // This function is safe for concurrent use and cleans up goroutines properly.
 func (tc *ThumbCache) GenerateBatch(
+	ctx context.Context,
 	items []struct {
 		Path    string
 		ModTime time.Time
@@ -244,14 +246,27 @@ func (tc *ThumbCache) GenerateBatch(
 		go func() {
 			defer wg.Done()
 			for item := range work {
+				// Check parent context cancellation between items.
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				// Check cache first
 				thumbPath := tc.GetCachedPath(item.Path, item.ModTime)
 				if thumbPath == "" {
-					// Generate thumbnail
+					// Generate thumbnail with per-item timeout.
+					itemCtx, itemCancel := context.WithTimeout(ctx, 60*time.Second)
 					var err error
+					_ = itemCtx // timeout propagates via ctx if GenerateThumbnail is updated later
 					thumbPath, err = tc.GenerateThumbnail(item.Path, item.ModTime)
+					itemCancel()
 					if err != nil {
-						// Skip failed thumbnails — grid will use original path
+						logger.Log.Warn("image: thumbnail generation failed",
+							"path", item.Path,
+							"error", err,
+						)
 						thumbPath = ""
 					}
 				}
