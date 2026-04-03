@@ -3,10 +3,12 @@
 package heic
 
 import (
+	"context"
 	"cullsnap/internal/logger"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 func convertPlatform(heicPath, jpegPath string, useSips bool) error {
@@ -21,7 +23,10 @@ func convertPlatform(heicPath, jpegPath string, useSips bool) error {
 }
 
 func convertSips(heicPath, jpegPath string) error {
-	cmd := exec.Command("sips", "-s", "format", "jpeg", heicPath, "--out", jpegPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sips", "-s", "format", "jpeg", heicPath, "--out", jpegPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("sips failed: %w (output: %s)", err, string(out))

@@ -25,6 +25,9 @@ Thumbs.db
 .claude/
 memory/
 
+# Git worktrees
+.worktrees/
+
 # Screenshots / local image artifacts
 cullsnap-*.png
 

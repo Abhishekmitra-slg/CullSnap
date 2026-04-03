@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"cullsnap/internal/logger"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	thumbnailTimeout = 60 * time.Second
+	durationTimeout  = 30 * time.Second
+	trimTimeout      = 10 * time.Minute
+	versionTimeout   = 10 * time.Second
 )
 
 var (
@@ -219,7 +228,10 @@ func FFmpegPath() string {
 
 // GetDuration returns the duration of a video in seconds.
 func GetDuration(path string) (float64, error) {
-	cmd := exec.Command(ffprobePath, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
+	ctx, cancel := context.WithTimeout(context.Background(), durationTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ffprobePath, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, fmt.Errorf("ffprobe failed: %w", err)
@@ -235,13 +247,16 @@ func GetDuration(path string) (float64, error) {
 
 // ExtractThumbnail extracts the first frame of a video to a standard JPEG file.
 func ExtractThumbnail(videoPath, outPath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), thumbnailTimeout)
+	defer cancel()
+
 	// Move -ss before -i for fast seeking. Use -update 1 to treat output as a single image.
 	// Explicitly set -f mjpeg because output path ends in .tmp
-	cmd := exec.Command(ffmpegPath, "-y", "-ss", "0.5", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", "0.5", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		logger.Log.Debug("FFmpeg thumbnail extraction failed at 0.5s", "error", err, "output", string(out))
-		// Fallback to start of file
-		cmdFallback := exec.Command(ffmpegPath, "-y", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
+		// Fallback to start of file — reuse same timeout context.
+		cmdFallback := exec.CommandContext(ctx, ffmpegPath, "-y", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
 		if outF, errF := cmdFallback.CombinedOutput(); errF != nil {
 			logger.Log.Debug("FFmpeg thumbnail extraction fallback failed", "error", errF, "output", string(outF))
 			return errF
@@ -258,10 +273,13 @@ func TrimVideo(src, dest string, start, end float64) error {
 	startStr := fmt.Sprintf("%.3f", start)
 	endStr := fmt.Sprintf("%.3f", end)
 
+	ctx, cancel := context.WithTimeout(context.Background(), trimTimeout)
+	defer cancel()
+
 	// Place -ss before -i for fast seeking (same as ExtractThumbnail).
 	// With input-side seek, -to is an absolute output timestamp which is correct
 	// since TrimEnd is measured from the start of the file.
-	cmd := exec.Command(ffmpegPath, "-y", "-ss", startStr, "-i", src, "-to", endStr, "-c", "copy", dest)
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", startStr, "-i", src, "-to", endStr, "-c", "copy", dest)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg trim failed: %s", string(out))
 	}
@@ -273,7 +291,10 @@ func GetFFmpegVersion() string {
 	if ffmpegPath == "" {
 		return "not installed"
 	}
-	cmd := exec.Command(ffmpegPath, "-version")
+	ctx, cancel := context.WithTimeout(context.Background(), versionTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-version")
 	out, err := cmd.Output()
 	if err != nil {
 		return "not installed"

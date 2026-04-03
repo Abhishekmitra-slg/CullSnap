@@ -5,10 +5,12 @@ package device
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type osReleaseInfo struct {
@@ -66,7 +68,13 @@ func CheckDependencies() DependencyStatus {
 }
 
 func isProcessRunning(name string) bool {
-	cmd := exec.Command("pgrep", "-x", name)
+	if _, err := exec.LookPath("pgrep"); err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", name)
 	return cmd.Run() == nil
 }
 
