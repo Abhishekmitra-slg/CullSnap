@@ -1,6 +1,7 @@
 package heic
 
 import (
+	"context"
 	"cullsnap/internal/logger"
 	"cullsnap/internal/video"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConvertToJPEG converts a HEIC/HEIF file to JPEG.
@@ -34,7 +36,10 @@ func convertFFmpeg(heicPath, jpegPath string) error {
 	if ffmpegBin == "" {
 		return fmt.Errorf("heic: ffmpeg not available for HEIC conversion")
 	}
-	cmd := exec.Command(ffmpegBin, "-i", heicPath, "-frames:v", "1", "-y", jpegPath) // #nosec G204 -- ffmpegBin is resolved internally, not user input
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ffmpegBin, "-i", heicPath, "-frames:v", "1", "-y", jpegPath) // #nosec G204 -- ffmpegBin is resolved internally, not user input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ffmpeg failed: %w (output: %s)", err, string(out))
