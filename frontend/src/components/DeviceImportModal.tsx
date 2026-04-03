@@ -230,7 +230,7 @@ export function DeviceImportModal({ onClose, onLoadDir, probe }: DeviceImportMod
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
                             {probe?.OS === 'darwin'
-                                ? <>Image Capture will open to import photos from your device.<br />This may take a moment.</>
+                                ? <>Importing photos from your device.<br />This may take a moment.</>
                                 : <>Copying photos from your device.<br />This may take a moment.</>
                             }
                         </div>
@@ -383,6 +383,12 @@ export function DeviceImportModal({ onClose, onLoadDir, probe }: DeviceImportMod
                                         <>
                                             <br />
                                             For Android, select "File Transfer" mode when prompted.
+                                        </>
+                                    )}
+                                    {probe?.OS === 'darwin' && (
+                                        <>
+                                            <br />
+                                            For Android, switch USB mode to "Photo Transfer (PTP)" on your phone.
                                         </>
                                     )}
                                 </div>

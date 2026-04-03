@@ -8,35 +8,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
-
-// DependencyStatus reports the state of optional system packages for device import.
-type DependencyStatus struct {
-	UsbmuxdRunning  bool     `json:"usbmuxdRunning"`
-	GVFSAvailable   bool     `json:"gvfsAvailable"`
-	Gphoto2Path     string   `json:"gphoto2Path"`
-	IdeviceInfoPath string   `json:"ideviceInfoPath"`
-	DistroID        string   `json:"distroID"`
-	DistroFamily    string   `json:"distroFamily"`
-	DistroName      string   `json:"distroName"`
-	InstallCommand  string   `json:"installCommand"`
-	MissingPackages []string `json:"missingPackages"`
-}
 
 type osReleaseInfo struct {
 	ID         string
 	IDLike     string
 	PrettyName string
-}
-
-var allowedBinDirs = []string{
-	"/usr/bin/",
-	"/usr/local/bin/",
-	"/usr/sbin/",
-	"/bin/",
-	"/sbin/",
 }
 
 func CheckDependencies() DependencyStatus {
@@ -85,31 +63,6 @@ func CheckDependencies() DependencyStatus {
 	}
 
 	return status
-}
-
-func resolveSecureBinary(name string) (string, error) {
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return "", fmt.Errorf("%s not found: %w", name, err)
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve absolute path for %s: %w", name, err)
-	}
-
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve symlinks for %s: %w", name, err)
-	}
-
-	for _, prefix := range allowedBinDirs {
-		if strings.HasPrefix(realPath, prefix) {
-			return realPath, nil
-		}
-	}
-
-	return "", fmt.Errorf("%s found at %s which is not in a trusted directory", name, realPath)
 }
 
 func isProcessRunning(name string) bool {

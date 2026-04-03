@@ -253,3 +253,141 @@ func TestReconcile_NoChangeNoDuplicate(t *testing.T) {
 		t.Errorf("expected still 2 connect events (no duplicates), got %d", connectCount)
 	}
 }
+
+const testMixedDevicesOutput = `{
+	"SPUSBDataType": [
+		{
+			"_name": "USB31Bus",
+			"_items": [
+				{
+					"_name": "iPhone",
+					"vendor_id": "0x05ac (Apple Inc.)",
+					"product_id": "0x12a8",
+					"serial_num": "abc123"
+				},
+				{
+					"_name": "Galaxy S24",
+					"vendor_id": "0x04e8 (Samsung)",
+					"product_id": "0x6860",
+					"serial_num": "R5CN123ABC"
+				},
+				{
+					"_name": "EOS R5",
+					"vendor_id": "0x04a9 (Canon Inc.)",
+					"product_id": "0x32d8",
+					"serial_num": "canon001"
+				},
+				{
+					"_name": "USB Keyboard",
+					"vendor_id": "0x1234 (Generic)",
+					"product_id": "0x0001",
+					"serial_num": "kb001"
+				}
+			]
+		}
+	]
+}`
+
+func TestParseUSBDevices_FindsAndroidPhone(t *testing.T) {
+	devices, err := ParseUSBDevices([]byte(testMixedDevicesOutput))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var found bool
+	for _, d := range devices {
+		if d.Name == "Galaxy S24" {
+			found = true
+			if d.Type != "android" {
+				t.Errorf("type = %q, want %q", d.Type, "android")
+			}
+		}
+	}
+	if !found {
+		t.Error("Galaxy S24 not found")
+	}
+}
+
+func TestParseUSBDevices_FindsCamera(t *testing.T) {
+	devices, err := ParseUSBDevices([]byte(testMixedDevicesOutput))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var found bool
+	for _, d := range devices {
+		if d.Name == "EOS R5" {
+			found = true
+			if d.Type != "camera" {
+				t.Errorf("type = %q, want %q", d.Type, "camera")
+			}
+		}
+	}
+	if !found {
+		t.Error("EOS R5 not found")
+	}
+}
+
+func TestParseUSBDevices_MixedDevices(t *testing.T) {
+	devices, err := ParseUSBDevices([]byte(testMixedDevicesOutput))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(devices) != 3 {
+		t.Errorf("expected 3 devices (not keyboard), got %d", len(devices))
+	}
+}
+
+func TestParseUSBDevices_UnknownVendorSkipped(t *testing.T) {
+	devices, err := ParseUSBDevices([]byte(testMixedDevicesOutput))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, d := range devices {
+		if d.Name == "USB Keyboard" {
+			t.Error("unknown vendor should be skipped")
+		}
+	}
+}
+
+func TestParseUSBDevices_IPhoneTypeSet(t *testing.T) {
+	devices, err := ParseUSBDevices([]byte(testMixedDevicesOutput))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, d := range devices {
+		if d.Name == "iPhone" && d.Type != "iphone" {
+			t.Errorf("iPhone type = %q, want %q", d.Type, "iphone")
+		}
+	}
+}
+
+func TestScanMacVolumes_Smoke(t *testing.T) {
+	// Just verify it doesn't panic
+	devices := scanMacVolumes()
+	_ = devices
+}
+
+func TestMacSystemVolumesSkipped(t *testing.T) {
+	if !macSystemVolumes["Macintosh HD"] {
+		t.Error("Macintosh HD should be in system volumes")
+	}
+	if macSystemVolumes["USB_DRIVE"] {
+		t.Error("USB_DRIVE should not be in system volumes")
+	}
+}
+
+func TestDeduplicateDevices_PrefersMountPath(t *testing.T) {
+	devices := []Device{
+		{Serial: "ABC", Name: "iPhone (USB)", Type: "iphone"},
+		{Serial: "ABC", Name: "iPhone (Vol)", Type: "iphone", MountPath: "/Volumes/iPhone"},
+		{Serial: "DEF", Name: "Samsung", Type: "android"},
+	}
+	result := deduplicateDevices(devices)
+	if len(result) != 2 {
+		t.Fatalf("expected 2, got %d", len(result))
+	}
+	for _, d := range result {
+		if d.Serial == "ABC" && d.MountPath == "" {
+			t.Error("should prefer entry with MountPath")
+		}
+	}
+}

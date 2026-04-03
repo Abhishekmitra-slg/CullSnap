@@ -2,11 +2,51 @@ package device
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+// maxFileCount is a safety limit to prevent runaway imports from consuming
+// excessive disk space or time.
+const maxFileCount = 50000
+
+var allowedBinDirs = []string{
+	"/usr/bin/",
+	"/usr/local/bin/",
+	"/usr/sbin/",
+	"/bin/",
+	"/sbin/",
+	"/opt/homebrew/bin/",
+}
+
+func resolveSecureBinary(name string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s not found: %w", name, err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve absolute path for %s: %w", name, err)
+	}
+
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve symlinks for %s: %w", name, err)
+	}
+
+	for _, prefix := range allowedBinDirs {
+		if strings.HasPrefix(realPath, prefix) {
+			return realPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s found at %s which is not in a trusted directory", name, realPath)
+}
 
 var sanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
@@ -80,6 +120,43 @@ func verifyNoPathTraversal(rootDir string) int {
 		return nil
 	})
 	return removed
+}
+
+// countFilesRecursive counts all non-directory entries under dir, recursively.
+// Returns 0 if the directory does not exist or cannot be read.
+func countFilesRecursive(dir string) int {
+	count := 0
+	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			count++
+		}
+		return nil
+	})
+	return count
+}
+
+// copyFile copies a single file from src to dst.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src) //nolint:gosec // G304: src from DCIM walk
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	out, err := os.Create(dst) //nolint:gosec // G304: dst validated by validateDestDir
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return out.Close()
 }
 
 // countFiles returns the number of non-directory entries in dir.

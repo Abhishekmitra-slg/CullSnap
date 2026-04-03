@@ -6,16 +6,14 @@ import (
 	"context"
 	"cullsnap/internal/logger"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 )
 
-const (
-	pollInterval  = 5 * time.Second
-	appleVendorID = "0x05ac"
-)
+const pollInterval = 5 * time.Second
 
 // spUSBData is the top-level structure from system_profiler SPUSBDataType -json.
 type spUSBData struct {
@@ -37,7 +35,7 @@ type spUSBItem struct {
 	Items     []spUSBItem `json:"_items"`
 }
 
-// DarwinDetector polls system_profiler on macOS to detect iPhone/iPad connections.
+// DarwinDetector polls system_profiler on macOS to detect connected devices.
 type DarwinDetector struct {
 	mu           sync.RWMutex
 	devices      map[string]Device // keyed by serial
@@ -46,11 +44,15 @@ type DarwinDetector struct {
 	cancel       context.CancelFunc
 }
 
+var detectorInstance *DarwinDetector
+
 // NewDetector creates a new macOS USB device detector.
 func NewDetector() Detector {
-	return &DarwinDetector{
+	d := &DarwinDetector{
 		devices: make(map[string]Device),
 	}
+	detectorInstance = d
+	return d
 }
 
 // Start begins polling system_profiler for USB device changes.
@@ -110,19 +112,23 @@ func (d *DarwinDetector) ConnectedDevices() []Device {
 
 // poll runs system_profiler and reconciles the result with known devices.
 func (d *DarwinDetector) poll(ctx context.Context) {
+	var found []Device
+
 	out, err := runSystemProfiler(ctx)
 	if err != nil {
 		logger.Log.Error("device: system_profiler failed", "error", err)
-		return
+	} else {
+		usbDevices, err := ParseUSBDevices(out)
+		if err != nil {
+			logger.Log.Error("device: failed to parse system_profiler output", "error", err)
+		} else {
+			found = append(found, usbDevices...)
+		}
 	}
 
-	found, err := ParseUSBDevices(out)
-	if err != nil {
-		logger.Log.Error("device: failed to parse system_profiler output", "error", err)
-		return
-	}
+	found = append(found, scanMacVolumes()...)
 
-	d.reconcile(found)
+	d.reconcile(deduplicateDevices(found))
 }
 
 // reconcile compares newly found devices against known state and fires callbacks.
@@ -183,7 +189,7 @@ func runSystemProfiler(ctx context.Context) ([]byte, error) {
 }
 
 // ParseUSBDevices parses system_profiler SPUSBDataType JSON output and returns
-// Apple iPhone/iPad devices found at any nesting level.
+// recognized devices found at any nesting level.
 func ParseUSBDevices(data []byte) ([]Device, error) {
 	var spData spUSBData
 	if err := json.Unmarshal(data, &spData); err != nil {
@@ -193,39 +199,42 @@ func ParseUSBDevices(data []byte) ([]Device, error) {
 	var devices []Device
 	now := time.Now()
 	for _, bus := range spData.SPUSBDataType {
-		devices = collectAppleDevices(bus.Items, devices, now)
+		devices = collectDevices(bus.Items, devices, now)
 	}
 	return devices, nil
 }
 
-// collectAppleDevices recursively walks USB items to find iPhone/iPad devices.
-func collectAppleDevices(items []spUSBItem, devices []Device, now time.Time) []Device {
+// collectDevices recursively walks USB items to find recognized devices.
+func collectDevices(items []spUSBItem, devices []Device, now time.Time) []Device {
 	for _, item := range items {
-		if isAppleMobileDevice(item) {
+		vid := normalizeVendorID(item.VendorID)
+		rawVID := strings.TrimPrefix(vid, "0x")
+		devType := classifyVendor(rawVID)
+
+		if devType == "iphone" {
+			nameLower := strings.ToLower(item.Name)
+			if !strings.Contains(nameLower, "iphone") && !strings.Contains(nameLower, "ipad") {
+				// Apple device but not a phone/tablet (e.g., AirPods, keyboard)
+				devType = ""
+			}
+		}
+
+		if devType != "" {
 			devices = append(devices, Device{
 				Name:       item.Name,
-				VendorID:   normalizeVendorID(item.VendorID),
+				VendorID:   vid,
 				ProductID:  item.ProductID,
 				Serial:     item.SerialNum,
+				Type:       devType,
 				DetectedAt: now,
 			})
 		}
-		// Recurse into nested hubs/items regardless of whether this item matched.
+
 		if len(item.Items) > 0 {
-			devices = collectAppleDevices(item.Items, devices, now)
+			devices = collectDevices(item.Items, devices, now)
 		}
 	}
 	return devices
-}
-
-// isAppleMobileDevice returns true if the item is an Apple iPhone or iPad.
-func isAppleMobileDevice(item spUSBItem) bool {
-	vid := normalizeVendorID(item.VendorID)
-	if vid != appleVendorID {
-		return false
-	}
-	nameLower := strings.ToLower(item.Name)
-	return strings.Contains(nameLower, "iphone") || strings.Contains(nameLower, "ipad")
 }
 
 // normalizeVendorID strips vendor name suffixes like "0x05ac (Apple Inc.)".
@@ -234,4 +243,74 @@ func normalizeVendorID(raw string) string {
 		return raw[:idx]
 	}
 	return raw
+}
+
+var macSystemVolumes = map[string]bool{
+	"Macintosh HD":        true,
+	"Macintosh HD - Data": true,
+	"Recovery":            true,
+	"Preboot":             true,
+	"VM":                  true,
+	"Update":              true,
+}
+
+func scanMacVolumes() []Device {
+	entries, err := os.ReadDir("/Volumes")
+	if err != nil {
+		return nil
+	}
+
+	now := time.Now()
+	var devices []Device
+
+	for _, entry := range entries {
+		if !entry.IsDir() || macSystemVolumes[entry.Name()] {
+			continue
+		}
+
+		mountPath := "/Volumes/" + entry.Name()
+		dcimPath := mountPath + "/DCIM"
+
+		if info, err := os.Stat(dcimPath); err == nil && info.IsDir() {
+			devices = append(devices, Device{
+				Name:       entry.Name(),
+				Serial:     "storage:" + entry.Name(),
+				Type:       "storage",
+				MountPath:  mountPath,
+				DetectedAt: now,
+			})
+		}
+	}
+
+	return devices
+}
+
+func deduplicateDevices(devices []Device) []Device {
+	seen := make(map[string]Device)
+	for _, dev := range devices {
+		existing, ok := seen[dev.Serial]
+		if !ok {
+			seen[dev.Serial] = dev
+			continue
+		}
+		if existing.MountPath == "" && dev.MountPath != "" {
+			seen[dev.Serial] = dev
+		}
+	}
+
+	result := make([]Device, 0, len(seen))
+	for _, dev := range seen {
+		result = append(result, dev)
+	}
+	return result
+}
+
+func lookupDeviceBySerial(serial string) (Device, bool) {
+	if detectorInstance == nil {
+		return Device{}, false
+	}
+	detectorInstance.mu.RLock()
+	defer detectorInstance.mu.RUnlock()
+	dev, ok := detectorInstance.devices[serial]
+	return dev, ok
 }
