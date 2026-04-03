@@ -11,7 +11,7 @@ import (
 
 type SQLiteStore struct {
 	db *sql.DB
-	mu sync.Mutex
+	mu sync.RWMutex
 }
 
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
@@ -23,6 +23,27 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
+
+	// Performance pragmas — applied once per connection.
+	pragmas := []string{
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA cache_size = -64000",
+		"PRAGMA busy_timeout = 5000",
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA temp_store = MEMORY",
+	}
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to set pragma %q: %w", p, err)
+		}
+	}
+
+	// Connection pool configuration for SQLite.
+	// SQLite supports one writer at a time; keep pool small to avoid contention.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
 
 	store := &SQLiteStore{db: db}
 	if err := store.initSchema(); err != nil {
@@ -102,8 +123,8 @@ func (s *SQLiteStore) SaveSelection(path string, sessionID string, selected bool
 }
 
 func (s *SQLiteStore) GetSelections(sessionID string) (map[string]bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	rows, err := s.db.Query("SELECT path FROM selections WHERE session_id = ?", sessionID)
 	if err != nil {
@@ -142,8 +163,8 @@ func (s *SQLiteStore) AddRecent(path string) error {
 }
 
 func (s *SQLiteStore) GetRecents() ([]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	rows, err := s.db.Query("SELECT path FROM recents ORDER BY accessed_at DESC")
 	if err != nil {
@@ -172,8 +193,8 @@ func (s *SQLiteStore) MarkExported(path string) error {
 }
 
 func (s *SQLiteStore) GetExportedInDirectory(dirPath string) (map[string]bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	// Append slash if missing to ensure prefix match
 	// Actually, just LIKE 'dir/%'
@@ -215,8 +236,8 @@ func (s *SQLiteStore) SaveRating(path string, rating int) error {
 
 // GetRatingsInDirectory returns all ratings for photos in a directory.
 func (s *SQLiteStore) GetRatingsInDirectory(dirPath string) (map[string]int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	query := "SELECT path, rating FROM ratings WHERE path LIKE ?"
 	rows, err := s.db.Query(query, dirPath+"/%")
@@ -277,8 +298,8 @@ func (s *SQLiteStore) SaveCloudMirror(providerID, albumID, albumTitle, localPath
 
 // GetCloudMirror retrieves a cloud mirror by provider and album ID.
 func (s *SQLiteStore) GetCloudMirror(providerID, albumID string) (CloudMirror, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var m CloudMirror
 	query := `SELECT provider_id, album_id, album_title, local_path, synced_at
@@ -294,8 +315,8 @@ func (s *SQLiteStore) GetCloudMirror(providerID, albumID string) (CloudMirror, e
 
 // ListCloudMirrors returns all stored cloud mirrors.
 func (s *SQLiteStore) ListCloudMirrors() ([]CloudMirror, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	rows, err := s.db.Query(`SELECT provider_id, album_id, album_title, local_path, synced_at FROM cloud_mirrors`)
 	if err != nil {
@@ -355,8 +376,8 @@ func (s *SQLiteStore) DeleteCloudMediaMetaByPrefix(pathPrefix string) error {
 
 // GetCloudMediaMeta retrieves remote metadata for a local media file.
 func (s *SQLiteStore) GetCloudMediaMeta(localPath string) (CloudMediaMeta, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var m CloudMediaMeta
 	query := `SELECT local_path, remote_id, provider_id, remote_updated_at
