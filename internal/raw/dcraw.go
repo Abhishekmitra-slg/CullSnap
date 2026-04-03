@@ -10,8 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 )
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		// Pre-allocate 2MB — typical JPEG preview size.
+		return bytes.NewBuffer(make([]byte, 0, 2*1024*1024))
+	},
+}
 
 // dcraw binary provisioning state.
 var (
@@ -86,9 +94,12 @@ func ExtractPreviewDcraw(path string) ([]byte, error) {
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, filepath.Clean(dcrawPath), "-e", "-c", path)
 
-	var stdout bytes.Buffer
+	stdout := bufPool.Get().(*bytes.Buffer)
+	stdout.Reset()
+	defer bufPool.Put(stdout)
+
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	cmd.Stdout = stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
@@ -100,7 +111,14 @@ func ExtractPreviewDcraw(path string) ([]byte, error) {
 		return nil, fmt.Errorf("dcraw: extraction failed: %w", err)
 	}
 
-	data := stdout.Bytes()
+	const maxPreviewSize = 50 * 1024 * 1024 // 50MB
+	if stdout.Len() > maxPreviewSize {
+		return nil, fmt.Errorf("dcraw: preview output too large (%d bytes, max %d)", stdout.Len(), maxPreviewSize)
+	}
+
+	// Copy data before returning buffer to pool.
+	data := make([]byte, stdout.Len())
+	copy(data, stdout.Bytes())
 	if len(data) < 2 {
 		logger.Log.Debug("dcraw: no output data", "path", path)
 		return nil, errors.New("dcraw: no preview data returned")
