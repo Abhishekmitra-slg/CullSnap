@@ -40,7 +40,11 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **RAW Image Support**: Native Pure Go support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Zero external dependencies. Extracts embedded JPEG previews using format-specific parsers: TIFF IFD walker (Canon DSLR/Sony/Nikon/Leica), BMFF box walker (Canon mirrorless CR3), Fujifilm RAF header parser, and TIFF-variant handling (Olympus/Panasonic). Includes RAW+JPEG companion pairing and format badges in the UI.
 -   **HEIC/HEIF Support**: Full support for iPhone's default photo format. On macOS, uses the native `sips` decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. Decoder preference is configurable in Settings with a clear performance warning.
 -   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain. Per-album cache management with LRU auto-eviction, configurable cache limits, and individual album deletion from Settings.
--   **Import from Device (macOS & Windows)**: Connect an iPhone or iPad via USB and CullSnap detects it automatically. On macOS, imports via Image Capture; on Windows, imports via MTP using Shell.Application with a [5-layer security architecture](#-windows-device-import-security). One-click import to a local staging directory, then scan and cull as usual.
+-   **Import from Device**: Connect phones, cameras, or SD cards via USB and CullSnap detects them automatically.
+    - **iPhone/iPad**: macOS (Image Capture), Windows (MTP), Linux (GVFS AFC / gphoto2)
+    - **Android**: Windows (MTP native), Linux (GVFS MTP / gphoto2), macOS (gphoto2 or PTP mode)
+    - **Digital Cameras**: All platforms via PTP (Image Capture on macOS, Shell.Application on Windows, gphoto2 on Linux)
+    - **SD Cards / USB Drives**: Direct file copy from mounted DCIM folder on all platforms
 -   **JPEG & PNG Processing**: High-performance embedded thumbnail extraction with EXIF-aware orientation and parallel goroutine generation.
 -   **EXIF Metadata**: Frosted-glass overlay card displaying Camera, Lens, ISO, Aperture, Shutter Speed, and Date Taken.
 -   **Stable Media Architecture**: Dedicated high-speed server on port `34342` with panic recovery, connection semaphore, structured shutdown, and MIME-correct headers for all video formats.
@@ -110,7 +114,7 @@ make dev
 
 1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, HEIC, RAW, and video files.
 2.  **Cloud Albums**: Click **Cloud Albums** in the sidebar to connect Google Drive or iCloud Photos. Browse folders/albums and mirror them locally for culling.
-3.  **Import from Device** (macOS & Windows): Connect an iPhone via USB. CullSnap detects it and offers one-click import, or use the **Import from Device** sidebar button anytime. On Windows, ensure the iPhone is unlocked and "Trust This Computer" is accepted.
+3.  **Import from Device**: Connect your device via USB. CullSnap detects phones, cameras, and SD cards automatically. Use the **Import from Device** sidebar button to start. On macOS, Android users should install `gphoto2` (`brew install gphoto2`) or switch USB mode to PTP. On Linux, install `libimobiledevice-utils usbmuxd gphoto2` for full device support.
 4.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
 5.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
 6.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
@@ -186,6 +190,19 @@ CullSnap's Windows device import uses a 5-layer defense model to ensure zero att
 The PowerShell scripts are compiled into the signed binary as Go constants. External data (device serials, file paths) is passed via stdin JSON — never interpolated into scripts. This provides the same security guarantee as parameterized SQL queries: data is always data, never code.
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for the responsible disclosure policy. **Do not open public issues for security bugs.**
+
+### Device Compatibility
+
+| Device | macOS | Windows | Linux |
+|--------|-------|---------|-------|
+| iPhone/iPad | Native (Image Capture) | Native (MTP) | gphoto2 / GVFS |
+| Android | gphoto2 or PTP mode | Native (MTP) | GVFS / gphoto2 |
+| Digital Camera | Native (Image Capture) | Native (PTP) | gphoto2 / GVFS |
+| SD Card / USB Drive | Native | Native | Native |
+
+**Optional dependencies:**
+- **macOS**: `brew install gphoto2` — enables Android MTP import
+- **Linux**: `sudo apt install libimobiledevice-utils usbmuxd gphoto2` (Debian/Ubuntu) — see in-app setup guide for other distros
 
 ## Contributing
 
