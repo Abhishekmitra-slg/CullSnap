@@ -80,6 +80,11 @@ type App struct {
 	mirrorCancels           map[string]context.CancelFunc
 	mirrorMu                sync.Mutex
 	deviceDetector          device.Detector
+	// TODO(ai): replace interface{} with *scoring.Engine once internal/scoring/engine.go is implemented (backend plan Tasks 3-5)
+	scoringEngine  interface{} //nolint:unused // placeholder for scoring.Engine
+	analysisMu     sync.Mutex
+	analysisCancel context.CancelFunc
+	aiEnabled      bool
 }
 
 // NewApp creates a new App application struct
@@ -157,6 +162,11 @@ func (a *App) Startup(ctx context.Context) {
 		logger.Log.Error("Failed to initialize RAW module", "error", err)
 	}
 	logger.Log.Info("app: RAW module initialized")
+
+	// Load AI scoring enabled state
+	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")
+	a.aiEnabled = aiEnabledStr == "true"
+	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled)
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
