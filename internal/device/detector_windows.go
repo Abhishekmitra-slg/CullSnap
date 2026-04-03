@@ -11,18 +11,17 @@ import (
 
 const pollInterval = 5 * time.Second
 
-// detectScript is the PowerShell script that enumerates connected iPhone/iPad
-// devices via the Windows Portable Devices (WPD) PnP class. It filters by
-// Apple's Vendor ID (VID_05AC) and device name, then emits a JSON array (or
-// bare object for a single result — see parseWPDDevices) to stdout.
+// detectScript is the PowerShell script that enumerates connected portable
+// devices via the Windows Portable Devices (WPD) PnP class. It matches any
+// device with a USB Vendor ID and emits a JSON array to stdout. Device type
+// classification (iPhone, Android, camera) is handled by parseWPDDevices.
 const detectScript = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $devices = Get-PnpDevice -Class 'WPD' -Status 'OK' -ErrorAction SilentlyContinue |
     Where-Object {
-        $_.InstanceId -match 'VID_05AC' -and
-        $_.FriendlyName -match 'iPhone|iPad'
+        $_.InstanceId -match 'VID_[0-9A-Fa-f]+'
     }
 
 if (-not $devices) {
@@ -51,8 +50,34 @@ foreach ($dev in $devices) {
 $result | ConvertTo-Json -Compress
 `
 
-// WindowsDetector polls Windows Portable Devices (WPD) via PowerShell to detect
-// iPhone/iPad connections.
+// storageDetectScript detects removable drives with DCIM folders.
+const storageDetectScript = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$drives = Get-WmiObject Win32_LogicalDisk -Filter "DriveType=2" -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path "$($_.DeviceID)\DCIM" }
+
+if (-not $drives) {
+    Write-Output '[]'
+    exit 0
+}
+
+$result = @()
+foreach ($d in $drives) {
+    $label = if ($d.VolumeName) { $d.VolumeName } else { $d.DeviceID }
+    $result += @{
+        name   = $label
+        path   = $d.DeviceID
+        serial = "storage:$($d.DeviceID)"
+    }
+}
+
+$result | ConvertTo-Json -Compress
+`
+
+// WindowsDetector polls Windows Portable Devices (WPD) and removable drives via
+// PowerShell to detect phones, cameras, and storage devices.
 type WindowsDetector struct {
 	mu           sync.RWMutex
 	devices      map[string]Device // keyed by serial
@@ -61,11 +86,26 @@ type WindowsDetector struct {
 	cancel       context.CancelFunc
 }
 
+var detectorInstance *WindowsDetector
+
 // NewDetector creates a new Windows USB device detector.
 func NewDetector() Detector {
-	return &WindowsDetector{
+	d := &WindowsDetector{
 		devices: make(map[string]Device),
 	}
+	detectorInstance = d
+	return d
+}
+
+// lookupDeviceBySerial returns a device from the detector's state by serial number.
+func lookupDeviceBySerial(serial string) (Device, bool) {
+	if detectorInstance == nil {
+		return Device{}, false
+	}
+	detectorInstance.mu.RLock()
+	defer detectorInstance.mu.RUnlock()
+	dev, ok := detectorInstance.devices[serial]
+	return dev, ok
 }
 
 // Start begins polling WPD for USB device changes.
@@ -123,18 +163,29 @@ func (d *WindowsDetector) ConnectedDevices() []Device {
 	return result
 }
 
-// poll runs the WPD detection script and reconciles the result with known devices.
+// poll runs the WPD and storage detection scripts and reconciles results.
 func (d *WindowsDetector) poll(ctx context.Context) {
+	var found []Device
+
+	// WPD devices (phones, cameras)
 	out, err := runPowerShell(ctx, detectScript)
 	if err != nil {
 		logger.Log.Error("device: WPD PowerShell poll failed", "error", err)
-		return
+	} else {
+		wpdDevices, parseErr := parseWPDDevices(out)
+		if parseErr != nil {
+			logger.Log.Error("device: failed to parse WPD devices output", "error", parseErr)
+		} else {
+			found = append(found, wpdDevices...)
+		}
 	}
 
-	found, err := parseWPDDevices(out)
-	if err != nil {
-		logger.Log.Error("device: failed to parse WPD devices output", "error", err)
-		return
+	// Removable drives with DCIM
+	storageOut, storageErr := runPowerShell(ctx, storageDetectScript)
+	if storageErr != nil {
+		logger.Log.Debug("device: storage detection failed", "error", storageErr)
+	} else {
+		found = append(found, parseStorageDevices(storageOut)...)
 	}
 
 	d.reconcile(found)

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf16"
 )
@@ -47,7 +48,8 @@ type wpdDevice struct {
 // parseWPDDevices parses the JSON output from the Windows WPD detection script.
 // It handles both an array (multiple devices) and a single object (PowerShell's
 // ConvertTo-Json outputs a bare object, not a one-element array, for a single
-// result). Returns nil, nil for empty or whitespace-only input.
+// result). Devices with unknown vendor IDs are filtered out.
+// Returns nil, nil for empty or whitespace-only input.
 func parseWPDDevices(data []byte) ([]Device, error) {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 {
@@ -61,13 +63,10 @@ func parseWPDDevices(data []byte) ([]Device, error) {
 	if err := json.Unmarshal(data, &wpds); err == nil {
 		devices := make([]Device, 0, len(wpds))
 		for _, w := range wpds {
-			devices = append(devices, Device{
-				Name:       w.Name,
-				VendorID:   w.VendorID,
-				ProductID:  w.ProductID,
-				Serial:     w.Serial,
-				DetectedAt: now,
-			})
+			dev := wpdToDevice(w, now)
+			if dev.Type != "" {
+				devices = append(devices, dev)
+			}
 		}
 		return devices, nil
 	}
@@ -77,13 +76,68 @@ func parseWPDDevices(data []byte) ([]Device, error) {
 	if err := json.Unmarshal(data, &single); err != nil {
 		return nil, fmt.Errorf("powershell: parse WPD devices: %w", err)
 	}
+	dev := wpdToDevice(single, now)
+	if dev.Type == "" {
+		return nil, nil
+	}
+	return []Device{dev}, nil
+}
+
+// wpdToDevice converts a wpdDevice to a Device with vendor classification.
+func wpdToDevice(w wpdDevice, now time.Time) Device {
+	rawVID := strings.TrimPrefix(strings.ToLower(w.VendorID), "0x")
+	return Device{
+		Name:       w.Name,
+		VendorID:   w.VendorID,
+		ProductID:  w.ProductID,
+		Serial:     w.Serial,
+		Type:       classifyVendor(rawVID),
+		DetectedAt: now,
+	}
+}
+
+// storageDevice is the JSON shape from the removable drive detection script.
+type storageDevice struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Serial string `json:"serial"`
+}
+
+// parseStorageDevices parses the JSON output from the storage detection script.
+func parseStorageDevices(data []byte) []Device {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	var drives []storageDevice
+	if err := json.Unmarshal(data, &drives); err == nil {
+		devices := make([]Device, 0, len(drives))
+		for _, d := range drives {
+			devices = append(devices, Device{
+				Name:       d.Name,
+				Serial:     d.Serial,
+				Type:       "storage",
+				MountPath:  d.Path,
+				DetectedAt: now,
+			})
+		}
+		return devices
+	}
+
+	var single storageDevice
+	if err := json.Unmarshal(data, &single); err != nil {
+		return nil
+	}
 	return []Device{{
 		Name:       single.Name,
-		VendorID:   single.VendorID,
-		ProductID:  single.ProductID,
 		Serial:     single.Serial,
+		Type:       "storage",
+		MountPath:  single.Path,
 		DetectedAt: now,
-	}}, nil
+	}}
 }
 
 // parseProgressLine decodes a single JSON progress line emitted by a CullSnap
