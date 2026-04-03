@@ -92,6 +92,40 @@ func (s *SQLiteStore) initSchema() error {
     provider_id       TEXT NOT NULL,
     remote_updated_at DATETIME
 );`,
+		`CREATE TABLE IF NOT EXISTS ai_scores (
+    photo_path TEXT PRIMARY KEY,
+    overall_score REAL NOT NULL,
+    face_count INTEGER NOT NULL DEFAULT 0,
+    provider TEXT NOT NULL,
+    scored_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);`,
+		`CREATE TABLE IF NOT EXISTS face_clusters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_path TEXT NOT NULL,
+    label TEXT NOT NULL,
+    representative_path TEXT,
+    photo_count INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0
+);`,
+		`CREATE TABLE IF NOT EXISTS face_detections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_path TEXT NOT NULL,
+    cluster_id INTEGER,
+    bbox_x INTEGER NOT NULL,
+    bbox_y INTEGER NOT NULL,
+    bbox_w INTEGER NOT NULL,
+    bbox_h INTEGER NOT NULL,
+    eye_sharpness REAL NOT NULL DEFAULT 0,
+    eyes_open INTEGER NOT NULL DEFAULT 0,
+    expression REAL NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0,
+    embedding BLOB,
+    FOREIGN KEY (cluster_id) REFERENCES face_clusters(id) ON DELETE SET NULL
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_face_detections_photo ON face_detections(photo_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_face_detections_cluster ON face_detections(cluster_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_face_clusters_folder ON face_clusters(folder_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_scores_score ON ai_scores(overall_score);`,
 	}
 
 	for _, query := range queries {
@@ -389,4 +423,274 @@ func (s *SQLiteStore) GetCloudMediaMeta(localPath string) (CloudMediaMeta, error
 		return CloudMediaMeta{}, fmt.Errorf("failed to get cloud media meta: %w", err)
 	}
 	return m, nil
+}
+
+// AIScore stores the AI quality analysis result for a single photo.
+type AIScore struct {
+	PhotoPath    string    `json:"photoPath"`
+	OverallScore float64   `json:"overallScore"`
+	FaceCount    int       `json:"faceCount"`
+	Provider     string    `json:"provider"`
+	ScoredAt     time.Time `json:"scoredAt"`
+}
+
+// FaceDetection stores a single detected face within a photo.
+type FaceDetection struct {
+	ID           int64   `json:"id"`
+	PhotoPath    string  `json:"photoPath"`
+	ClusterID    *int64  `json:"clusterId"`
+	BboxX        int     `json:"bboxX"`
+	BboxY        int     `json:"bboxY"`
+	BboxW        int     `json:"bboxW"`
+	BboxH        int     `json:"bboxH"`
+	EyeSharpness float64 `json:"eyeSharpness"`
+	EyesOpen     bool    `json:"eyesOpen"`
+	Expression   float64 `json:"expression"`
+	Confidence   float64 `json:"confidence"`
+	Embedding    []byte  `json:"embedding,omitempty"`
+}
+
+// FaceCluster represents a group of detected faces identified as the same person.
+type FaceCluster struct {
+	ID                 int64  `json:"id"`
+	FolderPath         string `json:"folderPath"`
+	Label              string `json:"label"`
+	RepresentativePath string `json:"representativePath"`
+	PhotoCount         int    `json:"photoCount"`
+	Hidden             bool   `json:"hidden"`
+}
+
+// SaveAIScore inserts or replaces an AI quality score for a photo.
+func (s *SQLiteStore) SaveAIScore(photoPath string, overallScore float64, faceCount int, provider string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO ai_scores (photo_path, overall_score, face_count, provider, scored_at) VALUES (?, ?, ?, ?, ?)`,
+		photoPath, overallScore, faceCount, provider, time.Now(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save AI score: %w", err)
+	}
+	return nil
+}
+
+// GetAIScore retrieves the AI score for a single photo, or nil if not scored.
+func (s *SQLiteStore) GetAIScore(photoPath string) (*AIScore, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row := s.db.QueryRow(`SELECT photo_path, overall_score, face_count, provider, scored_at FROM ai_scores WHERE photo_path = ?`, photoPath)
+	var score AIScore
+	err := row.Scan(&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get AI score: %w", err)
+	}
+	return &score, nil
+}
+
+// GetAIScoresForFolder retrieves all AI scores for photos within a folder prefix.
+func (s *SQLiteStore) GetAIScoresForFolder(folderPath string) ([]AIScore, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT photo_path, overall_score, face_count, provider, scored_at FROM ai_scores WHERE photo_path LIKE ?`,
+		folderPath+"/%",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AI scores for folder: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var scores []AIScore
+	for rows.Next() {
+		var score AIScore
+		if err := rows.Scan(&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt); err != nil {
+			return nil, fmt.Errorf("failed to scan AI score: %w", err)
+		}
+		scores = append(scores, score)
+	}
+	return scores, nil
+}
+
+// SaveFaceDetection inserts a face detection record and returns the new ID.
+func (s *SQLiteStore) SaveFaceDetection(det *FaceDetection) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	eyesOpenInt := 0
+	if det.EyesOpen {
+		eyesOpenInt = 1
+	}
+	result, err := s.db.Exec(
+		`INSERT INTO face_detections (photo_path, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, eye_sharpness, eyes_open, expression, confidence, embedding)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		det.PhotoPath, det.ClusterID, det.BboxX, det.BboxY, det.BboxW, det.BboxH,
+		det.EyeSharpness, eyesOpenInt, det.Expression, det.Confidence, det.Embedding,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to save face detection: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// GetFaceDetections retrieves all face detections for a photo.
+func (s *SQLiteStore) GetFaceDetections(photoPath string) ([]FaceDetection, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT id, photo_path, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, eye_sharpness, eyes_open, expression, confidence, embedding
+		 FROM face_detections WHERE photo_path = ?`, photoPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get face detections: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var dets []FaceDetection
+	for rows.Next() {
+		var det FaceDetection
+		var eyesOpenInt int
+		if err := rows.Scan(&det.ID, &det.PhotoPath, &det.ClusterID, &det.BboxX, &det.BboxY, &det.BboxW, &det.BboxH,
+			&det.EyeSharpness, &eyesOpenInt, &det.Expression, &det.Confidence, &det.Embedding); err != nil {
+			return nil, fmt.Errorf("failed to scan face detection: %w", err)
+		}
+		det.EyesOpen = eyesOpenInt != 0
+		dets = append(dets, det)
+	}
+	return dets, nil
+}
+
+// SaveFaceCluster inserts a face cluster and returns the new ID.
+func (s *SQLiteStore) SaveFaceCluster(cluster *FaceCluster) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.db.Exec(
+		`INSERT INTO face_clusters (folder_path, label, representative_path, photo_count, hidden) VALUES (?, ?, ?, ?, 0)`,
+		cluster.FolderPath, cluster.Label, cluster.RepresentativePath, cluster.PhotoCount,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to save face cluster: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// GetFaceClusters retrieves visible (non-hidden) face clusters for a folder.
+func (s *SQLiteStore) GetFaceClusters(folderPath string) ([]FaceCluster, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT id, folder_path, label, representative_path, photo_count, hidden FROM face_clusters WHERE folder_path = ? AND hidden = 0`,
+		folderPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get face clusters: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFaceClusters(rows)
+}
+
+// GetAllFaceClusters retrieves all face clusters for a folder (including hidden).
+func (s *SQLiteStore) GetAllFaceClusters(folderPath string) ([]FaceCluster, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT id, folder_path, label, representative_path, photo_count, hidden FROM face_clusters WHERE folder_path = ?`,
+		folderPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all face clusters: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanFaceClusters(rows)
+}
+
+func scanFaceClusters(rows *sql.Rows) ([]FaceCluster, error) {
+	var clusters []FaceCluster
+	for rows.Next() {
+		var c FaceCluster
+		var hiddenInt int
+		if err := rows.Scan(&c.ID, &c.FolderPath, &c.Label, &c.RepresentativePath, &c.PhotoCount, &hiddenInt); err != nil {
+			return nil, fmt.Errorf("failed to scan face cluster: %w", err)
+		}
+		c.Hidden = hiddenInt != 0
+		clusters = append(clusters, c)
+	}
+	return clusters, nil
+}
+
+// RenameFaceCluster updates the label for a face cluster.
+func (s *SQLiteStore) RenameFaceCluster(clusterID int64, label string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`UPDATE face_clusters SET label = ? WHERE id = ?`, label, clusterID)
+	if err != nil {
+		return fmt.Errorf("failed to rename face cluster: %w", err)
+	}
+	return nil
+}
+
+// MergeFaceClusters merges sourceID into targetID: reassigns detections, sums counts, deletes source.
+func (s *SQLiteStore) MergeFaceClusters(sourceID, targetID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Reassign all detections from source to target
+	_, err := s.db.Exec(`UPDATE face_detections SET cluster_id = ? WHERE cluster_id = ?`, targetID, sourceID)
+	if err != nil {
+		return fmt.Errorf("failed to reassign detections: %w", err)
+	}
+
+	// Update target photo count
+	_, err = s.db.Exec(`UPDATE face_clusters SET photo_count = photo_count + (SELECT photo_count FROM face_clusters WHERE id = ?) WHERE id = ?`, sourceID, targetID)
+	if err != nil {
+		return fmt.Errorf("failed to update photo count: %w", err)
+	}
+
+	// Delete source cluster
+	_, err = s.db.Exec(`DELETE FROM face_clusters WHERE id = ?`, sourceID)
+	if err != nil {
+		return fmt.Errorf("failed to delete source cluster: %w", err)
+	}
+
+	return nil
+}
+
+// HideFaceCluster sets the hidden flag on a cluster.
+func (s *SQLiteStore) HideFaceCluster(clusterID int64, hidden bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	hiddenInt := 0
+	if hidden {
+		hiddenInt = 1
+	}
+	_, err := s.db.Exec(`UPDATE face_clusters SET hidden = ? WHERE id = ?`, hiddenInt, clusterID)
+	if err != nil {
+		return fmt.Errorf("failed to hide face cluster: %w", err)
+	}
+	return nil
+}
+
+// DeleteAIDataForFolder removes all AI scores, face detections, and face clusters for a folder.
+func (s *SQLiteStore) DeleteAIDataForFolder(folderPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Delete detections for photos in this folder
+	_, err := s.db.Exec(`DELETE FROM face_detections WHERE photo_path LIKE ?`, folderPath+"/%")
+	if err != nil {
+		return fmt.Errorf("failed to delete face detections: %w", err)
+	}
+
+	// Delete clusters for this folder
+	_, err = s.db.Exec(`DELETE FROM face_clusters WHERE folder_path = ?`, folderPath)
+	if err != nil {
+		return fmt.Errorf("failed to delete face clusters: %w", err)
+	}
+
+	// Delete scores for photos in this folder
+	_, err = s.db.Exec(`DELETE FROM ai_scores WHERE photo_path LIKE ?`, folderPath+"/%")
+	if err != nil {
+		return fmt.Errorf("failed to delete AI scores: %w", err)
+	}
+
+	return nil
 }
