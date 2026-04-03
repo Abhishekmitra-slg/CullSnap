@@ -11,25 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug Fixes
 
-- *(app)* Cap ThumbnailWorkers at runtime.NumCPU() to prevent memory spikes
-- *(image)* Add per-item 60s timeout and context cancellation to GenerateBatch
-- *(video)* Add context timeouts to all FFmpeg/FFprobe exec calls (60s/30s/10min/10s)
-- *(heic)* Add context timeouts to sips (30s) and FFmpeg HEIC (60s) conversion
-- *(device)* Add binary validation and timeouts for system tools (pgrep, killall)
+- *(app)* Update config test to respect CPU-based worker cap
+- *(device)* Add binary validation and timeouts for system tools
+- *(heic)* Add context timeouts to sips and FFmpeg HEIC conversion
+- *(video)* Add context timeouts to all FFmpeg/FFprobe exec calls
+- *(image)* Add per-item timeout and context to GenerateBatch
+- *(app)* Cap ThumbnailWorkers at runtime.NumCPU()
 
 ### Performance
 
-- *(raw)* Add sync.Pool for preview extraction buffers with 50MB output cap
+- *(raw)* Add sync.Pool for preview extraction buffers
+
+### Miscellaneous
+
+- Add .worktrees/ to .gitignore
 
 ## [v2.12.0] - 2026-04-03
-
-### Performance
-
-- *(storage)* Enable SQLite WAL mode, pragmas, and concurrent reads
 
 ### Bug Fixes
 
 - *(storage)* Resolve gocritic filepath separator lint warning in test
+
+### Performance
+
+- *(storage)* Enable SQLite WAL mode, pragmas, and concurrent reads
 
 ## [v2.11.0] - 2026-04-03
 
