@@ -1,7 +1,10 @@
 package storage
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -122,6 +125,89 @@ func TestExportedStatus(t *testing.T) {
 	if exported[file2] {
 		t.Errorf("Expected file2 to NOT be exported")
 	}
+}
+
+func TestSQLiteWALMode(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_wal.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	var journalMode string
+	err = store.db.QueryRow("PRAGMA journal_mode").Scan(&journalMode)
+	if err != nil {
+		t.Fatalf("failed to query journal_mode: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Errorf("journal_mode = %q, want %q", journalMode, "wal")
+	}
+}
+
+func TestSQLiteSynchronousMode(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_sync.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	var synchronous int
+	err = store.db.QueryRow("PRAGMA synchronous").Scan(&synchronous)
+	if err != nil {
+		t.Fatalf("failed to query synchronous: %v", err)
+	}
+	if synchronous != 1 {
+		t.Errorf("synchronous = %d, want 1 (NORMAL)", synchronous)
+	}
+}
+
+func TestSQLiteBusyTimeout(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_busy.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	var timeout int
+	err = store.db.QueryRow("PRAGMA busy_timeout").Scan(&timeout)
+	if err != nil {
+		t.Fatalf("failed to query busy_timeout: %v", err)
+	}
+	if timeout != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", timeout)
+	}
+}
+
+func TestSQLiteConcurrentReads(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_concurrent.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	for i := 0; i < 10; i++ {
+		err := store.SaveSelection(filepath.Join("/photos", fmt.Sprintf("img_%d.jpg", i)), "session1", true)
+		if err != nil {
+			t.Fatalf("failed to save selection: %v", err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.GetSelections("session1")
+			if err != nil {
+				t.Errorf("concurrent read failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestRatings(t *testing.T) {
