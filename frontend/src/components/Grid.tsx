@@ -1,4 +1,4 @@
-import { Check, Star } from 'lucide-react';
+import { Check, Star, Users } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -13,6 +13,7 @@ interface GridProps {
     ratings: Record<string, number>;
     onRatingChange: (path: string, rating: number) => void;
     onColumnsChange?: (cols: number) => void;
+    aiScores?: Record<string, { score: number; faceCount: number }>;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -33,6 +34,7 @@ export function Grid({
     ratings,
     onRatingChange,
     onColumnsChange,
+    aiScores,
 }: GridProps) {
     const parentRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +127,7 @@ export function Grid({
                                 const isExported = exportedPaths.has(photo.Path);
                                 const isActive = activePhotoPath === photo.Path;
                                 const rating = ratings[photo.Path] || 0;
+                                const aiScore = aiScores?.[photo.Path];
                                 const rawSrc = photo.ThumbnailPath || photo.Path;
                                 const imgSrc = `http://localhost:34342/wails-media?path=${encodeURIComponent(rawSrc)}`;
 
@@ -147,6 +150,37 @@ export function Grid({
                                         {photo.isRAW && photo.rawFormat && (
                                             <div className="badge-raw">
                                                 {photo.rawFormat}
+                                            </div>
+                                        )}
+                                        {/* AI face count badge */}
+                                        {aiScore && aiScore.faceCount > 0 && (
+                                            <div className="badge badge-faces" style={{
+                                                position: 'absolute', bottom: 8, right: 4,
+                                                background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(8px)',
+                                                borderRadius: 8, padding: '1px 5px',
+                                                display: 'flex', alignItems: 'center', gap: 3,
+                                                fontSize: '10px', color: 'white',
+                                                opacity: 1,
+                                                transition: 'opacity 150ms ease-out',
+                                            }}>
+                                                <Users size={10} />
+                                                {aiScore.faceCount}
+                                            </div>
+                                        )}
+                                        {/* AI score bar */}
+                                        {aiScore && (
+                                            <div style={{
+                                                position: 'absolute', bottom: 0, left: 0, right: 0, height: 3,
+                                                background: '#2a2a3e',
+                                            }}>
+                                                <div style={{
+                                                    height: '100%',
+                                                    width: `${aiScore.score * 100}%`,
+                                                    background: aiScore.score >= 0.8 ? '#4ade80' :
+                                                                 aiScore.score >= 0.5 ? '#fbbf24' : '#ef4444',
+                                                    borderRadius: '0 1px 1px 0',
+                                                    transition: 'width 200ms ease-out',
+                                                }} />
                                             </div>
                                         )}
                                         <img

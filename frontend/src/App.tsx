@@ -40,6 +40,7 @@ function App() {
     const [sysMetrics, setSysMetrics] = useState<SystemMetrics | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
+    const [aiScores, setAiScores] = useState<Record<string, { score: number; faceCount: number }>>({});
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number, heicCount?: number, heicDecoder?: string} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -514,6 +515,7 @@ function App() {
                     ratings={ratings}
                     onRatingChange={handleRatingChange}
                     onColumnsChange={setGridColumns}
+                    aiScores={aiScores}
                 />
 
                 <Viewer photo={activePhoto} onTrimChange={handleTrimChange} isSelected={selectedPaths.has(activePhotoPath || '')} />
