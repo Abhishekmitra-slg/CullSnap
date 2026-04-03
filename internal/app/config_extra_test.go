@@ -148,8 +148,17 @@ func TestLoadOrInitConfig_ExistingConfig(t *testing.T) {
 	if cfg.MaxConnections != 25 {
 		t.Errorf("expected MaxConnections=25, got %d", cfg.MaxConnections)
 	}
-	if cfg.ThumbnailWorkers != 6 {
-		t.Errorf("expected ThumbnailWorkers=6, got %d", cfg.ThumbnailWorkers)
+	// ThumbnailWorkers is capped at runtime.NumCPU() (min 2).
+	expectedWorkers := 6
+	maxWorkers := runtime.NumCPU()
+	if maxWorkers < 2 {
+		maxWorkers = 2
+	}
+	if expectedWorkers > maxWorkers {
+		expectedWorkers = maxWorkers
+	}
+	if cfg.ThumbnailWorkers != expectedWorkers {
+		t.Errorf("expected ThumbnailWorkers=%d, got %d", expectedWorkers, cfg.ThumbnailWorkers)
 	}
 	if cfg.ScannerWorkers != 3 {
 		t.Errorf("expected ScannerWorkers=3, got %d", cfg.ScannerWorkers)
