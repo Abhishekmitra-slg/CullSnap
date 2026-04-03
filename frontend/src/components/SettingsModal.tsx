@@ -470,6 +470,97 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </section>
                 )}
 
+                {/* AI Scoring Section */}
+                <section className="settings-section">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3>AI Scoring</h3>
+                        {/* Master toggle */}
+                        <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22, flexShrink: 0 }}>
+                            <input
+                                type="checkbox"
+                                checked={config.aiScoringEnabled || false}
+                                onChange={e => setConfig(app.AppConfig.createFrom({ ...config, aiScoringEnabled: e.target.checked }))}
+                                style={{ opacity: 0, width: 0, height: 0 }}
+                            />
+                            <span style={{
+                                position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                backgroundColor: config.aiScoringEnabled ? '#818cf8' : '#555', borderRadius: 11, transition: 'background-color 0.2s',
+                            }} />
+                            <span style={{
+                                position: 'absolute', height: 18, width: 18,
+                                left: config.aiScoringEnabled ? 20 : 2, top: 2,
+                                backgroundColor: config.aiScoringEnabled ? 'white' : '#999',
+                                borderRadius: '50%', transition: 'left 0.2s, background-color 0.2s',
+                            }} />
+                        </label>
+                    </div>
+
+                    {config.aiScoringEnabled && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            {/* Local Provider Card */}
+                            <div style={{
+                                flex: 1, background: '#1a1a2e', borderRadius: 8, padding: 12,
+                                border: config.aiProvider === 'local' ? '1px solid #818cf8' : '1px solid #2a2a3e',
+                                cursor: 'pointer',
+                            }}
+                                onClick={() => setConfig(app.AppConfig.createFrom({ ...config, aiProvider: 'local' }))}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                    {config.aiProvider === 'local' && <span style={{ width: 6, height: 6, background: '#4ade80', borderRadius: '50%', display: 'inline-block' }} />}
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Local (ONNX)</span>
+                                </div>
+                                <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: 8 }}>Fast, private, runs on your machine</div>
+                                <button
+                                    className="btn"
+                                    style={{ fontSize: '0.7rem', padding: '4px 8px' }}
+                                    onClick={e => {
+                                        e.stopPropagation();
+                                        import('../../wailsjs/go/app/App').then(({ DownloadAIModels }) => {
+                                            DownloadAIModels().catch(err => console.warn('[settings] model download failed:', err));
+                                        });
+                                    }}
+                                >
+                                    Download Models (~17MB)
+                                </button>
+                            </div>
+
+                            {/* Cloud Provider Card */}
+                            <div style={{
+                                flex: 1, background: '#1a1a2e', borderRadius: 8, padding: 12,
+                                border: config.aiProvider === 'cloud' ? '1px solid #818cf8' : '1px solid #2a2a3e',
+                                cursor: 'pointer',
+                            }}
+                                onClick={() => setConfig(app.AppConfig.createFrom({ ...config, aiProvider: 'cloud' }))}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                    {config.aiProvider === 'cloud' && <span style={{ width: 6, height: 6, background: '#4ade80', borderRadius: '50%', display: 'inline-block' }} />}
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Cloud (Vision API)</span>
+                                </div>
+                                <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: 8 }}>More accurate, requires API key</div>
+                                <input
+                                    type="password"
+                                    placeholder="API Key"
+                                    style={{
+                                        width: '100%', background: '#2a2a3e', border: '1px solid #3a3a4e',
+                                        borderRadius: 4, padding: '4px 8px', color: 'var(--text-primary)',
+                                        fontSize: '0.7rem',
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                    onBlur={e => {
+                                        if (e.target.value) {
+                                            import('../../wailsjs/go/app/App').then(({ SetCloudAPIKey }) => {
+                                                SetCloudAPIKey('openai', e.target.value).catch(err =>
+                                                    console.warn('[settings] failed to save API key:', err)
+                                                );
+                                            });
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </section>
+
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>
                         <RotateCcw size={14} /> Reset to Defaults
