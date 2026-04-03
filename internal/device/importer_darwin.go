@@ -186,8 +186,10 @@ func importFromGphoto2Darwin(ctx context.Context, destDir string) (int, error) {
 		return 0, fmt.Errorf("gphoto2 not available: %w", err)
 	}
 
-	// Kill macOS PTPCamera daemon to release the device
-	_ = exec.Command("killall", "PTPCamera").Run()
+	// Kill macOS PTPCamera daemon to release the device.
+	killCtx, killCancel := context.WithTimeout(ctx, 5*time.Second)
+	_ = exec.CommandContext(killCtx, "killall", "PTPCamera").Run()
+	killCancel()
 
 	logger.Log.Info("device: importing via gphoto2", "binary", gphoto2Path, "destDir", destDir)
 
