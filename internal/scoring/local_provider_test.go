@@ -51,76 +51,81 @@ func TestPreprocessImage_NonSquare(t *testing.T) {
 	}
 }
 
-func TestParseSelectedBoxes_Empty(t *testing.T) {
-	faces := parseSelectedBoxes([]float32{}, []int64{0, 5})
+func TestParseSelectedBoxes_Empty3D(t *testing.T) {
+	// [1, 0, 16] — batch=1, N=0, 16 cols.
+	faces := parseSelectedBoxes([]float32{}, []int64{1, 0, 16})
 	if len(faces) != 0 {
 		t.Errorf("expected 0 faces, got %d", len(faces))
 	}
 }
 
-func TestParseSelectedBoxes_Single(t *testing.T) {
-	// One detection: [x1, y1, x2, y2, confidence, ...landmarks]
-	data := []float32{
-		0.1, 0.2, 0.5, 0.6, 0.95, // bbox + confidence (normalized)
-		0.2, 0.25, 0.4, 0.25, // landmarks
-		0.3, 0.4, 0.3, 0.5,
-	}
+func TestParseSelectedBoxes_Single2D(t *testing.T) {
+	// [1, 16] — 1 face detected, 16 values: 4 bbox + 12 landmarks.
+	data := make([]float32, 16)
+	data[0] = 0.1 // x1
+	data[1] = 0.2 // y1
+	data[2] = 0.5 // x2
+	data[3] = 0.6 // y2
+	// Remaining 12 values are landmarks (don't affect bbox parsing).
 
-	faces := parseSelectedBoxes(data, []int64{1, 13})
+	faces := parseSelectedBoxes(data, []int64{1, 16})
 	if len(faces) != 1 {
 		t.Fatalf("expected 1 face, got %d", len(faces))
 	}
 
-	face := faces[0]
-	if face.Confidence < 0.94 || face.Confidence > 0.96 {
-		t.Errorf("confidence = %f, want ~0.95", face.Confidence)
+	// Confidence should be 1.0 (model already filtered).
+	if faces[0].Confidence != 1.0 {
+		t.Errorf("confidence = %f, want 1.0", faces[0].Confidence)
 	}
 
-	// Bounding box should be scaled to 128x128 input space.
-	// x1=0.1*128=12.8, y1=0.2*128=25.6, x2=0.5*128=64, y2=0.6*128=76.8
-	bb := face.BoundingBox
+	// Bbox scaled from normalized [0,1] to [0,128].
+	bb := faces[0].BoundingBox
 	if bb.Min.X < 10 || bb.Min.X > 15 {
-		t.Errorf("bbox Min.X = %d, expected ~12", bb.Min.X)
+		t.Errorf("bbox Min.X = %d, expected ~13", bb.Min.X)
 	}
 	if bb.Max.X < 60 || bb.Max.X > 68 {
 		t.Errorf("bbox Max.X = %d, expected ~64", bb.Max.X)
 	}
 }
 
+func TestParseSelectedBoxes_Multi3D(t *testing.T) {
+	// [1, 2, 16] — batch=1, 2 faces, 16 values each.
+	data := make([]float32, 32)
+	data[0] = 10 // face 1 bbox
+	data[1] = 20
+	data[2] = 50
+	data[3] = 60
+	data[16] = 70 // face 2 bbox
+	data[17] = 30
+	data[18] = 110
+	data[19] = 90
+
+	faces := parseSelectedBoxes(data, []int64{1, 2, 16})
+	if len(faces) != 2 {
+		t.Fatalf("expected 2 faces, got %d", len(faces))
+	}
+
+	// Pixel coords (>1.0) should NOT be scaled.
+	if faces[0].BoundingBox.Min.X != 10 {
+		t.Errorf("face 0 bbox Min.X = %d, want 10", faces[0].BoundingBox.Min.X)
+	}
+	if faces[1].BoundingBox.Min.X != 70 {
+		t.Errorf("face 1 bbox Min.X = %d, want 70", faces[1].BoundingBox.Min.X)
+	}
+}
+
 func TestParseSelectedBoxes_ZeroPadded(t *testing.T) {
-	// Two rows: one real detection, one zero-padded.
-	data := []float32{
-		10, 20, 50, 60, 0.9, // real face (pixel coords)
-		0, 0, 0, 0, 0, // zero-padded
-	}
+	// [1, 2, 16] — one real face, one all-zeros.
+	data := make([]float32, 32)
+	data[0] = 10
+	data[1] = 20
+	data[2] = 50
+	data[3] = 60
+	// data[16..31] = all zeros (padded row).
 
-	faces := parseSelectedBoxes(data, []int64{2, 5})
+	faces := parseSelectedBoxes(data, []int64{1, 2, 16})
 	if len(faces) != 1 {
-		t.Errorf("expected 1 face (zero-padded row skipped), got %d", len(faces))
-	}
-}
-
-func TestParseSelectedBoxes_PixelCoords(t *testing.T) {
-	// Pixel coordinates (values > 1.0).
-	data := []float32{10, 20, 60, 80, 0.85}
-
-	faces := parseSelectedBoxes(data, []int64{1, 5})
-	if len(faces) != 1 {
-		t.Fatalf("expected 1 face, got %d", len(faces))
-	}
-
-	// Should NOT multiply by 128 since coords are already pixels.
-	bb := faces[0].BoundingBox
-	if bb.Min.X != 10 || bb.Min.Y != 20 || bb.Max.X != 60 || bb.Max.Y != 80 {
-		t.Errorf("bbox = %v, expected (10,20)-(60,80)", bb)
-	}
-}
-
-func TestParseSelectedBoxes_TooFewColumns(t *testing.T) {
-	// Less than 5 columns — not enough for bbox + confidence.
-	faces := parseSelectedBoxes([]float32{1, 2, 3, 4}, []int64{1, 4})
-	if len(faces) != 0 {
-		t.Errorf("expected 0 faces with <5 columns, got %d", len(faces))
+		t.Errorf("expected 1 face (zero-padded skipped), got %d", len(faces))
 	}
 }
 

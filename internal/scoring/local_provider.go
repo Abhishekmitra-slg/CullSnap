@@ -249,7 +249,7 @@ func (p *LocalProvider) parseOutputs(outputs map[string]*onnxruntime.Value, imgB
 			continue
 		}
 
-		logger.Log.Info("scoring: output tensor",
+		logger.Log.Debug("scoring: output tensor",
 			"name", name,
 			"shape", shape,
 			"dataLen", len(data),
@@ -372,72 +372,65 @@ func preprocessImage(img image.Image, width, height int) []float32 {
 // parseSelectedBoxes parses the "selectedBoxes" output from BlazeFace.
 // This model does NMS internally and returns a single tensor.
 //
-// Shape [N, K] where each row is a detected face. The columns depend on
-// the model variant, but typically: [x1, y1, x2, y2, confidence, ...landmarks].
+// Output tensor shapes observed in production:
+//   - [1, 0, 16]  → batch=1, N=0 faces (no detections)
+//   - [1, N, 16]  → batch=1, N faces detected
+//   - [1, 16]     → 1 face detected (batch dim collapsed)
 //
-// Shape [0, K] or empty means no faces detected.
-// Shape [K] (1D) means a single detection flattened.
+// Each row has 16 values: [x1, y1, x2, y2, lm1_x, lm1_y, ..., lm6_x, lm6_y]
+// 4 bbox coords + 12 landmark coords. NO confidence column — all rows
+// already passed the conf_threshold input.
 func parseSelectedBoxes(data []float32, shape []int64) []FaceRegion {
 	if len(data) == 0 {
 		return nil
 	}
 
-	var n int      // number of detections
-	var stride int // values per detection
+	const cols = 16 // BlazeFace: 4 bbox + 12 landmarks
+	var n int       // number of detections
 
 	switch len(shape) {
+	case 3:
+		// [batch, N, 16] — strip batch dimension.
+		n = int(shape[1])
 	case 2:
-		n = int(shape[0])
-		stride = int(shape[1])
-	case 1:
-		// Single detection flattened, or N detections with stride=1 (unlikely).
-		// Treat as one detection with stride = len(data).
-		if shape[0] > 4 {
-			n = 1
-			stride = int(shape[0])
+		// [N, 16] or [1, 16].
+		if int(shape[1]) == cols {
+			n = int(shape[0])
 		} else {
-			return nil
+			n = len(data) / cols
 		}
+	case 1:
+		// [16] — single detection flattened.
+		n = len(data) / cols
 	default:
 		return nil
 	}
 
-	if n == 0 || stride < 5 {
-		// Need at least 5 values per detection: x1, y1, x2, y2, confidence.
-		logger.Log.Debug("scoring: no valid detections",
-			"n", n, "stride", stride, "dataLen", len(data))
+	if n == 0 {
 		return nil
 	}
-
-	logger.Log.Debug("scoring: parsing detections",
-		"n", n, "stride", stride, "dataLen", len(data),
-	)
 
 	var faces []FaceRegion
 
 	for i := range n {
-		offset := i * stride
-		if offset+5 > len(data) {
+		offset := i * cols
+		if offset+4 > len(data) {
 			break
 		}
 
-		// Bounding box coordinates — could be normalized [0,1] or pixel [0,128].
 		x1 := data[offset]
 		y1 := data[offset+1]
 		x2 := data[offset+2]
 		y2 := data[offset+3]
-		conf := data[offset+4]
 
-		// Skip zero-padded rows (model may pad to max_detections).
-		if conf <= 0 && x1 == 0 && y1 == 0 && x2 == 0 && y2 == 0 {
+		// Skip zero-padded rows.
+		if x1 == 0 && y1 == 0 && x2 == 0 && y2 == 0 {
 			continue
 		}
 
-		// Determine if coords are normalized (0-1) or pixel (0-128).
-		// If max value > 2, assume pixel coords; otherwise normalize.
+		// Coords may be normalized [0,1] or pixel [0,128].
 		maxCoord := max32(x1, max32(y1, max32(x2, y2)))
-		if maxCoord <= 1.0 {
-			// Normalized — scale to model input pixel space.
+		if maxCoord <= 1.0 && maxCoord > 0 {
 			x1 *= blazefaceInputSize
 			y1 *= blazefaceInputSize
 			x2 *= blazefaceInputSize
@@ -451,24 +444,14 @@ func parseSelectedBoxes(data []float32, shape []int64) []FaceRegion {
 			int(math.Round(float64(y2))),
 		)
 
-		// Clamp confidence to [0,1].
-		if conf > 1.0 {
-			conf = 1.0
-		}
-
+		// Confidence is 1.0 — model already filtered by conf_threshold.
 		face := FaceRegion{
 			BoundingBox: bb,
-			Confidence:  float64(conf),
-			EyesOpen:    true, // Assume open; refined by sharpness scoring later.
+			Confidence:  1.0,
+			EyesOpen:    true,
 		}
 
 		faces = append(faces, face)
-
-		logger.Log.Debug("scoring: face detected",
-			"index", i,
-			"bbox", bb,
-			"confidence", conf,
-		)
 	}
 
 	return faces
