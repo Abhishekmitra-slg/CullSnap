@@ -956,7 +956,19 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	}
 
 	// 2. Select the best quality photo in each group to represent the unique
-	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress)
+	// Build AI score lookup if scoring is enabled and has results.
+	var aiScoreFn dedupe.AIScoreFunc
+	if a.aiEnabled && a.scoringEngine.Enabled() {
+		aiScoreFn = func(photoPath string) (float64, bool) {
+			score, err := a.store.GetAIScore(photoPath)
+			if err != nil || score == nil {
+				return 0, false
+			}
+			return score.OverallScore, true
+		}
+	}
+
+	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress, aiScoreFn)
 	if err != nil {
 		return nil, err
 	}

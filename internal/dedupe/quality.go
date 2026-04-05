@@ -22,13 +22,21 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Scoring weights for multi-factor quality assessment.
+// Scoring weights for multi-factor quality assessment (without AI).
 const (
 	weightSharpness = 0.50
 	weightExposure  = 0.25
 	weightNoise     = 0.15
 	weightContrast  = 0.10
 )
+
+// When AI face scoring is available, existing weights scale to 60%
+// and the AI face score takes 40%.
+const aiFaceWeight = 0.40
+
+// AIScoreFunc returns the AI face-based quality score (0.0-1.0) for a photo path.
+// Returns 0 and false if no AI score is available for this photo.
+type AIScoreFunc func(photoPath string) (score float64, ok bool)
 
 // loadQualityImage loads an image for quality analysis, trying the thumbnail cache first.
 func loadQualityImage(imgPath string, thumbnailDir string) (image.Image, error) {
@@ -162,6 +170,8 @@ type photoScores struct {
 	contrast      float64
 	meanLuminance float64
 	metrics       ImageMetrics
+	aiScore       float64 // AI face-based quality score (0-1), 0 if unavailable
+	hasAIScore    bool    // whether an AI score was found
 }
 
 // normalizeMinMax applies min-max normalization to a slice of values.
@@ -199,7 +209,9 @@ func normalizeMinMax(values []float64) []float64 {
 
 // FindBestPhotos selects the best photo in each duplicate group using
 // multi-factor quality scoring: sharpness, exposure, noise, and contrast.
-func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir string, progressCallback func(current, total int, message string)) error {
+// If aiScoreFn is non-nil and returns a score for a photo, the AI face score
+// is blended at 40% weight (existing factors scale to 60%).
+func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir string, progressCallback func(current, total int, message string), aiScoreFn AIScoreFunc) error {
 	totalGroups := len(groups)
 	var processedCount int32
 
@@ -256,14 +268,24 @@ func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir 
 				metrics := ComputeHistogramMetrics(thumb)
 				noise := EstimateNoise(thumb)
 
-				scores = append(scores, photoScores{
+				ps := photoScores{
 					photo:         photo,
 					sharpness:     sharpness,
 					noise:         noise,
 					contrast:      metrics.RMSContrast,
 					meanLuminance: metrics.MeanLuminance,
 					metrics:       metrics,
-				})
+				}
+
+				// Look up AI face score if available.
+				if aiScoreFn != nil {
+					if aiScore, ok := aiScoreFn(photo.Path); ok {
+						ps.aiScore = aiScore
+						ps.hasAIScore = true
+					}
+				}
+
+				scores = append(scores, ps)
 			}
 
 			// Compute group median luminance for exposure scoring.
@@ -300,15 +322,32 @@ func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir 
 				normNoise := normalizeMinMax(rawNoise)
 				normContrast := normalizeMinMax(rawContrast)
 
+				// Check if any photo in this group has an AI score.
+				groupHasAI := false
+				for _, s := range scores {
+					if s.hasAIScore {
+						groupHasAI = true
+						break
+					}
+				}
+
 				bestIdx := 0
 				bestScore := math.Inf(-1)
 				for i := range scores {
 					// Lower noise is better, so invert.
 					invertedNoise := 1.0 - normNoise[i]
-					weighted := weightSharpness*normSharpness[i] +
+					baseWeighted := weightSharpness*normSharpness[i] +
 						weightExposure*normExposure[i] +
 						weightNoise*invertedNoise +
 						weightContrast*normContrast[i]
+
+					var weighted float64
+					if groupHasAI && scores[i].hasAIScore {
+						// Blend: 60% existing quality + 40% AI face score.
+						weighted = baseWeighted*(1.0-aiFaceWeight) + scores[i].aiScore*aiFaceWeight
+					} else {
+						weighted = baseWeighted
+					}
 
 					if logger.Log != nil {
 						logger.Log.Debug("quality: photo score",
@@ -317,6 +356,8 @@ func FindBestPhotos(ctx context.Context, groups []*DuplicateGroup, thumbnailDir 
 							"exposure", normExposure[i],
 							"noise", invertedNoise,
 							"contrast", normContrast[i],
+							"aiScore", scores[i].aiScore,
+							"hasAI", scores[i].hasAIScore,
 							"weighted", weighted,
 						)
 					}
