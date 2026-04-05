@@ -94,7 +94,7 @@ func (p *LocalProvider) InitRuntime(libraryPath string) error {
 
 	env, err := rt.NewEnv("cullsnap", onnxruntime.LoggingLevelWarning)
 	if err != nil {
-		rt.Close() //nolint:errcheck // best effort
+		rt.Close() //nolint:errcheck,gosec // best effort
 		return fmt.Errorf("create ONNX environment: %w", err)
 	}
 
@@ -305,7 +305,7 @@ func (p *LocalProvider) Close() {
 		p.env = nil
 	}
 	if p.runtime != nil {
-		p.runtime.Close() //nolint:errcheck // best effort cleanup
+		p.runtime.Close() //nolint:errcheck,gosec // best effort cleanup
 		p.runtime = nil
 	}
 	p.initialized = false

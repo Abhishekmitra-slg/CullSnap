@@ -104,7 +104,7 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("download model %s: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // HTTP response body close
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download model %s: HTTP %d", name, resp.StatusCode)
@@ -117,7 +117,7 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
-		tmpFile.Close()
+		tmpFile.Close()    //nolint:errcheck,gosec // cleanup best-effort
 		os.Remove(tmpPath) //nolint:errcheck // cleanup best-effort
 	}()
 
@@ -155,7 +155,7 @@ func (m *ModelManager) verifyHash(path, expectedHash string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only file close
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

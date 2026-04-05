@@ -12,6 +12,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/raw"
 	"cullsnap/internal/scanner"
+	"cullsnap/internal/scoring"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/updater"
 	"cullsnap/internal/video"
@@ -80,11 +81,11 @@ type App struct {
 	mirrorCancels           map[string]context.CancelFunc
 	mirrorMu                sync.Mutex
 	deviceDetector          device.Detector
-	// TODO(ai): replace interface{} with *scoring.Engine once internal/scoring/engine.go is implemented (backend plan Tasks 3-5)
-	scoringEngine  interface{} //nolint:unused // placeholder for scoring.Engine
-	analysisMu     sync.Mutex
-	analysisCancel context.CancelFunc
-	aiEnabled      bool
+	scoringEngine           *scoring.Engine
+	localProvider           *scoring.LocalProvider
+	analysisMu              sync.Mutex
+	analysisCancel          context.CancelFunc
+	aiEnabled               bool
 }
 
 // NewApp creates a new App application struct
@@ -163,10 +164,25 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	logger.Log.Info("app: RAW module initialized")
 
+	// Initialize AI scoring engine
+	a.scoringEngine = scoring.NewEngine()
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+	localProv, err := scoring.NewLocalProvider(cullsnapDir)
+	if err != nil {
+		logger.Log.Warn("app: failed to create local AI provider", "error", err)
+	} else {
+		a.localProvider = localProv
+		a.scoringEngine.Register(localProv)
+		// Try to init ONNX runtime (non-fatal if library not found).
+		if err := localProv.InitRuntime(""); err != nil {
+			logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
+		}
+	}
+
 	// Load AI scoring enabled state
 	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")
 	a.aiEnabled = aiEnabledStr == "true"
-	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled)
+	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled, "engineEnabled", a.scoringEngine.Enabled())
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {

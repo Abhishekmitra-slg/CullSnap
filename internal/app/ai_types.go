@@ -1,6 +1,9 @@
 package app
 
-import "cullsnap/internal/storage"
+import (
+	"cullsnap/internal/scoring"
+	"cullsnap/internal/storage"
+)
 
 // AIResults contains the complete AI analysis results for a folder.
 type AIResults struct {
@@ -15,9 +18,7 @@ type PhotoAIScore struct {
 }
 
 // AIScoringStatus contains the current state of AI scoring.
-// Providers is left as a generic slice until scoring.ProviderStatus is defined
-// in internal/scoring/engine.go (backend plan Tasks 3-5).
 type AIScoringStatus struct {
-	Enabled   bool          `json:"enabled"`
-	Providers []interface{} `json:"providers"`
+	Enabled   bool                     `json:"enabled"`
+	Providers []scoring.ProviderStatus `json:"providers"`
 }
