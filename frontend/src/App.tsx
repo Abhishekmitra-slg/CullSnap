@@ -73,19 +73,13 @@ function App() {
         return () => { EventsOff('sys-metrics'); };
     }, []);
 
-    // Load probe info (OS detection for conditional UI) + AI status
-    useEffect(() => {
-        GetAppConfig().then(cfg => {
-            if (cfg?.probe) setProbe(cfg.probe);
-        }).catch(console.error);
-        ShouldShowWhatsNew().then(show => {
-            if (show) setWhatsNewOpen(true);
-        }).catch(console.error);
+    // Refresh AI scoring status from backend
+    const refreshAIStatus = () => {
         GetAIScoringStatus().then((status: appTypes.AIScoringStatus) => {
-            console.log('[ai] status on startup:', status);
+            console.log('[ai] status refreshed:', status);
             setAiEnabled(status?.enabled ?? false);
             if (status?.providers && status.providers.length > 0) {
-                const ready = status.providers.find((p: any) => p.ready);
+                const ready = status.providers.find((p: any) => p.available);
                 if (ready) {
                     setAiProviderReady(true);
                     setAiProviderName(ready.name || '');
@@ -95,6 +89,17 @@ function App() {
                 }
             }
         }).catch((err: unknown) => console.warn('[ai] status unavailable:', err));
+    };
+
+    // Load probe info (OS detection for conditional UI) + AI status
+    useEffect(() => {
+        GetAppConfig().then(cfg => {
+            if (cfg?.probe) setProbe(cfg.probe);
+        }).catch(console.error);
+        ShouldShowWhatsNew().then(show => {
+            if (show) setWhatsNewOpen(true);
+        }).catch(console.error);
+        refreshAIStatus();
     }, []);
 
     // Device auto-detect toast
@@ -705,7 +710,7 @@ function App() {
                 </div>
             )}
 
-            {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+            {settingsOpen && <SettingsModal onClose={() => { setSettingsOpen(false); refreshAIStatus(); }} />}
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
             {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
             {cloudOpen && <CloudSourceModal onClose={() => setCloudOpen(false)} onLoadDir={loadDirectory} />}
