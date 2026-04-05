@@ -33,6 +33,7 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/zalando/go-keyring"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -178,6 +179,12 @@ func (a *App) Startup(ctx context.Context) {
 			logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
 		}
 	}
+
+	// Register cloud provider (OpenAI Vision) — available when user provides API key.
+	cloudProv := scoring.NewCloudProvider("OpenAI Vision", "", func() (string, error) {
+		return keyring.Get("cullsnap-ai-openai", "api-key")
+	})
+	a.scoringEngine.Register(cloudProv)
 
 	// Load AI scoring enabled state
 	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")

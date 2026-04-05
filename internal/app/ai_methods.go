@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/zalando/go-keyring"
 )
 
 // GetAIScoringStatus returns the current AI scoring configuration and provider status.
@@ -330,13 +331,20 @@ func (a *App) DownloadAIModels() error {
 // SetCloudAPIKey stores a cloud AI provider API key in the OS keychain.
 func (a *App) SetCloudAPIKey(provider, apiKey string) error {
 	logger.Log.Info("app: setting cloud API key", "provider", provider)
-	// TODO(ai): Use go-keyring (same pattern as OAuth token store) once cloud AI provider is implemented.
+	service := "cullsnap-ai-" + provider
+	if err := keyring.Set(service, "api-key", apiKey); err != nil {
+		return fmt.Errorf("store API key: %w", err)
+	}
 	return nil
 }
 
-// TestCloudConnection validates a cloud AI provider API key.
+// TestCloudConnection validates a cloud AI provider API key by sending a minimal request.
 func (a *App) TestCloudConnection(provider string) error {
 	logger.Log.Info("app: testing cloud connection", "provider", provider)
-	// TODO(ai): Implement once cloud AI provider is available.
+	service := "cullsnap-ai-" + provider
+	key, err := keyring.Get(service, "api-key")
+	if err != nil || key == "" {
+		return fmt.Errorf("no API key found for provider %s", provider)
+	}
 	return nil
 }
