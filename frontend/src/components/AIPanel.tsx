@@ -38,6 +38,7 @@ interface Props {
     onHasFacesFilter: (enabled: boolean) => void;
     providerName: string;
     providerReady: boolean;
+    onOpenSettings: () => void;
 }
 
 function scoreColor(score: number): string {
@@ -49,7 +50,7 @@ function scoreColor(score: number): string {
 export default function AIPanel({
     visible, onClose, activePhotoPath, analysisProgress, isAnalyzing,
     clusters, aiScores, onFilterByFace, onSortByScore, onMinQuality,
-    onHasFacesFilter, providerName, providerReady,
+    onHasFacesFilter, providerName, providerReady, onOpenSettings,
 }: Props) {
     // Section collapse state
     const [statusOpen, setStatusOpen] = useState(true);
@@ -243,9 +244,22 @@ export default function AIPanel({
                                 <div className="ai-status-card">
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <span className={`ai-status-dot ${providerReady ? 'ready' : 'warning'}`} />
-                                        <span style={{ color: '#ccc', fontSize: '0.75rem' }}>
-                                            {providerReady ? `${providerName} — Ready` : 'Configure in Settings'}
-                                        </span>
+                                        {providerReady ? (
+                                            <span style={{ color: '#ccc', fontSize: '0.75rem' }}>
+                                                {providerName} — Ready
+                                            </span>
+                                        ) : (
+                                            <button
+                                                onClick={onOpenSettings}
+                                                style={{
+                                                    background: 'none', border: 'none', color: '#6c63ff',
+                                                    fontSize: '0.75rem', cursor: 'pointer', padding: 0,
+                                                    textDecoration: 'underline',
+                                                }}
+                                            >
+                                                Configure in Settings
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}

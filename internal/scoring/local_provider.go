@@ -11,6 +11,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/shota3506/onnxruntime-purego/onnxruntime"
@@ -78,13 +80,21 @@ func (p *LocalProvider) Available() bool {
 }
 
 // InitRuntime initializes the ONNX Runtime from the shared library path.
-// libraryPath is the path to libonnxruntime.dylib/so/dll (empty = system search).
+// libraryPath is the path to libonnxruntime.dylib/so (empty = auto-provision to cacheDir).
 func (p *LocalProvider) InitRuntime(libraryPath string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.initialized {
 		return nil
+	}
+
+	// If no explicit path, check provisioned location in the cache dir.
+	if libraryPath == "" {
+		provisionedPath := filepath.Join(filepath.Dir(p.modelManager.modelsDir), "lib", onnxRuntimeLibName())
+		if _, err := os.Stat(provisionedPath); err == nil {
+			libraryPath = provisionedPath
+		}
 	}
 
 	logger.Log.Info("scoring: initializing ONNX runtime", "library", libraryPath)

@@ -651,6 +651,7 @@ function App() {
                 onHasFacesFilter={setAiHasFaces}
                 providerName={aiProviderName}
                 providerReady={aiProviderReady}
+                onOpenSettings={() => setSettingsOpen(true)}
             />
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>

@@ -318,14 +318,38 @@ func (a *App) CancelAIAnalysis() error {
 	return nil
 }
 
-// DownloadAIModels triggers download of ONNX models for the local AI provider.
-// Emits ai:model-download-progress events.
+// DownloadAIModels provisions ONNX Runtime + BlazeFace model, then initializes the provider.
+// Downloads both the shared library (~10MB) and the model (~524KB) on first use.
 func (a *App) DownloadAIModels() error {
-	logger.Log.Info("app: downloading AI models")
+	logger.Log.Info("app: downloading AI models and runtime")
 	if a.localProvider == nil {
 		return fmt.Errorf("local AI provider not initialized")
 	}
-	return a.localProvider.DownloadModel(a.ctx)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+
+	// Step 1: Provision ONNX Runtime shared library.
+	libPath, err := scoring.ProvisionONNXRuntime(a.ctx, cullsnapDir)
+	if err != nil {
+		return fmt.Errorf("provision ONNX Runtime: %w", err)
+	}
+
+	// Step 2: Download BlazeFace model.
+	if err := a.localProvider.DownloadModel(a.ctx); err != nil {
+		return fmt.Errorf("download AI model: %w", err)
+	}
+
+	// Step 3: Initialize the runtime with the provisioned library.
+	if err := a.localProvider.InitRuntime(libPath); err != nil {
+		return fmt.Errorf("init ONNX runtime: %w", err)
+	}
+
+	logger.Log.Info("app: AI models and runtime ready")
+	return nil
 }
 
 // SetCloudAPIKey stores a cloud AI provider API key in the OS keychain.
