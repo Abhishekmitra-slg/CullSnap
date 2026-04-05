@@ -142,7 +142,8 @@ function App() {
             if (data?.clusters) setAiClusters(data.clusters);
         };
         const errorHandler = (data: any) => {
-            console.error('[ai] error:', data?.message);
+            const msg = data?.error || data?.message || 'Unknown error';
+            console.error('[ai] error:', msg);
             setIsAnalyzing(false);
             setAiProgress(null);
         };
@@ -609,11 +610,12 @@ function App() {
                 aiEnabled={aiEnabled}
                 isAnalyzing={isAnalyzing}
                 onAnalyze={() => {
+                    if (!currentDir) return;
                     setIsAnalyzing(true);
                     setAiPanelVisible(true);
                     import('../wailsjs/go/app/App').then(({ RunAIAnalysis }) => {
-                        RunAIAnalysis(currentDir).catch(err => {
-                            console.warn('[ai] analysis failed:', err);
+                        RunAIAnalysis(currentDir).catch((err: unknown) => {
+                            console.error('[ai] analysis failed:', err);
                             setIsAnalyzing(false);
                         });
                     });

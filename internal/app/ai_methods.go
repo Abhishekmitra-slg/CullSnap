@@ -93,13 +93,13 @@ func (a *App) HideFaceCluster(clusterID int, hidden bool) error {
 }
 
 // RunAIAnalysis starts AI scoring and clustering for all photos in a folder.
-// Emits ai:progress, ai:photo-scored, and ai:clustering-complete events.
+// Emits ai:progress, ai:photo-scored, ai:error, and ai:clustering-complete events.
 func (a *App) RunAIAnalysis(folderPath string) error {
 	if !a.aiEnabled {
-		return fmt.Errorf("AI scoring is disabled")
+		return fmt.Errorf("AI scoring is disabled — enable it in Settings")
 	}
 	if !a.scoringEngine.Enabled() {
-		return fmt.Errorf("no AI scoring provider available (download models or configure API key)")
+		return fmt.Errorf("no AI scoring provider available — download models in Settings or configure a cloud API key")
 	}
 
 	a.analysisMu.Lock()
@@ -126,45 +126,63 @@ func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
 	photos, err := scanner.ScanDirectory(folderPath)
 	if err != nil {
 		logger.Log.Error("app: AI analysis scan failed", "error", err)
-		wailsRuntime.EventsEmit(ctx, "ai:error", map[string]interface{}{
-			"error": fmt.Sprintf("scan failed: %v", err),
+		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+			"error": fmt.Sprintf("Scan failed: %v", err),
 		})
 		return
 	}
 
 	total := len(photos)
+	if total == 0 {
+		logger.Log.Info("app: no photos found for AI analysis", "folder", folderPath)
+		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+			"error": "No photos found in this folder",
+		})
+		return
+	}
+
 	logger.Log.Info("app: AI analysis scanning complete", "photos", total)
 
-	wailsRuntime.EventsEmit(ctx, "ai:progress", map[string]interface{}{
-		"phase":   "scoring",
-		"current": 0,
-		"total":   total,
+	wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
+		"phase":  "scoring",
+		"scored": 0,
+		"total":  total,
 	})
 
 	// 2. Score each photo.
-	var allEmbeddings []scoring.FaceEmbedding
 	scored := 0
+	errors := 0
 
 	for i := range photos {
 		photo := &photos[i]
 		if ctx.Err() != nil {
 			logger.Log.Info("app: AI analysis cancelled")
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+				"error": "Analysis cancelled",
+			})
 			return
 		}
 
 		result, scoreErr := a.scorePhoto(ctx, photo.Path)
 		if scoreErr != nil {
 			logger.Log.Warn("app: failed to score photo", "path", photo.Path, "error", scoreErr)
+			errors++
+			// Emit progress even on failure so the bar advances.
+			wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
+				"phase":  "scoring",
+				"scored": i + 1,
+				"total":  total,
+			})
 			continue
 		}
 
-		if result != nil {
+		if result != nil && (result.HasFaces() || result.OverallScore > 0) {
 			// Save score to DB.
 			if dbErr := a.store.SaveAIScore(photo.Path, result.OverallScore, len(result.Faces), "Local (ONNX)"); dbErr != nil {
 				logger.Log.Warn("app: failed to save AI score", "path", photo.Path, "error", dbErr)
 			}
 
-			// Save face detections and collect embeddings.
+			// Save face detections.
 			for _, face := range result.Faces {
 				det := &storage.FaceDetection{
 					PhotoPath:    photo.Path,
@@ -177,43 +195,32 @@ func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
 					Expression:   face.Expression,
 					Confidence:   face.Confidence,
 				}
-				detID, detErr := a.store.SaveFaceDetection(det)
-				if detErr != nil {
+				if _, detErr := a.store.SaveFaceDetection(det); detErr != nil {
 					logger.Log.Warn("app: failed to save face detection", "error", detErr)
-					continue
 				}
-
-				// Placeholder: face embeddings would come from a MobileFaceNet model.
-				// For now, collect detection IDs for future clustering.
-				_ = detID
 			}
 		}
 
 		scored++
-		wailsRuntime.EventsEmit(ctx, "ai:photo-scored", map[string]interface{}{
+		wailsRuntime.EventsEmit(a.ctx, "ai:photo-scored", map[string]interface{}{
 			"path":      photo.Path,
 			"score":     result.OverallScore,
 			"faceCount": len(result.Faces),
 		})
 
-		wailsRuntime.EventsEmit(ctx, "ai:progress", map[string]interface{}{
-			"phase":   "scoring",
-			"current": i + 1,
-			"total":   total,
+		wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
+			"phase":  "scoring",
+			"scored": i + 1,
+			"total":  total,
 		})
 	}
 
-	logger.Log.Info("app: AI scoring phase complete", "scored", scored, "total", total)
+	logger.Log.Info("app: AI scoring phase complete", "scored", scored, "errors", errors, "total", total)
 
-	// 3. Cluster faces (if we have embeddings).
-	if len(allEmbeddings) > 0 {
-		clusters := scoring.ClusterFaces(allEmbeddings, 0.6)
-		logger.Log.Info("app: face clustering complete", "clusters", len(clusters))
-	}
-
-	wailsRuntime.EventsEmit(ctx, "ai:clustering-complete", map[string]interface{}{
+	wailsRuntime.EventsEmit(a.ctx, "ai:clustering-complete", map[string]interface{}{
 		"scored":   scored,
 		"total":    total,
+		"errors":   errors,
 		"clusters": []interface{}{},
 	})
 	logger.Log.Info("app: AI analysis complete", "folder", folderPath, "scored", scored)
@@ -221,35 +228,20 @@ func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
 
 // scorePhoto scores a single photo by reading its thumbnail and running inference.
 func (a *App) scorePhoto(ctx context.Context, photoPath string) (*scoring.ScoreResult, error) {
-	// Read thumbnail file (the 300px JPEG cached by ThumbCache).
-	thumbPath := a.thumbPathForPhoto(photoPath)
-
-	var imgData []byte
-	var err error
-
-	if thumbPath != "" {
-		imgData, err = os.ReadFile(thumbPath) //nolint:gosec // trusted internal path
-		if err != nil {
-			logger.Log.Debug("app: thumbnail not cached, reading original", "path", photoPath)
-			imgData, err = os.ReadFile(photoPath) //nolint:gosec // trusted internal path
-			if err != nil {
-				return nil, fmt.Errorf("read photo: %w", err)
-			}
-		}
-	} else {
-		imgData, err = os.ReadFile(photoPath) //nolint:gosec // trusted internal path
-		if err != nil {
-			return nil, fmt.Errorf("read photo: %w", err)
-		}
+	// Try cached thumbnail first (300px JPEG — fast, small, no RAW decode needed).
+	imgData, err := a.readPhotoForScoring(photoPath)
+	if err != nil {
+		return nil, fmt.Errorf("read photo: %w", err)
 	}
 
 	result, err := a.scoringEngine.Score(ctx, imgData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("score: %w", err)
 	}
 
 	if result == nil {
-		return &scoring.ScoreResult{}, nil
+		// No provider could score — return nil to differentiate from "scored but no faces".
+		return nil, fmt.Errorf("no scoring provider available")
 	}
 
 	// Post-process: compute eye sharpness for each detected face.
@@ -258,6 +250,36 @@ func (a *App) scorePhoto(ctx context.Context, photoPath string) (*scoring.ScoreR
 	}
 
 	return result, nil
+}
+
+// readPhotoForScoring reads the photo data, preferring cached thumbnails.
+func (a *App) readPhotoForScoring(photoPath string) ([]byte, error) {
+	// Try the thumbnail cache first — it's a 300px JPEG that's fast to decode
+	// and already handles RAW/HEIC conversion.
+	if a.thumbCache != nil {
+		info, err := os.Stat(photoPath)
+		if err == nil {
+			thumbPath := a.thumbCache.GetCachedPath(photoPath, info.ModTime())
+			if thumbPath != "" {
+				data, readErr := os.ReadFile(thumbPath) //nolint:gosec // trusted internal path
+				if readErr == nil {
+					logger.Log.Debug("app: scoring from cached thumbnail", "path", photoPath)
+					return data, nil
+				}
+			}
+		}
+	}
+
+	// Fallback: read the original file.
+	// This works for JPEG/PNG but will fail for RAW/HEIC — that's OK,
+	// those photos will be scored after thumbnail generation.
+	data, err := os.ReadFile(photoPath) //nolint:gosec // trusted internal path
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Log.Debug("app: scoring from original file", "path", photoPath, "size", len(data))
+	return data, nil
 }
 
 // computeEyeSharpness adds Laplacian variance eye sharpness scores to detected faces.
@@ -283,27 +305,6 @@ func (a *App) computeEyeSharpness(imgData []byte, result *scoring.ScoreResult) {
 	for i := range result.Faces {
 		result.Faces[i].EyeSharpness = scoring.EyeSharpnessFromFace(gray, result.Faces[i])
 	}
-}
-
-// thumbPathForPhoto returns the cached thumbnail path for a photo, or empty string.
-func (a *App) thumbPathForPhoto(photoPath string) string {
-	// Check common thumbnail cache locations.
-	// ThumbCache stores thumbnails as SHA256(path+modtime).jpg in the cache dir.
-	// For simplicity, we check if a thumbnail exists in the default cache location.
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	cacheDir := filepath.Join(home, ".cullsnap", "thumbs")
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		return ""
-	}
-
-	// Find any cached thumbnail — the ThumbCache uses content-addressed names.
-	// For the AI pipeline, we fall back to reading the original if no thumb exists.
-	_ = entries
-	return ""
 }
 
 // CancelAIAnalysis cancels any in-progress AI analysis.
