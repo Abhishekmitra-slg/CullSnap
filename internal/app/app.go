@@ -227,6 +227,13 @@ func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
 		cfg.MaxCloudCacheMB = 10240
 	}
 
+	aiEnabledVal, _ := a.store.GetConfig("ai_scoring_enabled")
+	cfg.AIScoringEnabled = aiEnabledVal == "true"
+	cfg.AIProvider, _ = a.store.GetConfig("ai_provider")
+	if cfg.AIProvider == "" {
+		cfg.AIProvider = "local"
+	}
+
 	// Always re-run the probe on startup so hardware info stays current.
 	cfg.Probe = RunSystemProbe(ffmpegPath)
 
@@ -290,6 +297,12 @@ func (a *App) persistConfig(cfg *AppConfig) {
 	if err := a.store.SetConfig("maxCloudCacheMB", strconv.Itoa(cfg.MaxCloudCacheMB)); err != nil {
 		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save maxCloudCacheMB: %v", err)
 	}
+	if err := a.store.SetConfig("ai_scoring_enabled", fmt.Sprintf("%t", cfg.AIScoringEnabled)); err != nil {
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save ai_scoring_enabled: %v", err)
+	}
+	if err := a.store.SetConfig("ai_provider", cfg.AIProvider); err != nil {
+		wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save ai_provider: %v", err)
+	}
 	if probeJSON, err := json.Marshal(cfg.Probe); err == nil {
 		if err := a.store.SetConfig("probe", string(probeJSON)); err != nil {
 			wailsRuntime.LogWarningf(a.ctx, "persistConfig: failed to save probe: %v", err)
@@ -315,6 +328,11 @@ func (a *App) SaveAppConfig(cfg AppConfig) error {
 	if a.mirrorManager != nil && a.mirrorManager.Cache != nil {
 		a.mirrorManager.Cache.SetMaxCacheMB(cfg.MaxCloudCacheMB)
 	}
+
+	// Sync AI enabled state to the in-memory flag used by RunAIAnalysis
+	a.aiEnabled = cfg.AIScoringEnabled
+	logger.Log.Info("app: config saved", "aiEnabled", a.aiEnabled, "aiProvider", cfg.AIProvider)
+
 	return nil
 }
 

@@ -233,9 +233,28 @@ function App() {
         }, 80);
     }, []);
 
+    // Menu bar event listeners
+    useEffect(() => {
+        const off1 = EventsOn('menu:settings', () => setSettingsOpen(true));
+        const off2 = EventsOn('menu:ai-panel', () => setAiPanelVisible(prev => !prev));
+        return () => { off1(); off2(); };
+    }, []);
+
     // Keyboard shortcut listener
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Cmd+, or Ctrl+, → Settings
+            if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+                e.preventDefault();
+                setSettingsOpen(true);
+                return;
+            }
+            // Cmd+I or Ctrl+I → Toggle AI Panel
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+                e.preventDefault();
+                setAiPanelVisible(prev => !prev);
+                return;
+            }
             if (e.key === 'a' || e.key === 'A') {
                 if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
                 setAiPanelVisible(prev => !prev);

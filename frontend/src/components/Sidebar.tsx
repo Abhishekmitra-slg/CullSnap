@@ -240,15 +240,21 @@ export function Sidebar({
                     <button
                         className="btn w-full justify-center"
                         onClick={onToggleAIPanel}
-                        title="Toggle AI Panel"
+                        title="Toggle AI Panel (⌘I)"
                         style={{ color: aiPanelVisible ? '#6c63ff' : undefined }}
                     >
                         <Sparkles size={14} />
                     </button>
-                    <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings">
-                        <Settings size={14} />
-                    </button>
                 </div>
+                <button
+                    className="btn w-full"
+                    onClick={onOpenSettings}
+                    title="Settings (⌘,)"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6, fontSize: '0.75rem' }}
+                >
+                    <Settings size={14} />
+                    Settings
+                </button>
             </div>
 
             {/* Export Name Dialog */}

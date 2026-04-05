@@ -16,6 +16,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [clearingImport, setClearingImport] = useState<string | null>(null);
     const [cachedAlbums, setCachedAlbums] = useState<any[]>([]);
     const [deletingAlbum, setDeletingAlbum] = useState<string | null>(null);
+    const [downloadingModels, setDownloadingModels] = useState(false);
+    const [downloadResult, setDownloadResult] = useState<string | null>(null);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
@@ -513,15 +515,33 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                 <button
                                     className="btn"
                                     style={{ fontSize: '0.7rem', padding: '4px 8px' }}
+                                    disabled={downloadingModels}
                                     onClick={e => {
                                         e.stopPropagation();
+                                        setDownloadingModels(true);
+                                        setDownloadResult(null);
                                         import('../../wailsjs/go/app/App').then(({ DownloadAIModels }) => {
-                                            DownloadAIModels().catch(err => console.warn('[settings] model download failed:', err));
+                                            DownloadAIModels()
+                                                .then(() => {
+                                                    setDownloadResult('Ready');
+                                                    setDownloadingModels(false);
+                                                })
+                                                .catch(err => {
+                                                    console.warn('[settings] model download failed:', err);
+                                                    setDownloadResult(`Failed: ${err}`);
+                                                    setDownloadingModels(false);
+                                                });
                                         });
                                     }}
                                 >
-                                    Download Models (~17MB)
+                                    {downloadingModels ? 'Downloading...' : downloadResult === 'Ready' ? 'Downloaded' : 'Download Models (~17MB)'}
                                 </button>
+                                {downloadResult && downloadResult !== 'Ready' && (
+                                    <div style={{ color: '#ef4444', fontSize: '0.65rem', marginTop: 4 }}>{downloadResult}</div>
+                                )}
+                                {downloadResult === 'Ready' && (
+                                    <div style={{ color: '#4ade80', fontSize: '0.65rem', marginTop: 4 }}>ONNX Runtime + model ready</div>
+                                )}
                             </div>
 
                             {/* Cloud Provider Card */}

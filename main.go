@@ -27,9 +27,12 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -392,8 +395,19 @@ func main() {
 	application.GoogleDriveClientID = gdID
 	application.GoogleDriveClientSecret = gdSecret
 
+	// Build application menu (macOS menu bar / Windows menu)
+	appMenu := buildAppMenu()
+
 	// Create application with options
+	var appCtx context.Context
+
+	// Wire menu item callbacks to emit events after context is available.
+	appMenu.Items[1].SubMenu.Items[0].Click = func(_ *menu.CallbackData) { wailsRuntime.EventsEmit(appCtx, "menu:open-folder") }
+	appMenu.Items[2].SubMenu.Items[0].Click = func(_ *menu.CallbackData) { wailsRuntime.EventsEmit(appCtx, "menu:settings") }
+	appMenu.Items[2].SubMenu.Items[2].Click = func(_ *menu.CallbackData) { wailsRuntime.EventsEmit(appCtx, "menu:ai-panel") }
+
 	err = wails.Run(&options.App{
+		Menu: appMenu,
 		Title:            "CullSnap",
 		Width:            1200,
 		Height:           800,
@@ -405,7 +419,10 @@ func main() {
 			Handler: loader,
 		},
 		BackgroundColour: &options.RGBA{R: 24, G: 24, B: 27, A: 1}, // Matches zinc-900 (modern dark theme)
-		OnStartup:        application.Startup,
+		OnStartup: func(ctx context.Context) {
+			appCtx = ctx
+			application.Startup(ctx)
+		},
 		OnShutdown:       func(ctx context.Context) { serverCancel() },
 		Bind: []interface{}{
 			application,
@@ -426,4 +443,39 @@ func main() {
 	if err != nil {
 		logger.Log.Error("Error starting Wails", "error", err)
 	}
+}
+
+// buildAppMenu creates the macOS/Windows application menu bar.
+// Menu item Click callbacks are wired after construction (they need appCtx).
+func buildAppMenu() *menu.Menu {
+	appMenu := menu.NewMenu()
+
+	// App menu (macOS only — auto-mapped by Wails)
+	appMenu.Append(menu.AppMenu())
+
+	// File menu
+	fileMenu := appMenu.AddSubmenu("File")
+	fileMenu.AddText("Open Folder...", keys.CmdOrCtrl("o"), nil)     // [0] — wired later
+	fileMenu.AddSeparator()                                           // [1]
+	fileMenu.AddText("Close Window", keys.CmdOrCtrl("w"), func(_ *menu.CallbackData) {})
+
+	// View menu
+	viewMenu := appMenu.AddSubmenu("View")
+	viewMenu.AddText("Settings", keys.CmdOrCtrl(","), nil)            // [0] — wired later
+	viewMenu.AddSeparator()                                           // [1]
+	viewMenu.AddText("Toggle AI Panel", keys.CmdOrCtrl("i"), nil)    // [2] — wired later
+
+	// Edit menu
+	appMenu.Append(menu.EditMenu())
+
+	// Window menu
+	windowMenu := appMenu.AddSubmenu("Window")
+	windowMenu.AddText("Minimize", keys.CmdOrCtrl("m"), func(_ *menu.CallbackData) {})
+	windowMenu.AddText("Zoom", nil, func(_ *menu.CallbackData) {})
+
+	// Help menu
+	helpMenu := appMenu.AddSubmenu("Help")
+	helpMenu.AddText("CullSnap Help", nil, nil)
+
+	return appMenu
 }
