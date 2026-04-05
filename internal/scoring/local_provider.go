@@ -230,43 +230,44 @@ func (p *LocalProvider) Score(ctx context.Context, imgData []byte) (*ScoreResult
 }
 
 // parseOutputs converts ONNX output tensors to ScoreResult.
+// Handles both single-output (selectedBoxes with embedded confidence) and
+// dual-output (boxes + scores) model formats.
 func (p *LocalProvider) parseOutputs(outputs map[string]*onnxruntime.Value, imgBounds image.Rectangle) (*ScoreResult, error) {
-	// Find the output tensors by iterating available keys.
-	var boxesData []float32
-	var boxesShape []int64
-	var scoresData []float32
-	var scoresShape []int64
+	var allData []float32
+	var allShape []int64
 
 	for name, val := range outputs {
 		shape, err := val.GetTensorShape()
 		if err != nil {
+			logger.Log.Warn("scoring: failed to get tensor shape", "name", name, "error", err)
 			continue
 		}
 
 		data, _, err := onnxruntime.GetTensorData[float32](val)
 		if err != nil {
+			logger.Log.Warn("scoring: failed to get tensor data", "name", name, "error", err)
 			continue
 		}
 
-		// Heuristic: boxes output has shape [N, 17] (4 bbox + 12 landmarks + 1),
-		// scores output has shape [N] (1D confidence scores).
-		if len(shape) == 2 {
-			boxesData = data
-			boxesShape = shape
-			logger.Log.Debug("scoring: boxes output", "name", name, "shape", shape)
-		} else if len(shape) == 1 {
-			scoresData = data
-			scoresShape = shape
-			logger.Log.Debug("scoring: scores output", "name", name, "shape", shape)
+		logger.Log.Info("scoring: output tensor",
+			"name", name,
+			"shape", shape,
+			"dataLen", len(data),
+		)
+
+		// Use the first valid output tensor.
+		if len(data) > 0 {
+			allData = data
+			allShape = shape
 		}
 	}
 
-	if boxesData == nil || scoresData == nil {
+	if allData == nil || len(allShape) == 0 {
 		logger.Log.Debug("scoring: no valid outputs from model")
 		return &ScoreResult{}, nil
 	}
 
-	faces := parseFaceDetections(boxesData, boxesShape, scoresData, scoresShape, defaultConfThreshold)
+	faces := parseSelectedBoxes(allData, allShape)
 
 	// Scale bounding boxes from model input space (128x128) to original image space.
 	scaleX := float64(imgBounds.Dx()) / float64(blazefaceInputSize)
@@ -368,64 +369,114 @@ func preprocessImage(img image.Image, width, height int) []float32 {
 	return tensor
 }
 
-// parseFaceDetections converts raw model outputs to FaceRegion slices.
-// boxes shape: [N, 17] — 4 bbox coords + 12 landmark coords + 1 padding.
-// scores shape: [N] — confidence per detection.
-func parseFaceDetections(boxes []float32, boxesShape []int64, scores []float32, scoresShape []int64, confThreshold float32) []FaceRegion {
-	if len(scoresShape) == 0 || scoresShape[0] == 0 {
+// parseSelectedBoxes parses the "selectedBoxes" output from BlazeFace.
+// This model does NMS internally and returns a single tensor.
+//
+// Shape [N, K] where each row is a detected face. The columns depend on
+// the model variant, but typically: [x1, y1, x2, y2, confidence, ...landmarks].
+//
+// Shape [0, K] or empty means no faces detected.
+// Shape [K] (1D) means a single detection flattened.
+func parseSelectedBoxes(data []float32, shape []int64) []FaceRegion {
+	if len(data) == 0 {
 		return nil
 	}
 
-	n := int(scoresShape[0])
-	stride := 17 // Default stride for BlazeFace output.
-	if len(boxesShape) == 2 && boxesShape[1] > 0 {
-		stride = int(boxesShape[1])
+	var n int      // number of detections
+	var stride int // values per detection
+
+	switch len(shape) {
+	case 2:
+		n = int(shape[0])
+		stride = int(shape[1])
+	case 1:
+		// Single detection flattened, or N detections with stride=1 (unlikely).
+		// Treat as one detection with stride = len(data).
+		if shape[0] > 4 {
+			n = 1
+			stride = int(shape[0])
+		} else {
+			return nil
+		}
+	default:
+		return nil
 	}
+
+	if n == 0 || stride < 5 {
+		// Need at least 5 values per detection: x1, y1, x2, y2, confidence.
+		logger.Log.Debug("scoring: no valid detections",
+			"n", n, "stride", stride, "dataLen", len(data))
+		return nil
+	}
+
+	logger.Log.Debug("scoring: parsing detections",
+		"n", n, "stride", stride, "dataLen", len(data),
+	)
 
 	var faces []FaceRegion
 
 	for i := range n {
-		if i >= len(scores) {
+		offset := i * stride
+		if offset+5 > len(data) {
 			break
 		}
 
-		conf := scores[i]
-		if conf < confThreshold {
+		// Bounding box coordinates — could be normalized [0,1] or pixel [0,128].
+		x1 := data[offset]
+		y1 := data[offset+1]
+		x2 := data[offset+2]
+		y2 := data[offset+3]
+		conf := data[offset+4]
+
+		// Skip zero-padded rows (model may pad to max_detections).
+		if conf <= 0 && x1 == 0 && y1 == 0 && x2 == 0 && y2 == 0 {
 			continue
 		}
 
-		offset := i * stride
-		if offset+4 > len(boxes) {
-			break
+		// Determine if coords are normalized (0-1) or pixel (0-128).
+		// If max value > 2, assume pixel coords; otherwise normalize.
+		maxCoord := max32(x1, max32(y1, max32(x2, y2)))
+		if maxCoord <= 1.0 {
+			// Normalized — scale to model input pixel space.
+			x1 *= blazefaceInputSize
+			y1 *= blazefaceInputSize
+			x2 *= blazefaceInputSize
+			y2 *= blazefaceInputSize
 		}
 
-		// Bounding box in normalized coordinates [0,1] relative to model input.
-		x1 := boxes[offset]
-		y1 := boxes[offset+1]
-		x2 := boxes[offset+2]
-		y2 := boxes[offset+3]
-
-		// Scale to model input pixel space.
 		bb := image.Rect(
-			int(math.Round(float64(x1)*blazefaceInputSize)),
-			int(math.Round(float64(y1)*blazefaceInputSize)),
-			int(math.Round(float64(x2)*blazefaceInputSize)),
-			int(math.Round(float64(y2)*blazefaceInputSize)),
+			int(math.Round(float64(x1))),
+			int(math.Round(float64(y1))),
+			int(math.Round(float64(x2))),
+			int(math.Round(float64(y2))),
 		)
+
+		// Clamp confidence to [0,1].
+		if conf > 1.0 {
+			conf = 1.0
+		}
 
 		face := FaceRegion{
 			BoundingBox: bb,
 			Confidence:  float64(conf),
-		}
-
-		// Extract eye landmarks if available (used for eye sharpness region).
-		if offset+8 <= len(boxes) {
-			// Landmarks: left eye (x,y), right eye (x,y).
-			face.EyesOpen = true // Assume open; will be refined by sharpness scoring.
+			EyesOpen:    true, // Assume open; refined by sharpness scoring later.
 		}
 
 		faces = append(faces, face)
+
+		logger.Log.Debug("scoring: face detected",
+			"index", i,
+			"bbox", bb,
+			"confidence", conf,
+		)
 	}
 
 	return faces
+}
+
+func max32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }

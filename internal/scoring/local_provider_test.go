@@ -51,29 +51,22 @@ func TestPreprocessImage_NonSquare(t *testing.T) {
 	}
 }
 
-func TestParseFaceDetections_Empty(t *testing.T) {
-	// No detections (N=0).
-	boxes := []float32{}
-	scores := []float32{}
-
-	faces := parseFaceDetections(boxes, []int64{0, 17}, scores, []int64{0}, 0.5)
+func TestParseSelectedBoxes_Empty(t *testing.T) {
+	faces := parseSelectedBoxes([]float32{}, []int64{0, 5})
 	if len(faces) != 0 {
 		t.Errorf("expected 0 faces, got %d", len(faces))
 	}
 }
 
-func TestParseFaceDetections_Single(t *testing.T) {
-	// One detection with 17 values: 4 bbox + 12 landmarks + 1 padding.
-	boxes := []float32{
-		0.1, 0.2, 0.5, 0.6, // x1, y1, x2, y2 (normalized)
-		0.2, 0.25, 0.4, 0.25, // left eye x,y, right eye x,y
-		0.3, 0.4, 0.3, 0.5, // nose x,y, mouth x,y
-		0.15, 0.3, 0.45, 0.3, // left ear x,y, right ear x,y
-		0.0, // padding
+func TestParseSelectedBoxes_Single(t *testing.T) {
+	// One detection: [x1, y1, x2, y2, confidence, ...landmarks]
+	data := []float32{
+		0.1, 0.2, 0.5, 0.6, 0.95, // bbox + confidence (normalized)
+		0.2, 0.25, 0.4, 0.25, // landmarks
+		0.3, 0.4, 0.3, 0.5,
 	}
-	scores := []float32{0.95}
 
-	faces := parseFaceDetections(boxes, []int64{1, 17}, scores, []int64{1}, 0.5)
+	faces := parseSelectedBoxes(data, []int64{1, 13})
 	if len(faces) != 1 {
 		t.Fatalf("expected 1 face, got %d", len(faces))
 	}
@@ -94,13 +87,40 @@ func TestParseFaceDetections_Single(t *testing.T) {
 	}
 }
 
-func TestParseFaceDetections_FilterLowConfidence(t *testing.T) {
-	boxes := make([]float32, 2*17)
-	scores := []float32{0.9, 0.3} // One above threshold, one below.
+func TestParseSelectedBoxes_ZeroPadded(t *testing.T) {
+	// Two rows: one real detection, one zero-padded.
+	data := []float32{
+		10, 20, 50, 60, 0.9, // real face (pixel coords)
+		0, 0, 0, 0, 0, // zero-padded
+	}
 
-	faces := parseFaceDetections(boxes, []int64{2, 17}, scores, []int64{2}, 0.5)
+	faces := parseSelectedBoxes(data, []int64{2, 5})
 	if len(faces) != 1 {
-		t.Errorf("expected 1 face after filtering, got %d", len(faces))
+		t.Errorf("expected 1 face (zero-padded row skipped), got %d", len(faces))
+	}
+}
+
+func TestParseSelectedBoxes_PixelCoords(t *testing.T) {
+	// Pixel coordinates (values > 1.0).
+	data := []float32{10, 20, 60, 80, 0.85}
+
+	faces := parseSelectedBoxes(data, []int64{1, 5})
+	if len(faces) != 1 {
+		t.Fatalf("expected 1 face, got %d", len(faces))
+	}
+
+	// Should NOT multiply by 128 since coords are already pixels.
+	bb := faces[0].BoundingBox
+	if bb.Min.X != 10 || bb.Min.Y != 20 || bb.Max.X != 60 || bb.Max.Y != 80 {
+		t.Errorf("bbox = %v, expected (10,20)-(60,80)", bb)
+	}
+}
+
+func TestParseSelectedBoxes_TooFewColumns(t *testing.T) {
+	// Less than 5 columns — not enough for bbox + confidence.
+	faces := parseSelectedBoxes([]float32{1, 2, 3, 4}, []int64{1, 4})
+	if len(faces) != 0 {
+		t.Errorf("expected 0 faces with <5 columns, got %d", len(faces))
 	}
 }
 
