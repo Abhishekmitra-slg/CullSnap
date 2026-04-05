@@ -165,26 +165,26 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	logger.Log.Info("app: RAW module initialized")
 
-	// Initialize AI scoring engine
-	a.scoringEngine = scoring.NewEngine()
-	cullsnapDir := filepath.Join(home, ".cullsnap")
-	localProv, err := scoring.NewLocalProvider(cullsnapDir)
-	if err != nil {
-		logger.Log.Warn("app: failed to create local AI provider", "error", err)
-	} else {
-		a.localProvider = localProv
-		a.scoringEngine.Register(localProv)
-		// Try to init ONNX runtime (non-fatal if library not found).
-		if err := localProv.InitRuntime(""); err != nil {
-			logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
+	// Initialize AI scoring engine (guard against double Startup from Wails WebView reload).
+	if a.scoringEngine == nil {
+		a.scoringEngine = scoring.NewEngine()
+		cullsnapDir := filepath.Join(home, ".cullsnap")
+		localProv, err := scoring.NewLocalProvider(cullsnapDir)
+		if err != nil {
+			logger.Log.Warn("app: failed to create local AI provider", "error", err)
+		} else {
+			a.localProvider = localProv
+			a.scoringEngine.Register(localProv)
+			if err := localProv.InitRuntime(""); err != nil {
+				logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
+			}
 		}
-	}
 
-	// Register cloud provider (OpenAI Vision) — available when user provides API key.
-	cloudProv := scoring.NewCloudProvider("OpenAI Vision", "", func() (string, error) {
-		return keyring.Get("cullsnap-ai-openai", "api-key")
-	})
-	a.scoringEngine.Register(cloudProv)
+		cloudProv := scoring.NewCloudProvider("OpenAI Vision", "", func() (string, error) {
+			return keyring.Get("cullsnap-ai-openai", "api-key")
+		})
+		a.scoringEngine.Register(cloudProv)
+	}
 
 	// Load AI scoring enabled state
 	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")

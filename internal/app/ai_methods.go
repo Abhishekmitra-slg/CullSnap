@@ -176,28 +176,27 @@ func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
 			continue
 		}
 
-		if result != nil && (result.HasFaces() || result.OverallScore > 0) {
-			// Save score to DB.
-			if dbErr := a.store.SaveAIScore(photo.Path, result.OverallScore, len(result.Faces), "Local (ONNX)"); dbErr != nil {
-				logger.Log.Warn("app: failed to save AI score", "path", photo.Path, "error", dbErr)
-			}
+		// Save score to DB for ALL analyzed photos (even those with 0 faces).
+		// This ensures the UI shows "Analyzed — 0 faces" instead of "Not analyzed".
+		if dbErr := a.store.SaveAIScore(photo.Path, result.OverallScore, len(result.Faces), "Local (ONNX)"); dbErr != nil {
+			logger.Log.Warn("app: failed to save AI score", "path", photo.Path, "error", dbErr)
+		}
 
-			// Save face detections.
-			for _, face := range result.Faces {
-				det := &storage.FaceDetection{
-					PhotoPath:    photo.Path,
-					BboxX:        face.BoundingBox.Min.X,
-					BboxY:        face.BoundingBox.Min.Y,
-					BboxW:        face.BoundingBox.Dx(),
-					BboxH:        face.BoundingBox.Dy(),
-					EyeSharpness: face.EyeSharpness,
-					EyesOpen:     face.EyesOpen,
-					Expression:   face.Expression,
-					Confidence:   face.Confidence,
-				}
-				if _, detErr := a.store.SaveFaceDetection(det); detErr != nil {
-					logger.Log.Warn("app: failed to save face detection", "error", detErr)
-				}
+		// Save face detections if any were found.
+		for _, face := range result.Faces {
+			det := &storage.FaceDetection{
+				PhotoPath:    photo.Path,
+				BboxX:        face.BoundingBox.Min.X,
+				BboxY:        face.BoundingBox.Min.Y,
+				BboxW:        face.BoundingBox.Dx(),
+				BboxH:        face.BoundingBox.Dy(),
+				EyeSharpness: face.EyeSharpness,
+				EyesOpen:     face.EyesOpen,
+				Expression:   face.Expression,
+				Confidence:   face.Confidence,
+			}
+			if _, detErr := a.store.SaveFaceDetection(det); detErr != nil {
+				logger.Log.Warn("app: failed to save face detection", "error", detErr)
 			}
 		}
 
