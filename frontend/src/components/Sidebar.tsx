@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info, Cloud, Smartphone } from 'lucide-react';
+import { FolderOpen, Download, HelpCircle, FileText, Clock, Layers, Sun, Moon, Settings, Info, Cloud, Smartphone, Sparkles } from 'lucide-react';
 import { model } from '../../wailsjs/go/models';
 import { GetRecentFolders, SelectExportDirectory, ExportPhotos, OpenLog } from '../../wailsjs/go/app/App';
 
@@ -24,6 +24,11 @@ interface SidebarProps {
     onOpenCloud: () => void;
     onOpenDeviceImport?: () => void;
     probe?: { OS: string };
+    aiEnabled?: boolean;
+    isAnalyzing?: boolean;
+    onAnalyze?: () => void;
+    aiPanelVisible?: boolean;
+    onToggleAIPanel?: () => void;
 }
 
 export function Sidebar({
@@ -46,7 +51,12 @@ export function Sidebar({
     onOpenHelp,
     onOpenCloud,
     onOpenDeviceImport,
-    probe
+    probe,
+    aiEnabled,
+    isAnalyzing,
+    onAnalyze,
+    aiPanelVisible,
+    onToggleAIPanel,
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -146,6 +156,18 @@ export function Sidebar({
                         ✓ {duplicateCount} duplicate{duplicateCount !== 1 ? 's' : ''} found
                     </div>
                 )}
+
+                {aiEnabled && (
+                    <button
+                        className="btn w-full mt-2"
+                        onClick={onAnalyze}
+                        disabled={isAnalyzing || photosCount === 0 || !currentDir}
+                        title="Run AI face detection and quality scoring"
+                    >
+                        <Sparkles size={16} />
+                        {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+                    </button>
+                )}
             </div>
 
             {/* Current folder indicator */}
@@ -214,6 +236,14 @@ export function Sidebar({
                     </button>
                     <button className="btn w-full justify-center" onClick={onOpenAbout} title="About">
                         <Info size={14} />
+                    </button>
+                    <button
+                        className="btn w-full justify-center"
+                        onClick={onToggleAIPanel}
+                        title="Toggle AI Panel"
+                        style={{ color: aiPanelVisible ? '#6c63ff' : undefined }}
+                    >
+                        <Sparkles size={14} />
                     </button>
                     <button className="btn w-full justify-center" onClick={onOpenSettings} title="Settings">
                         <Settings size={14} />

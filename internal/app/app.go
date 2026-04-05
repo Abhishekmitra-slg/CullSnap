@@ -12,6 +12,7 @@ import (
 	"cullsnap/internal/model"
 	"cullsnap/internal/raw"
 	"cullsnap/internal/scanner"
+	"cullsnap/internal/scoring"
 	"cullsnap/internal/storage"
 	"cullsnap/internal/updater"
 	"cullsnap/internal/video"
@@ -32,6 +33,7 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/zalando/go-keyring"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -80,6 +82,11 @@ type App struct {
 	mirrorCancels           map[string]context.CancelFunc
 	mirrorMu                sync.Mutex
 	deviceDetector          device.Detector
+	scoringEngine           *scoring.Engine
+	localProvider           *scoring.LocalProvider
+	analysisMu              sync.Mutex
+	analysisCancel          context.CancelFunc
+	aiEnabled               bool
 }
 
 // NewApp creates a new App application struct
@@ -157,6 +164,32 @@ func (a *App) Startup(ctx context.Context) {
 		logger.Log.Error("Failed to initialize RAW module", "error", err)
 	}
 	logger.Log.Info("app: RAW module initialized")
+
+	// Initialize AI scoring engine
+	a.scoringEngine = scoring.NewEngine()
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+	localProv, err := scoring.NewLocalProvider(cullsnapDir)
+	if err != nil {
+		logger.Log.Warn("app: failed to create local AI provider", "error", err)
+	} else {
+		a.localProvider = localProv
+		a.scoringEngine.Register(localProv)
+		// Try to init ONNX runtime (non-fatal if library not found).
+		if err := localProv.InitRuntime(""); err != nil {
+			logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
+		}
+	}
+
+	// Register cloud provider (OpenAI Vision) — available when user provides API key.
+	cloudProv := scoring.NewCloudProvider("OpenAI Vision", "", func() (string, error) {
+		return keyring.Get("cullsnap-ai-openai", "api-key")
+	})
+	a.scoringEngine.Register(cloudProv)
+
+	// Load AI scoring enabled state
+	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")
+	a.aiEnabled = aiEnabledStr == "true"
+	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled, "engineEnabled", a.scoringEngine.Enabled())
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -930,7 +963,19 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	}
 
 	// 2. Select the best quality photo in each group to represent the unique
-	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress)
+	// Build AI score lookup if scoring is enabled and has results.
+	var aiScoreFn dedupe.AIScoreFunc
+	if a.aiEnabled && a.scoringEngine.Enabled() {
+		aiScoreFn = func(photoPath string) (float64, bool) {
+			score, err := a.store.GetAIScore(photoPath)
+			if err != nil || score == nil {
+				return 0, false
+			}
+			return score.OverallScore, true
+		}
+	}
+
+	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress, aiScoreFn)
 	if err != nil {
 		return nil, err
 	}

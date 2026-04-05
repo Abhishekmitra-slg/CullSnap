@@ -106,7 +106,7 @@ func TestFindBestPhotos(t *testing.T) {
 		},
 	}
 
-	err = FindBestPhotos(context.Background(), []*DuplicateGroup{group}, "", nil)
+	err = FindBestPhotos(context.Background(), []*DuplicateGroup{group}, "", nil, nil)
 	if err != nil {
 		t.Fatalf("FindBestPhotos failed: %v", err)
 	}

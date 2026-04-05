@@ -394,9 +394,12 @@ func main() {
 
 	// Create application with options
 	err = wails.Run(&options.App{
-		Title:  "CullSnap",
-		Width:  1200,
-		Height: 800,
+		Title:            "CullSnap",
+		Width:            1200,
+		Height:           800,
+		MinWidth:         1100,
+		MinHeight:        700,
+		WindowStartState: options.Maximised,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: loader,

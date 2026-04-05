@@ -29,6 +29,8 @@ linters:
         - G304 # File path taint — expected for a file-serving desktop app
         - G401 # Weak crypto (MD5) — used for cache key generation, not security
         - G501 # Blocklisted import crypto/md5 — same as G401
+        - G104 # Unhandled errors — defer close patterns with nolint annotations
+        - G602 # Slice index out of range — false positive on range-bounded loop access
     gocritic:
       enabled-tags:
         - diagnostic

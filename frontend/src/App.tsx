@@ -9,8 +9,10 @@ import { CloudSourceModal } from './components/CloudSourceModal';
 import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew } from '../wailsjs/go/app/App';
-import { model as appModel } from '../wailsjs/go/models';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore } from '../wailsjs/go/app/App';
+import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+import AIPanel from './components/AIPanel';
 
 interface SystemMetrics {
     cpu: number;
@@ -20,7 +22,6 @@ interface SystemMetrics {
     netSent: number;
     netRecv: number;
 }
-import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
     const [photos, setPhotos] = useState<appModel.Photo[]>([]);
@@ -40,6 +41,19 @@ function App() {
     const [sysMetrics, setSysMetrics] = useState<SystemMetrics | null>(null);
     const [exportSuccess, setExportSuccess] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
+    const [aiScores, setAiScores] = useState<Record<string, { score: number; faceCount: number }>>({});
+    const [aiPanelVisible, setAiPanelVisible] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [aiProgress, setAiProgress] = useState<{ scored: number; total: number; phase: string } | null>(null);
+    const [aiClusters, setAiClusters] = useState<storage.FaceCluster[]>([]);
+    const [aiEnabled, setAiEnabled] = useState(false);
+    const [aiProviderName, setAiProviderName] = useState('');
+    const [aiProviderReady, setAiProviderReady] = useState(false);
+    const [aiSortByScore, setAiSortByScore] = useState(false);
+    const [aiMinQuality, setAiMinQuality] = useState(0);
+    const [aiHasFaces, setAiHasFaces] = useState(false);
+    const [aiFaceFilter, setAiFaceFilter] = useState<number[]>([]);
+    const [activePhotoDetections, setActivePhotoDetections] = useState<storage.FaceDetection[]>([]);
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number, heicCount?: number, heicDecoder?: string} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -59,7 +73,7 @@ function App() {
         return () => { EventsOff('sys-metrics'); };
     }, []);
 
-    // Load probe info (OS detection for conditional UI)
+    // Load probe info (OS detection for conditional UI) + AI status
     useEffect(() => {
         GetAppConfig().then(cfg => {
             if (cfg?.probe) setProbe(cfg.probe);
@@ -67,6 +81,20 @@ function App() {
         ShouldShowWhatsNew().then(show => {
             if (show) setWhatsNewOpen(true);
         }).catch(console.error);
+        GetAIScoringStatus().then((status: appTypes.AIScoringStatus) => {
+            console.log('[ai] status on startup:', status);
+            setAiEnabled(status?.enabled ?? false);
+            if (status?.providers && status.providers.length > 0) {
+                const ready = status.providers.find((p: any) => p.ready);
+                if (ready) {
+                    setAiProviderReady(true);
+                    setAiProviderName(ready.name || '');
+                } else {
+                    setAiProviderReady(false);
+                    setAiProviderName(status.providers[0]?.name || '');
+                }
+            }
+        }).catch((err: unknown) => console.warn('[ai] status unavailable:', err));
     }, []);
 
     // Device auto-detect toast
@@ -83,6 +111,45 @@ function App() {
         return () => {
             EventsOff('device-connected');
             EventsOff('device-disconnected');
+        };
+    }, []);
+
+    // AI event listeners
+    useEffect(() => {
+        const progressHandler = (data: any) => {
+            console.log('[ai] progress:', data);
+            setAiProgress({ scored: data?.scored ?? 0, total: data?.total ?? 0, phase: data?.phase ?? '' });
+            setIsAnalyzing(true);
+        };
+        const scoredHandler = (data: any) => {
+            console.log('[ai] photo-scored:', data?.path);
+            if (data?.path && data?.score != null) {
+                setAiScores(prev => ({
+                    ...prev,
+                    [data.path]: { score: data.score, faceCount: data.faceCount ?? 0 },
+                }));
+            }
+        };
+        const clusteringHandler = (data: any) => {
+            console.log('[ai] clustering-complete, clusters:', data?.clusters?.length);
+            setIsAnalyzing(false);
+            setAiProgress(null);
+            if (data?.clusters) setAiClusters(data.clusters);
+        };
+        const errorHandler = (data: any) => {
+            console.error('[ai] error:', data?.message);
+            setIsAnalyzing(false);
+            setAiProgress(null);
+        };
+        EventsOn('ai:progress', progressHandler);
+        EventsOn('ai:photo-scored', scoredHandler);
+        EventsOn('ai:clustering-complete', clusteringHandler);
+        EventsOn('ai:error', errorHandler);
+        return () => {
+            EventsOff('ai:progress');
+            EventsOff('ai:photo-scored');
+            EventsOff('ai:clustering-complete');
+            EventsOff('ai:error');
         };
     }, []);
 
@@ -169,7 +236,10 @@ function App() {
     // Keyboard shortcut listener
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 's' || e.key === 'S') {
+            if (e.key === 'a' || e.key === 'A') {
+                if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+                setAiPanelVisible(prev => !prev);
+            } else if (e.key === 's' || e.key === 'S') {
                 if (activePhotoPath) {
                     handleToggleSelection(activePhotoPath);
                 }
@@ -423,6 +493,17 @@ function App() {
         setActivePhoto(prev => (prev?.Path === path) ? appModel.Photo.createFrom({ ...prev, TrimStart: start, TrimEnd: end }) : prev);
     }, []);
 
+    // Load face detections when active photo changes
+    useEffect(() => {
+        if (!activePhotoPath) {
+            setActivePhotoDetections([]);
+            return;
+        }
+        GetPhotoAIScore(activePhotoPath).then(result => {
+            setActivePhotoDetections(result?.detections || []);
+        }).catch(() => setActivePhotoDetections([]));
+    }, [activePhotoPath]);
+
     return (
         <div id="App" className="app-container" data-theme={theme}>
             <div className="titlebar" />
@@ -501,9 +582,30 @@ function App() {
                 onOpenCloud={() => setCloudOpen(true)}
                 onOpenDeviceImport={() => setDeviceImportOpen(true)}
                 probe={probe}
+                aiEnabled={aiEnabled}
+                isAnalyzing={isAnalyzing}
+                onAnalyze={() => {
+                    setIsAnalyzing(true);
+                    setAiPanelVisible(true);
+                    import('../wailsjs/go/app/App').then(({ RunAIAnalysis }) => {
+                        RunAIAnalysis(currentDir).catch(err => {
+                            console.warn('[ai] analysis failed:', err);
+                            setIsAnalyzing(false);
+                        });
+                    });
+                }}
+                aiPanelVisible={aiPanelVisible}
+                onToggleAIPanel={() => setAiPanelVisible(prev => !prev)}
             />
 
-            <div className="main-content" style={{ position: 'relative' }}>
+            <div
+                className="main-content"
+                style={{
+                    position: 'relative',
+                    marginRight: aiPanelVisible ? 300 : 0,
+                    transition: 'margin-right 200ms ease-out',
+                }}
+            >
                 <Grid
                     photos={photos}
                     duplicateGroups={duplicateGroups}
@@ -514,10 +616,42 @@ function App() {
                     ratings={ratings}
                     onRatingChange={handleRatingChange}
                     onColumnsChange={setGridColumns}
+                    aiScores={aiScores}
                 />
 
-                <Viewer photo={activePhoto} onTrimChange={handleTrimChange} isSelected={selectedPaths.has(activePhotoPath || '')} />
+                <Viewer
+                    photo={activePhoto}
+                    onTrimChange={handleTrimChange}
+                    isSelected={selectedPaths.has(activePhotoPath || '')}
+                    faceDetections={activePhotoDetections}
+                    aiPanelVisible={aiPanelVisible}
+                    onFaceClick={(clusterId) => {
+                        setAiFaceFilter([clusterId]);
+                        setAiPanelVisible(true);
+                    }}
+                />
             </div>
+
+            <AIPanel
+                visible={aiPanelVisible}
+                onClose={() => setAiPanelVisible(false)}
+                activePhotoPath={activePhotoPath}
+                analysisProgress={aiProgress}
+                isAnalyzing={isAnalyzing}
+                clusters={aiClusters.map(c => ({
+                    id: c.id,
+                    label: c.label,
+                    count: c.photoCount,
+                    thumbnail: c.representativePath,
+                }))}
+                aiScores={aiScores}
+                onFilterByFace={setAiFaceFilter}
+                onSortByScore={setAiSortByScore}
+                onMinQuality={setAiMinQuality}
+                onHasFacesFilter={setAiHasFaces}
+                providerName={aiProviderName}
+                providerReady={aiProviderReady}
+            />
 
             <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>
                 <div style={{ flex: 1 }}>
