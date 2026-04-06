@@ -4,6 +4,7 @@ import {app} from '../models';
 import {device} from '../models';
 import {model} from '../models';
 import {cloudsource} from '../models';
+import {context} from '../models';
 
 export function AcknowledgeWhatsNew():Promise<void>;
 
@@ -42,6 +43,8 @@ export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Pr
 export function GetAIResults(arg1:string):Promise<app.AIResults>;
 
 export function GetAIScoringStatus():Promise<app.AIScoringStatus>;
+
+export function GetAIWeights():Promise<app.AIWeightsConfig>;
 
 export function GetAboutInfo():Promise<app.AboutInfo>;
 
@@ -111,12 +114,12 @@ export function SelectExportDirectory():Promise<string>;
 
 export function SetAIScoringEnabled(arg1:boolean):Promise<void>;
 
-export function SetCloudAPIKey(arg1:string,arg2:string):Promise<void>;
+export function SetAIWeights(arg1:app.AIWeightsConfig):Promise<void>;
 
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
 export function ShouldShowWhatsNew():Promise<boolean>;
 
-export function TestCloudConnection(arg1:string):Promise<void>;
+export function Startup(arg1:context.Context):Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;

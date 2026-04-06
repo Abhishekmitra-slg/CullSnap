@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, RotateCcw, Cloud, Trash2, Smartphone } from 'lucide-react';
-import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetCacheStats, ListCachedAlbums, DeleteCachedAlbum, ClearAllCache, GetImportStats, ClearImportCache } from '../../wailsjs/go/app/App';
+import { GetAppConfig, SaveAppConfig, ResetAppConfig, GetCacheStats, ListCachedAlbums, DeleteCachedAlbum, ClearAllCache, GetImportStats, ClearImportCache, GetAIWeights, SetAIWeights } from '../../wailsjs/go/app/App';
 import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
@@ -18,11 +18,22 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [deletingAlbum, setDeletingAlbum] = useState<string | null>(null);
     const [downloadingModels, setDownloadingModels] = useState(false);
     const [downloadResult, setDownloadResult] = useState<string | null>(null);
+    const [weights, setWeights] = useState({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 });
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
         loadMirrorStats();
         loadImportStats();
+        GetAIWeights().then(w => {
+            if (w) {
+                setWeights({
+                    aesthetic: w.aesthetic ?? 0.4,
+                    sharpness: w.sharpness ?? 0.3,
+                    face: w.face ?? 0.2,
+                    eyes: w.eyes ?? 0.1,
+                });
+            }
+        }).catch(e => console.error('[settings] failed to load AI weights:', e));
     }, []);
 
     const loadMirrorStats = async () => {
@@ -129,6 +140,17 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         setSaving(true);
         try {
             await SaveAppConfig(config);
+            // Normalize weights so they sum to 1.0 before saving
+            const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes;
+            const normalized = total > 0
+                ? {
+                    aesthetic: weights.aesthetic / total,
+                    sharpness: weights.sharpness / total,
+                    face: weights.face / total,
+                    eyes: weights.eyes / total,
+                }
+                : weights;
+            await SetAIWeights(app.AIWeightsConfig.createFrom(normalized));
         } catch (e) {
             console.error('Failed to save config:', e);
         } finally {
@@ -498,26 +520,21 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
 
                     {config.aiScoringEnabled && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                            {/* Local Provider Card */}
+                        <div style={{ marginTop: 12 }}>
+                            {/* Local ONNX provider */}
                             <div style={{
-                                flex: 1, background: '#1a1a2e', borderRadius: 8, padding: 12,
-                                border: config.aiProvider === 'local' ? '1px solid #818cf8' : '1px solid #2a2a3e',
-                                cursor: 'pointer',
-                            }}
-                                onClick={() => setConfig(app.AppConfig.createFrom({ ...config, aiProvider: 'local' }))}
-                            >
+                                background: '#1a1a2e', borderRadius: 8, padding: 12,
+                                border: '1px solid #2a2a3e', marginBottom: 12,
+                            }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                                    {config.aiProvider === 'local' && <span style={{ width: 6, height: 6, background: '#4ade80', borderRadius: '50%', display: 'inline-block' }} />}
-                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Local (ONNX)</span>
+                                    <span style={{ width: 6, height: 6, background: '#4ade80', borderRadius: '50%', display: 'inline-block' }} />
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Local (ONNX) — Fast, private, on-device</span>
                                 </div>
-                                <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: 8 }}>Fast, private, runs on your machine</div>
                                 <button
                                     className="btn"
                                     style={{ fontSize: '0.7rem', padding: '4px 8px' }}
                                     disabled={downloadingModels}
-                                    onClick={e => {
-                                        e.stopPropagation();
+                                    onClick={() => {
                                         setDownloadingModels(true);
                                         setDownloadResult(null);
                                         import('../../wailsjs/go/app/App').then(({ DownloadAIModels }) => {
@@ -540,42 +557,48 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                     <div style={{ color: '#ef4444', fontSize: '0.65rem', marginTop: 4 }}>{downloadResult}</div>
                                 )}
                                 {downloadResult === 'Ready' && (
-                                    <div style={{ color: '#4ade80', fontSize: '0.65rem', marginTop: 4 }}>ONNX Runtime + model ready</div>
+                                    <div style={{ color: '#4ade80', fontSize: '0.65rem', marginTop: 4 }}>ONNX models ready</div>
                                 )}
                             </div>
 
-                            {/* Cloud Provider Card */}
-                            <div style={{
-                                flex: 1, background: '#1a1a2e', borderRadius: 8, padding: 12,
-                                border: config.aiProvider === 'cloud' ? '1px solid #818cf8' : '1px solid #2a2a3e',
-                                cursor: 'pointer',
-                            }}
-                                onClick={() => setConfig(app.AppConfig.createFrom({ ...config, aiProvider: 'cloud' }))}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                                    {config.aiProvider === 'cloud' && <span style={{ width: 6, height: 6, background: '#4ade80', borderRadius: '50%', display: 'inline-block' }} />}
-                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Cloud (Vision API)</span>
+                            {/* Score weight sliders */}
+                            <div style={{ background: '#1a1a2e', borderRadius: 8, padding: 12, border: '1px solid #2a2a3e' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Score Weights</span>
+                                    <button
+                                        onClick={() => setWeights({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 })}
+                                        style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.7rem', cursor: 'pointer' }}
+                                    >
+                                        Reset to Defaults
+                                    </button>
                                 </div>
-                                <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: 8 }}>More accurate, requires API key</div>
-                                <input
-                                    type="password"
-                                    placeholder="API Key"
-                                    style={{
-                                        width: '100%', background: '#2a2a3e', border: '1px solid #3a3a4e',
-                                        borderRadius: 4, padding: '4px 8px', color: 'var(--text-primary)',
-                                        fontSize: '0.7rem',
-                                    }}
-                                    onClick={e => e.stopPropagation()}
-                                    onBlur={e => {
-                                        if (e.target.value) {
-                                            import('../../wailsjs/go/app/App').then(({ SetCloudAPIKey }) => {
-                                                SetCloudAPIKey('openai', e.target.value).catch(err =>
-                                                    console.warn('[settings] failed to save API key:', err)
-                                                );
-                                            });
-                                        }
-                                    }}
-                                />
+                                {(() => {
+                                    const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes;
+                                    const pct = (v: number) => total > 0 ? Math.round(v / total * 100) : 0;
+                                    const sliders: { key: keyof typeof weights; label: string; color: string }[] = [
+                                        { key: 'aesthetic', label: 'Aesthetic', color: '#a78bfa' },
+                                        { key: 'sharpness', label: 'Sharpness', color: '#4ade80' },
+                                        { key: 'face', label: 'Face Quality', color: '#fbbf24' },
+                                        { key: 'eyes', label: 'Eyes Open', color: '#60a5fa' },
+                                    ];
+                                    return sliders.map(({ key, label, color }) => (
+                                        <div key={key} style={{ marginBottom: 8 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                                <span style={{ fontSize: '0.75rem', color: '#aaa' }}>{label}</span>
+                                                <span style={{ fontSize: '0.75rem', color, fontWeight: 600 }}>{pct(weights[key])}%</span>
+                                            </div>
+                                            <input
+                                                type="range" min={0} max={100} step={5}
+                                                value={Math.round(weights[key] * 100)}
+                                                onChange={e => setWeights(prev => ({ ...prev, [key]: parseInt(e.target.value) / 100 }))}
+                                                style={{ width: '100%', accentColor: color }}
+                                            />
+                                        </div>
+                                    ));
+                                })()}
+                                <div style={{ fontSize: '0.65rem', color: '#555', marginTop: 4 }}>
+                                    Weights are auto-normalized to 100%.
+                                </div>
                             </div>
                         </div>
                     )}

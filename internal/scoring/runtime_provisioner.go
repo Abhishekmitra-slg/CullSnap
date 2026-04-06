@@ -24,6 +24,12 @@ const (
 	ortLibFilePerm     = 0o755
 )
 
+// ONNXRuntimeLibName returns the platform-specific library filename.
+// Exported for use by the app package when checking for an existing runtime.
+func ONNXRuntimeLibName() string {
+	return onnxRuntimeLibName()
+}
+
 // onnxRuntimeLibName returns the platform-specific library filename.
 func onnxRuntimeLibName() string {
 	if runtime.GOOS == "darwin" {

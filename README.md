@@ -39,6 +39,7 @@ CullSnap lets photographers review, rate, deduplicate, and export thousands of p
 -   **RAW Image Support**: Native Pure Go support for 11 camera RAW formats — CR2, CR3, ARW, NEF, DNG, RAF, RW2, ORF, NRW, PEF, SRW. Zero external dependencies. Extracts embedded JPEG previews using format-specific parsers: TIFF IFD walker (Canon DSLR/Sony/Nikon/Leica), BMFF box walker (Canon mirrorless CR3), Fujifilm RAF header parser, and TIFF-variant handling (Olympus/Panasonic). Includes RAW+JPEG companion pairing and format badges in the UI.
 -   **HEIC/HEIF Support**: Full support for iPhone's default photo format. On macOS, uses the native `sips` decoder for fast hardware-accelerated conversion. Falls back to FFmpeg on Windows and Linux. Decoder preference is configurable in Settings with a clear performance warning.
 -   **Cloud Albums**: Browse and cull photos directly from Google Drive and iCloud Photos without manual downloads. Photos are mirrored locally for fast culling with progressive download, disk space management, and persistent selections across sessions. OAuth 2.0 with PKCE for secure authentication, tokens stored in the OS keychain. Per-album cache management with LRU auto-eviction, configurable cache limits, and individual album deletion from Settings.
+-   **AI-Powered Photo Scoring**: On-device AI pipeline scores your photos for face quality, aesthetic appeal, and technical sharpness — all running locally with zero cloud dependency. Detects faces with SCRFD, identifies people with ArcFace embeddings, clusters photos by person, and scores aesthetic quality with NIMA. User-configurable scoring weights let you tune what matters (portrait sharpness vs landscape composition). Results display as sub-score breakdown bars with sort/filter capabilities in the AI Panel. A progress modal shows every pipeline step during analysis.
 -   **Import from Device**: Connect phones, cameras, or SD cards via USB and CullSnap detects them automatically.
     - **iPhone/iPad**: macOS (Image Capture), Windows (MTP), Linux (GVFS AFC / gphoto2)
     - **Android**: Windows (MTP native), Linux (GVFS MTP / gphoto2), macOS (gphoto2 or PTP mode)
@@ -109,20 +110,111 @@ To run in Developer Watch-Mode:
 make dev
 ```
 
+## 🤖 AI Scoring Setup
+
+CullSnap includes an on-device AI scoring pipeline that runs entirely locally — no cloud APIs, no data leaves your machine.
+
+### Included Models (Auto-Downloaded)
+
+| Model | Purpose | Size | Source |
+|-------|---------|------|--------|
+| **SCRFD-2.5GF** | Face detection with 5-point landmarks | ~3 MB | [InsightFace](https://github.com/deepinsight/insightface) |
+| **ArcFace-MobileFaceNet** | Face identity embeddings (512D) for person clustering | ~14 MB | [InsightFace](https://github.com/deepinsight/insightface) |
+
+These models are downloaded automatically when you click **Download Models** in Settings → AI Scoring.
+
+### Optional: NIMA Aesthetic Model (Manual Export Required)
+
+The NIMA (Neural Image Assessment) model scores photos for aesthetic quality — composition, color harmony, subject interest. No pre-built ONNX export exists publicly, so you need to export it yourself.
+
+**Steps to export NIMA to ONNX:**
+
+1. **Clone the NIMA repository:**
+   ```bash
+   git clone https://github.com/titu1994/neural-image-assessment.git
+   cd neural-image-assessment
+   ```
+
+2. **Install Python dependencies:**
+   ```bash
+   pip install tensorflow==2.15 tf2onnx numpy Pillow
+   ```
+
+3. **Download pre-trained weights:**
+   Download the MobileNet NIMA weights from the repository's releases or train your own on the AVA dataset.
+
+4. **Export to ONNX:**
+   ```python
+   import tensorflow as tf
+   import tf2onnx
+
+   # Load the Keras model
+   model = tf.keras.models.load_model('weights/mobilenet_weights.h5')
+   
+   # Convert to ONNX
+   spec = (tf.TensorSpec((1, 224, 224, 3), tf.float32, name="input"),)
+   model_proto, _ = tf2onnx.convert.from_keras(model, input_signature=spec,
+       opset=13, output_path="nima_aesthetic.onnx")
+   ```
+
+   **Important:** If the exported model uses NHWC layout (TensorFlow default), you may need to transpose the input. CullSnap expects **NCHW** layout with shape `[1, 3, 224, 224]` and ImageNet normalization (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]).
+
+5. **Compute SHA-256 hash:**
+   ```bash
+   shasum -a 256 nima_aesthetic.onnx
+   ```
+
+6. **Host the model** on a stable URL (GitHub Releases, HuggingFace, etc.)
+
+7. **Update the constants** in `internal/scoring/aesthetic.go`:
+   ```go
+   aestheticModelURL    = "https://your-host/nima_aesthetic.onnx"
+   aestheticModelSHA256 = "<sha256-hash-from-step-5>"
+   ```
+
+8. **Rebuild and test:**
+   ```bash
+   make build
+   ```
+
+**Without the NIMA model**, CullSnap still scores photos using the Laplacian sharpness heuristic and face detection/recognition. The aesthetic score will simply be absent from the sub-score breakdown.
+
+### Quick Start
+
+1. Open **Settings** → **AI Scoring** → Enable the toggle
+2. Click **Download Models** (~17 MB download)
+3. Open a photo folder, click **Analyze with AI** in the sidebar
+4. Watch the progress modal as photos are analyzed
+5. Use the **AI Panel** (Cmd+I) to view scores, filter by quality, and browse by person
+
+### Score Weights
+
+Tune how different factors contribute to the overall score:
+
+| Weight | Default | Best For |
+|--------|---------|----------|
+| Aesthetic Quality | 35% | Landscapes, architecture, food |
+| Sharpness | 25% | Technical quality, detail |
+| Face Quality | 25% | Portrait eye sharpness |
+| Eyes Open | 15% | Group photos, candids |
+
+Adjust in **Settings** → **AI Scoring** → **Score Weights**. Changes recalculate scores instantly without re-running inference.
+
 ## 🎮 Usage Guide
 
 1.  **Open Folder**: Click **Open Folder** to load a directory from your machine or external drive. CullSnap automatically detects JPEG, PNG, HEIC, RAW, and video files.
 2.  **Cloud Albums**: Click **Cloud Albums** in the sidebar to connect Google Drive or iCloud Photos. Browse folders/albums and mirror them locally for culling.
 3.  **Import from Device**: Connect your device via USB. CullSnap detects phones, cameras, and SD cards automatically. Use the **Import from Device** sidebar button to start. On macOS, Android users should install `gphoto2` (`brew install gphoto2`) or switch USB mode to PTP. On Linux, install `libimobiledevice-utils usbmuxd gphoto2` for full device support.
 4.  **Deduplicate**: Click **Find Duplicates** to automatically group burst shots and isolate the sharpest unique photos. Previously deduped folders are auto-detected.
-5.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
-6.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
-7.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
-8.  **Trim Videos**: Select a video, set trim start/end in the viewer. Only the trimmed segment is exported (lossless fast-seek).
-9.  **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
-10. **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
-11. **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
-12. **Settings**: Click the gear icon to view system info, adjust performance sliders, configure HEIC decoder, and manage cloud storage cache.
+5.  **AI Scoring**: Enable AI in Settings, download models, then click **Analyze with AI** to score all photos. The AI Panel (Cmd+I) shows face clusters, quality breakdowns, and sort/filter controls.
+6.  **Navigate**: Use `← / →` or `↑ / ↓` arrow keys to traverse through photos. The virtualized grid auto-scrolls to keep the active photo visible.
+7.  **Rate**: Click the stars (1–5) on any thumbnail to rate photos.
+8.  **Cull**: Press `S` to toggle keeping the photo (Blue Checkmark).
+9.  **Trim Videos**: Select a video, set trim start/end in the viewer. Only the trimmed segment is exported (lossless fast-seek).
+10. **Review**: The grid provides instant visual feedback — Blue Checkmarks for selections, Green Checkmarks for previously exported files.
+11. **EXIF**: Select any asset to view its metadata in the frosted-glass overlay.
+12. **Export**: Click **Export (N)**. Choose a destination, name the folder in the inline dialog, and CullSnap copies all full-resolution originals and trimmed videos to the new folder.
+13. **Settings**: Click the gear icon to view system info, adjust performance sliders, configure HEIC decoder, and manage cloud storage cache.
 
 ## 📷 Supported Formats
 
@@ -144,6 +236,7 @@ CullSnap/
 ├── internal/
 │   ├── app/
 │   │   ├── app.go                  # Core app logic, all Wails-bound methods
+│   │   ├── ai_methods.go           # AI analysis pipeline, worker pool, face clustering
 │   │   ├── config.go               # SystemProbe, AppConfig, DeriveDefaults
 │   │   ├── config_unix.go          # FD limit detection (Unix)
 │   │   ├── config_windows.go       # FD limit detection (Windows)
@@ -160,6 +253,7 @@ CullSnap/
 │   ├── device/                     # USB device detection + import (macOS + Windows)
 │   ├── scanner/scanner.go          # Directory walker (jpg/jpeg/png/heic + RAW + video)
 │   ├── dedupe/                     # dHash perceptual hashing + Laplacian Variance
+│   ├── scoring/                    # AI scoring plugin architecture (SCRFD, ArcFace, NIMA, pipeline)
 │   ├── export/copier.go            # File copy with flush-error checking + video trim
 │   ├── model/photo.go              # Unified Photo struct
 │   ├── storage/                    # SQLite (selections, ratings, exported, config, cloud mirrors)
@@ -172,7 +266,9 @@ CullSnap/
     │   ├── Sidebar.tsx              # Folder nav, cloud, device import, export, dedup
     │   ├── CloudSourceModal.tsx    # Google Drive + iCloud album browser
     │   ├── DeviceImportModal.tsx   # USB iPhone/iPad import
-    │   └── SettingsModal.tsx        # System info, performance, HEIC decoder, cloud cache
+    │   ├── SettingsModal.tsx        # System info, performance, HEIC decoder, cloud cache
+    │   ├── AIProgressModal.tsx     # AI analysis progress overlay
+    │   └── AIPanel.tsx             # AI results sidebar panel
     └── index.css                    # Navy/violet theme, glassmorphism, animations
 ```
 

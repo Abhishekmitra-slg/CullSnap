@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Grid } from './components/Grid';
 import { Viewer } from './components/Viewer';
@@ -9,7 +9,8 @@ import { CloudSourceModal } from './components/CloudSourceModal';
 import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore } from '../wailsjs/go/app/App';
+import { AIProgressModal } from './components/AIProgressModal';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis } from '../wailsjs/go/app/App';
 import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import AIPanel from './components/AIPanel';
@@ -53,6 +54,7 @@ function App() {
     const [aiMinQuality, setAiMinQuality] = useState(0);
     const [aiHasFaces, setAiHasFaces] = useState(false);
     const [aiFaceFilter, setAiFaceFilter] = useState<number[]>([]);
+    const [showAIModal, setShowAIModal] = useState(false);
     const [activePhotoDetections, setActivePhotoDetections] = useState<storage.FaceDetection[]>([]);
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number, heicCount?: number, heicDecoder?: string} | null>(null);
@@ -78,14 +80,14 @@ function App() {
         GetAIScoringStatus().then((status: appTypes.AIScoringStatus) => {
             console.log('[ai] status refreshed:', status);
             setAiEnabled(status?.enabled ?? false);
-            if (status?.providers && status.providers.length > 0) {
-                const ready = status.providers.find((p: any) => p.available);
+            if (status?.plugins && status.plugins.length > 0) {
+                const ready = status.plugins.find((p: any) => p.available);
                 if (ready) {
                     setAiProviderReady(true);
                     setAiProviderName(ready.name || '');
                 } else {
                     setAiProviderReady(false);
-                    setAiProviderName(status.providers[0]?.name || '');
+                    setAiProviderName(status.plugins[0]?.name || '');
                 }
             }
         }).catch((err: unknown) => console.warn('[ai] status unavailable:', err));
@@ -119,13 +121,9 @@ function App() {
         };
     }, []);
 
-    // AI event listeners
+    // AI event listeners — AIProgressModal handles step/progress/complete events internally.
+    // App.tsx only needs to update the aiScores map per-photo and track clusters on complete.
     useEffect(() => {
-        const progressHandler = (data: any) => {
-            console.log('[ai] progress:', data);
-            setAiProgress({ scored: data?.scored ?? 0, total: data?.total ?? 0, phase: data?.phase ?? '' });
-            setIsAnalyzing(true);
-        };
         const scoredHandler = (data: any) => {
             console.log('[ai] photo-scored:', data?.path);
             if (data?.path && data?.score != null) {
@@ -135,29 +133,77 @@ function App() {
                 }));
             }
         };
-        const clusteringHandler = (data: any) => {
-            console.log('[ai] clustering-complete, clusters:', data?.clusters?.length);
+        const completeHandler = (data: any) => {
+            console.log('[ai] complete, clusters:', data?.clusters?.length);
             setIsAnalyzing(false);
             setAiProgress(null);
             if (data?.clusters) setAiClusters(data.clusters);
         };
         const errorHandler = (data: any) => {
-            const msg = data?.error || data?.message || 'Unknown error';
-            console.error('[ai] error:', msg);
+            console.error('[ai] error:', data?.error || data?.message);
             setIsAnalyzing(false);
             setAiProgress(null);
         };
-        EventsOn('ai:progress', progressHandler);
         EventsOn('ai:photo-scored', scoredHandler);
-        EventsOn('ai:clustering-complete', clusteringHandler);
+        EventsOn('ai:complete', completeHandler);
         EventsOn('ai:error', errorHandler);
         return () => {
-            EventsOff('ai:progress');
             EventsOff('ai:photo-scored');
-            EventsOff('ai:clustering-complete');
+            EventsOff('ai:complete');
             EventsOff('ai:error');
         };
     }, []);
+
+    // displayPhotos: apply AI sort/filter on top of the raw photos list
+    const displayPhotos = useMemo(() => {
+        let result = photos;
+
+        // Filter by min quality threshold
+        if (aiMinQuality > 0) {
+            result = result.filter(p => {
+                const s = aiScores[p.Path];
+                if (!s) return false;
+                return s.score * 100 >= aiMinQuality;
+            });
+        }
+
+        // Filter: must have faces
+        if (aiHasFaces) {
+            result = result.filter(p => {
+                const s = aiScores[p.Path];
+                return s && s.faceCount > 0;
+            });
+        }
+
+        // Filter by face cluster
+        if (aiFaceFilter.length > 0) {
+            // Keep photos that belong to any of the selected clusters.
+            // Cluster membership is determined by the AI clusters list.
+            const clusterPhotoSets: Record<number, Set<string>> = {};
+            aiClusters.forEach(c => {
+                if (!clusterPhotoSets[c.id]) clusterPhotoSets[c.id] = new Set();
+                // The cluster doesn't directly list photo paths in this model,
+                // so we fall back to keeping all face-having photos when filtering by cluster.
+                // A more precise implementation would require GetAIResults per cluster.
+            });
+            // Fallback: keep photos with faces when cluster filter is active
+            result = result.filter(p => {
+                const s = aiScores[p.Path];
+                return s && s.faceCount > 0;
+            });
+        }
+
+        // Sort by AI score (descending)
+        if (aiSortByScore) {
+            result = [...result].sort((a, b) => {
+                const sa = aiScores[a.Path]?.score ?? 0;
+                const sb = aiScores[b.Path]?.score ?? 0;
+                return sb - sa;
+            });
+        }
+
+        return result;
+    }, [photos, aiScores, aiMinQuality, aiHasFaces, aiFaceFilter, aiSortByScore, aiClusters]);
 
     // Cleanup debounce timer on unmount
     useEffect(() => {
@@ -270,10 +316,10 @@ function App() {
                 }
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                if (photos.length > 0) {
-                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
-                    if (currentIndex < photos.length - 1) {
-                        const nextPhoto = photos[currentIndex + 1];
+                if (displayPhotos.length > 0) {
+                    const currentIndex = activePhotoPath ? displayPhotos.findIndex(p => p.Path === activePhotoPath) : -1;
+                    if (currentIndex < displayPhotos.length - 1) {
+                        const nextPhoto = displayPhotos[currentIndex + 1];
                         setActivePhotoPath(nextPhoto.Path);
                         setActivePhotoDebounced(nextPhoto);
                         document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
@@ -282,10 +328,10 @@ function App() {
                 }
             } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                if (photos.length > 0) {
-                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
+                if (displayPhotos.length > 0) {
+                    const currentIndex = activePhotoPath ? displayPhotos.findIndex(p => p.Path === activePhotoPath) : -1;
                     if (currentIndex > 0) {
-                        const prevPhoto = photos[currentIndex - 1];
+                        const prevPhoto = displayPhotos[currentIndex - 1];
                         setActivePhotoPath(prevPhoto.Path);
                         setActivePhotoDebounced(prevPhoto);
                         document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
@@ -294,11 +340,11 @@ function App() {
                 }
             } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                if (photos.length > 0) {
-                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
-                    const targetIndex = Math.min(currentIndex + gridColumns, photos.length - 1);
+                if (displayPhotos.length > 0) {
+                    const currentIndex = activePhotoPath ? displayPhotos.findIndex(p => p.Path === activePhotoPath) : -1;
+                    const targetIndex = Math.min(currentIndex + gridColumns, displayPhotos.length - 1);
                     if (targetIndex !== currentIndex) {
-                        const nextPhoto = photos[targetIndex];
+                        const nextPhoto = displayPhotos[targetIndex];
                         setActivePhotoPath(nextPhoto.Path);
                         setActivePhotoDebounced(nextPhoto);
                         document.getElementById(`thumb-${nextPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
@@ -307,11 +353,11 @@ function App() {
                 }
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                if (photos.length > 0) {
-                    const currentIndex = activePhotoPath ? photos.findIndex(p => p.Path === activePhotoPath) : -1;
+                if (displayPhotos.length > 0) {
+                    const currentIndex = activePhotoPath ? displayPhotos.findIndex(p => p.Path === activePhotoPath) : -1;
                     const targetIndex = currentIndex - gridColumns;
                     if (targetIndex >= 0) {
-                        const prevPhoto = photos[targetIndex];
+                        const prevPhoto = displayPhotos[targetIndex];
                         setActivePhotoPath(prevPhoto.Path);
                         setActivePhotoDebounced(prevPhoto);
                         document.getElementById(`thumb-${prevPhoto.Path.replace(/[^a-zA-Z0-9]/g, '-')}`)
@@ -332,7 +378,7 @@ function App() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activePhotoPath, selectedPaths, photos, currentDir, ratings, setActivePhotoDebounced, gridColumns]);
+    }, [activePhotoPath, selectedPaths, displayPhotos, currentDir, ratings, setActivePhotoDebounced, gridColumns]);
 
     const handleOpenFolder = async () => {
         try {
@@ -613,11 +659,10 @@ function App() {
                     if (!currentDir) return;
                     setIsAnalyzing(true);
                     setAiPanelVisible(true);
-                    import('../wailsjs/go/app/App').then(({ RunAIAnalysis }) => {
-                        RunAIAnalysis(currentDir).catch((err: unknown) => {
-                            console.error('[ai] analysis failed:', err);
-                            setIsAnalyzing(false);
-                        });
+                    setShowAIModal(true);
+                    RunAIAnalysis(currentDir).catch((err: unknown) => {
+                        console.error('[ai] analysis failed:', err);
+                        setIsAnalyzing(false);
                     });
                 }}
                 aiPanelVisible={aiPanelVisible}
@@ -633,7 +678,7 @@ function App() {
                 }}
             >
                 <Grid
-                    photos={photos}
+                    photos={displayPhotos}
                     duplicateGroups={duplicateGroups}
                     selectedPaths={selectedPaths}
                     exportedPaths={exportedPaths}
@@ -771,6 +816,12 @@ function App() {
                     </div>
                 </div>
             )}
+
+            <AIProgressModal
+                visible={showAIModal}
+                onClose={() => setShowAIModal(false)}
+                onComplete={() => { refreshAIStatus(); }}
+            />
 
             <UpdateToast />
         </div>

@@ -3,76 +3,152 @@ package scoring
 import (
 	"context"
 	"image"
+	"time"
 )
 
-// ScoringProvider is the interface for AI-based image quality scoring.
-// Implementations may use local models (ONNX), cloud APIs, or custom logic.
-type ScoringProvider interface {
-	// Name returns the display name of this provider (e.g., "Local ONNX", "OpenAI Vision").
+// PluginCategory classifies what a scoring plugin analyses.
+type PluginCategory int
+
+const (
+	// CategoryDetection plugins locate faces or other regions in an image.
+	CategoryDetection PluginCategory = iota
+	// CategoryRecognition plugins identify or embed detected regions.
+	CategoryRecognition
+	// CategoryQuality plugins measure perceptual or technical image quality.
+	CategoryQuality
+)
+
+// String returns a human-readable name for the category.
+func (c PluginCategory) String() string {
+	switch c {
+	case CategoryDetection:
+		return "detection"
+	case CategoryRecognition:
+		return "recognition"
+	case CategoryQuality:
+		return "quality"
+	default:
+		return "unknown"
+	}
+}
+
+// ModelSpec describes a single model file that a plugin depends on.
+type ModelSpec struct {
+	Name     string
+	Filename string
+	URL      string
+	SHA256   string
+	Size     int64
+}
+
+// ScoringPlugin is the interface every scoring plugin must implement.
+type ScoringPlugin interface {
+	// Name returns the display name of this plugin (e.g., "BlazeFace", "MobileNet").
 	Name() string
 
-	// Available reports whether this provider is ready to score images.
-	// For local providers, this means models are downloaded.
-	// For cloud providers, this means an API key is configured.
+	// Category returns the type of analysis this plugin performs.
+	Category() PluginCategory
+
+	// Models returns the list of model files required by this plugin.
+	Models() []ModelSpec
+
+	// Available reports whether all required models are present and ready.
 	Available() bool
 
-	// RequiresAPIKey reports whether this provider needs a user-provided API key.
-	RequiresAPIKey() bool
+	// Init loads models from libPath and prepares the plugin for use.
+	Init(libPath string) error
 
-	// RequiresDownload reports whether this provider needs to download models before use.
-	RequiresDownload() bool
+	// Close releases any resources held by the plugin.
+	Close() error
 
-	// Score analyzes an image and returns face detection results and quality scores.
-	// imgData is JPEG-encoded image bytes (typically from a 300px thumbnail).
-	// Returns nil result with nil error if no analysis is possible.
-	Score(ctx context.Context, imgData []byte) (*ScoreResult, error)
+	// Process analyses img and returns a PluginResult.
+	Process(ctx context.Context, img image.Image) (PluginResult, error)
 }
 
-// ScoreResult contains the AI analysis of a single image.
-type ScoreResult struct {
-	// Faces contains detected face regions with per-face metrics.
-	Faces []FaceRegion
+// RecognitionPlugin extends ScoringPlugin with region-level processing,
+// used by face recognition and embedding plugins that operate on pre-detected
+// face crops rather than the full image.
+type RecognitionPlugin interface {
+	ScoringPlugin
 
-	// OverallScore is the composite quality score (0.0 = worst, 1.0 = best).
-	OverallScore float64
-
-	// Confidence is the model's confidence in the overall assessment.
-	Confidence float64
+	// ProcessRegions analyses the sub-regions described by faces within img.
+	ProcessRegions(ctx context.Context, img image.Image, faces []FaceRegion) (PluginResult, error)
 }
 
-// HasFaces reports whether any faces were detected.
-func (r *ScoreResult) HasFaces() bool {
-	return len(r.Faces) > 0
-}
-
-// BestFace returns the face with the highest eye sharpness, or nil if no faces.
-func (r *ScoreResult) BestFace() *FaceRegion {
-	if len(r.Faces) == 0 {
-		return nil
-	}
-	best := &r.Faces[0]
-	for i := 1; i < len(r.Faces); i++ {
-		if r.Faces[i].EyeSharpness > best.EyeSharpness {
-			best = &r.Faces[i]
-		}
-	}
-	return best
-}
-
-// FaceRegion describes a single detected face and its quality metrics.
+// FaceRegion describes a single detected face.
 type FaceRegion struct {
-	// BoundingBox is the face location in the image.
+	// BoundingBox is the face location within the image.
 	BoundingBox image.Rectangle
 
-	// EyeSharpness is the Laplacian variance of the eye regions (higher = sharper).
-	EyeSharpness float64
+	// Landmarks holds up to 5 facial landmark points (x, y) normalised to [0,1].
+	Landmarks [5][2]float32
 
-	// EyesOpen indicates whether both eyes appear open.
-	EyesOpen bool
-
-	// Expression is an expression quality score (0.0 = neutral, 1.0 = positive/smiling).
-	Expression float64
-
-	// Confidence is the detection confidence for this face (0.0 - 1.0).
+	// Confidence is the detection confidence for this face (0.0–1.0).
 	Confidence float64
+}
+
+// FaceEmbedding pairs a face crop with its embedding vector for clustering.
+type FaceEmbedding struct {
+	// PhotoPath is the absolute path of the source image.
+	PhotoPath string
+
+	// DetectionID is an opaque identifier that ties the embedding back to a
+	// specific FaceRegion from the same detection pass.
+	DetectionID int64
+
+	// Embedding is the raw float32 feature vector produced by the recognition model.
+	Embedding []float32
+}
+
+// QualityScore represents a single named quality metric.
+type QualityScore struct {
+	Score float64
+	Name  string
+}
+
+// PluginResult is the output of a single plugin's Process or ProcessRegions call.
+// Fields that are irrelevant to the plugin's category will be zero/nil.
+type PluginResult struct {
+	Faces      []FaceRegion
+	Embeddings []FaceEmbedding
+	Quality    *QualityScore
+}
+
+// CompositeScore aggregates the results from all plugins for a single image.
+type CompositeScore struct {
+	// AestheticScore is the overall visual quality score (0.0–1.0).
+	AestheticScore float64
+
+	// SharpnessScore is the global image sharpness score (0.0–1.0).
+	SharpnessScore float64
+
+	// FaceCount is the number of detected faces.
+	FaceCount int
+
+	// Faces is the list of detected face regions.
+	Faces []FaceRegion
+
+	// Embeddings contains embedding vectors for each detected face,
+	// grouped per face (outer slice index matches Faces index).
+	Embeddings [][]float32
+
+	// BestFaceSharp is the sharpness score of the best face crop (0.0–1.0).
+	BestFaceSharp float64
+
+	// EyeOpenness is the openness score for the best face's eyes (0.0–1.0).
+	EyeOpenness float64
+
+	// BestFaceIdx is the index into Faces of the highest-quality face.
+	BestFaceIdx int
+
+	// Provider is the name of the scoring provider that produced this result.
+	Provider string
+
+	// ScoredAt is when the scoring was performed.
+	ScoredAt time.Time
+}
+
+// OverallScore returns a single weighted score for the image using w.
+func (c CompositeScore) OverallScore(w ScoreWeights) float64 {
+	return w.Apply(c)
 }

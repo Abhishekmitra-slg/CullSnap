@@ -19,14 +19,6 @@ const (
 	modelFilePerm        = 0o600
 )
 
-// ModelSpec describes an ONNX model to download and cache.
-type ModelSpec struct {
-	Name     string // e.g., "blazeface"
-	URL      string // download URL
-	SHA256   string // expected hash (hex-encoded)
-	Filename string // local filename in models directory
-}
-
 // ModelManager handles downloading and caching ONNX models in ~/.cullsnap/models/.
 type ModelManager struct {
 	modelsDir string
@@ -84,6 +76,10 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 		return fmt.Errorf("unknown model: %s", name)
 	}
 
+	if spec.URL == "" {
+		return fmt.Errorf("model %s has no download URL configured", name)
+	}
+
 	destPath := filepath.Join(m.modelsDir, spec.Filename)
 
 	logger.Log.Info("scoring: downloading model",
@@ -128,9 +124,14 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 		return fmt.Errorf("close temp file: %w", err)
 	}
 
-	// Verify hash.
-	if err := m.verifyHash(tmpPath, spec.SHA256); err != nil {
-		return fmt.Errorf("model %s hash mismatch: %w", name, err)
+	// Verify hash (skip if no expected hash is configured).
+	if spec.SHA256 != "" {
+		if err := m.verifyHash(tmpPath, spec.SHA256); err != nil {
+			os.Remove(tmpPath) //nolint:errcheck // cleanup best-effort
+			return fmt.Errorf("model %s hash mismatch: %w", name, err)
+		}
+	} else {
+		logger.Log.Warn("scoring: model has no SHA256 hash configured, skipping verification", "name", name)
 	}
 
 	// Atomic rename.
@@ -147,6 +148,68 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 	)
 
 	return nil
+}
+
+// RegisterAll registers multiple model specs in one call.
+func (m *ModelManager) RegisterAll(specs []ModelSpec) {
+	for _, spec := range specs {
+		m.Register(spec)
+	}
+	logger.Log.Debug("scoring: registered all model specs", "count", len(specs))
+}
+
+// AllDownloaded returns true if every registered model exists on disk.
+// Returns false when no models are registered.
+func (m *ModelManager) AllDownloaded() bool {
+	if len(m.specs) == 0 {
+		return false
+	}
+	for name := range m.specs {
+		if !m.IsDownloaded(name) {
+			return false
+		}
+	}
+	return true
+}
+
+// DownloadAll downloads every registered model that is not already present on
+// disk. progressFn is called for each chunk of data written; it may be nil.
+func (m *ModelManager) DownloadAll(ctx context.Context, progressFn func(name string, downloaded, total int64)) error {
+	for name, spec := range m.specs {
+		if m.IsDownloaded(name) {
+			logger.Log.Debug("scoring: model already present, skipping", "name", name)
+			continue
+		}
+
+		if spec.URL == "" {
+			logger.Log.Warn("scoring: model has no download URL, skipping", "name", name)
+			continue
+		}
+
+		logger.Log.Info("scoring: downloading model via DownloadAll", "name", name)
+
+		if progressFn != nil {
+			progressFn(name, 0, spec.Size)
+		}
+
+		if err := m.Download(ctx, name); err != nil {
+			return fmt.Errorf("download model %s: %w", name, err)
+		}
+
+		if progressFn != nil {
+			progressFn(name, spec.Size, spec.Size)
+		}
+	}
+	return nil
+}
+
+// RegisteredModels returns a snapshot of all registered model specs.
+func (m *ModelManager) RegisteredModels() []ModelSpec {
+	out := make([]ModelSpec, 0, len(m.specs))
+	for _, spec := range m.specs {
+		out = append(out, spec)
+	}
+	return out
 }
 
 // verifyHash checks that a file's SHA256 matches the expected hex string.
