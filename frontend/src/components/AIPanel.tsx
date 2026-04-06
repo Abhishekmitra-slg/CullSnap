@@ -47,6 +47,24 @@ function scoreColor(score: number): string {
     return 'red';
 }
 
+function SubScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+    const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
+    return (
+        <div className="ai-score-bar-container" style={{ marginBottom: 4 }}>
+            <span className="ai-score-label" style={{ minWidth: 80 }}>{label}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+                <div className="ai-score-bar" style={{ flex: 1 }}>
+                    <div
+                        className="ai-score-bar-fill"
+                        style={{ width: `${pct}%`, background: color }}
+                    />
+                </div>
+                <span className="ai-score-value" style={{ color, minWidth: 28, textAlign: 'right' }}>{pct}</span>
+            </div>
+        </div>
+    );
+}
+
 export default function AIPanel({
     visible, onClose, activePhotoPath, analysisProgress, isAnalyzing,
     clusters, aiScores, onFilterByFace, onSortByScore, onMinQuality,
@@ -371,55 +389,73 @@ export default function AIPanel({
                                 </span>
                             ) : (
                                 <div className="ai-status-card">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                                         <span style={{ color: '#ccc', fontSize: '0.8rem', fontWeight: 500 }}>AI Score</span>
                                         <span className={`ai-overall-score score-${scoreColor(photoData.overallScore * 100)}`}>
                                             {Math.round(photoData.overallScore * 100)} / 100
                                         </span>
                                     </div>
 
+                                    {/* Sub-score breakdown bars */}
+                                    <SubScoreBar
+                                        label="Aesthetic"
+                                        value={photoData.aestheticScore ?? 0}
+                                        color="#a78bfa"
+                                    />
+                                    <SubScoreBar
+                                        label="Sharpness"
+                                        value={photoData.sharpnessScore ?? 0}
+                                        color="#4ade80"
+                                    />
+                                    {photoData.faceCount > 0 && (
+                                        <>
+                                            <SubScoreBar
+                                                label="Face Quality"
+                                                value={photoData.bestFaceSharpness ?? 0}
+                                                color="#fbbf24"
+                                            />
+                                            <SubScoreBar
+                                                label="Eyes Open"
+                                                value={photoData.eyeOpenness ?? 0}
+                                                color="#60a5fa"
+                                            />
+                                        </>
+                                    )}
+
                                     {photoDetections.length > 0 && (
                                         <>
-                                            {/* Best face metrics */}
+                                            {/* Best face detection metrics */}
                                             {(() => {
                                                 const best = photoDetections.reduce((a: any, b: any) =>
                                                     (a.eyeSharpness || 0) > (b.eyeSharpness || 0) ? a : b
                                                 );
-                                                const sharpness = Math.round((best.eyeSharpness || 0) * 100);
                                                 const expr = Math.round((best.expression || 0) * 100);
                                                 return (
                                                     <>
-                                                        <div className="ai-score-bar-container">
-                                                            <span className="ai-score-label">Eye Sharpness</span>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                                <div className="ai-score-bar">
-                                                                    <div className={`ai-score-bar-fill bar-${scoreColor(sharpness)}`} style={{ width: `${sharpness}%` }} />
-                                                                </div>
-                                                                <span className={`ai-score-value score-${scoreColor(sharpness)}`}>{sharpness}</span>
-                                                            </div>
-                                                        </div>
                                                         <div className="ai-score-bar-container">
                                                             <span className="ai-score-label">Eyes Open</span>
                                                             <span className={`ai-score-value ${best.eyesOpen ? 'score-green' : 'score-red'}`}>
                                                                 {best.eyesOpen ? 'Yes' : 'No'}
                                                             </span>
                                                         </div>
-                                                        <div className="ai-score-bar-container">
-                                                            <span className="ai-score-label">Expression</span>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                                <div className="ai-score-bar">
-                                                                    <div className={`ai-score-bar-fill bar-${scoreColor(expr)}`} style={{ width: `${expr}%` }} />
+                                                        {expr > 0 && (
+                                                            <div className="ai-score-bar-container">
+                                                                <span className="ai-score-label">Expression</span>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <div className="ai-score-bar">
+                                                                        <div className={`ai-score-bar-fill bar-${scoreColor(expr)}`} style={{ width: `${expr}%` }} />
+                                                                    </div>
+                                                                    <span className={`ai-score-value score-${scoreColor(expr)}`}>{expr}</span>
                                                                 </div>
-                                                                <span className={`ai-score-value score-${scoreColor(expr)}`}>{expr}</span>
                                                             </div>
-                                                        </div>
+                                                        )}
                                                     </>
                                                 );
                                             })()}
                                         </>
                                     )}
 
-                                    <div className="ai-score-bar-container" style={{ marginTop: 4 }}>
+                                    <div className="ai-score-bar-container" style={{ marginTop: 6 }}>
                                         <span className="ai-score-label">Faces</span>
                                         <span className="ai-score-value" style={{ color: '#aaa' }}>
                                             {photoData.faceCount} detected

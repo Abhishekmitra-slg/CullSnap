@@ -78,6 +78,10 @@ export function GetAIScoringStatus() {
   return window['go']['app']['App']['GetAIScoringStatus']();
 }
 
+export function GetAIWeights() {
+  return window['go']['app']['App']['GetAIWeights']();
+}
+
 export function GetAboutInfo() {
   return window['go']['app']['App']['GetAboutInfo']();
 }
@@ -214,8 +218,8 @@ export function SetAIScoringEnabled(arg1) {
   return window['go']['app']['App']['SetAIScoringEnabled'](arg1);
 }
 
-export function SetCloudAPIKey(arg1, arg2) {
-  return window['go']['app']['App']['SetCloudAPIKey'](arg1, arg2);
+export function SetAIWeights(arg1) {
+  return window['go']['app']['App']['SetAIWeights'](arg1);
 }
 
 export function SetPhotoRating(arg1, arg2) {
@@ -226,8 +230,8 @@ export function ShouldShowWhatsNew() {
   return window['go']['app']['App']['ShouldShowWhatsNew']();
 }
 
-export function TestCloudConnection(arg1) {
-  return window['go']['app']['App']['TestCloudConnection'](arg1);
+export function Startup(arg1) {
+  return window['go']['app']['App']['Startup'](arg1);
 }
 
 export function ToggleSelection(arg1, arg2, arg3) {

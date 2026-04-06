@@ -34,7 +34,9 @@ export namespace app {
 	}
 	export class AIScoringStatus {
 	    enabled: boolean;
-	    providers: scoring.ProviderStatus[];
+	    plugins: scoring.PluginStatus[];
+	    ready: boolean;
+	    hasModels: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIScoringStatus(source);
@@ -43,7 +45,9 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
-	        this.providers = this.convertValues(source["providers"], scoring.ProviderStatus);
+	        this.plugins = this.convertValues(source["plugins"], scoring.PluginStatus);
+	        this.ready = source["ready"];
+	        this.hasModels = source["hasModels"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -63,6 +67,24 @@ export namespace app {
 		    }
 		    return a;
 		}
+	}
+	export class AIWeightsConfig {
+	    aesthetic: number;
+	    sharpness: number;
+	    face: number;
+	    eyes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIWeightsConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.aesthetic = source["aesthetic"];
+	        this.sharpness = source["sharpness"];
+	        this.face = source["face"];
+	        this.eyes = source["eyes"];
+	    }
 	}
 	export class Contributor {
 	    name: string;
@@ -611,23 +633,61 @@ export namespace model {
 
 export namespace scoring {
 	
-	export class ProviderStatus {
-	    name: string;
-	    available: boolean;
-	    requiresApiKey: boolean;
-	    requiresDownload: boolean;
+	export class ModelSpec {
+	    Name: string;
+	    Filename: string;
+	    URL: string;
+	    SHA256: string;
+	    Size: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new ProviderStatus(source);
+	        return new ModelSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Name = source["Name"];
+	        this.Filename = source["Filename"];
+	        this.URL = source["URL"];
+	        this.SHA256 = source["SHA256"];
+	        this.Size = source["Size"];
+	    }
+	}
+	export class PluginStatus {
+	    name: string;
+	    category: string;
+	    available: boolean;
+	    models: ModelSpec[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PluginStatus(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.category = source["category"];
 	        this.available = source["available"];
-	        this.requiresApiKey = source["requiresApiKey"];
-	        this.requiresDownload = source["requiresDownload"];
+	        this.models = this.convertValues(source["models"], ModelSpec);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -641,6 +701,10 @@ export namespace storage {
 	    provider: string;
 	    // Go type: time
 	    scoredAt: any;
+	    aestheticScore: number;
+	    sharpnessScore: number;
+	    bestFaceSharpness: number;
+	    eyeOpenness: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIScore(source);
@@ -653,6 +717,10 @@ export namespace storage {
 	        this.faceCount = source["faceCount"];
 	        this.provider = source["provider"];
 	        this.scoredAt = this.convertValues(source["scoredAt"], null);
+	        this.aestheticScore = source["aestheticScore"];
+	        this.sharpnessScore = source["sharpnessScore"];
+	        this.bestFaceSharpness = source["bestFaceSharpness"];
+	        this.eyeOpenness = source["eyeOpenness"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
