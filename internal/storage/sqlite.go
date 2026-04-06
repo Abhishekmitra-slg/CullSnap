@@ -680,29 +680,36 @@ func (s *SQLiteStore) RenameFaceCluster(clusterID int64, label string) error {
 }
 
 // MergeFaceClusters merges sourceID into targetID: reassigns detections, sums counts, deletes source.
+// All three mutations are wrapped in a single transaction for atomicity.
 func (s *SQLiteStore) MergeFaceClusters(sourceID, targetID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Reassign all detections from source to target
-	_, err := s.db.Exec(`UPDATE face_detections SET cluster_id = ? WHERE cluster_id = ?`, targetID, sourceID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // no-op after commit
+
+	// Reassign all detections from source to target.
+	_, err = tx.Exec(`UPDATE face_detections SET cluster_id = ? WHERE cluster_id = ?`, targetID, sourceID)
 	if err != nil {
 		return fmt.Errorf("failed to reassign detections: %w", err)
 	}
 
-	// Update target photo count
-	_, err = s.db.Exec(`UPDATE face_clusters SET photo_count = photo_count + (SELECT photo_count FROM face_clusters WHERE id = ?) WHERE id = ?`, sourceID, targetID)
+	// Update target photo count.
+	_, err = tx.Exec(`UPDATE face_clusters SET photo_count = photo_count + (SELECT photo_count FROM face_clusters WHERE id = ?) WHERE id = ?`, sourceID, targetID)
 	if err != nil {
 		return fmt.Errorf("failed to update photo count: %w", err)
 	}
 
-	// Delete source cluster
-	_, err = s.db.Exec(`DELETE FROM face_clusters WHERE id = ?`, sourceID)
+	// Delete source cluster.
+	_, err = tx.Exec(`DELETE FROM face_clusters WHERE id = ?`, sourceID)
 	if err != nil {
 		return fmt.Errorf("failed to delete source cluster: %w", err)
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // HideFaceCluster sets the hidden flag on a cluster.
@@ -744,6 +751,38 @@ func (s *SQLiteStore) DeleteAIDataForFolder(folderPath string) error {
 	}
 
 	return nil
+}
+
+// DeleteFaceClustersForFolder removes face clusters for a folder and resets
+// cluster_id on associated face_detections. Unlike DeleteAIDataForFolder this
+// preserves AI scores and the face detections themselves.
+func (s *SQLiteStore) DeleteFaceClustersForFolder(folderPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // no-op after commit
+
+	// Reset cluster_id on detections belonging to clusters in this folder.
+	_, err = tx.Exec(
+		`UPDATE face_detections SET cluster_id = NULL
+		 WHERE cluster_id IN (SELECT id FROM face_clusters WHERE folder_path = ?)`,
+		folderPath,
+	)
+	if err != nil {
+		return fmt.Errorf("reset cluster_id on detections: %w", err)
+	}
+
+	// Delete the clusters themselves.
+	_, err = tx.Exec(`DELETE FROM face_clusters WHERE folder_path = ?`, folderPath)
+	if err != nil {
+		return fmt.Errorf("delete face clusters: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // AssignFaceToCluster sets the cluster_id for a face detection record.

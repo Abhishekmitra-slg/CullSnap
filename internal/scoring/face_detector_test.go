@@ -131,7 +131,8 @@ func TestPreprocessForSCRFD_OutputShape(t *testing.T) {
 	}
 }
 
-// TestPreprocessForSCRFD_ValuesNormalized verifies that all output values are in [0,1].
+// TestPreprocessForSCRFD_ValuesNormalized verifies that all output values are in [-1,1]
+// after mean=[127.5] std=[128] normalization.
 func TestPreprocessForSCRFD_ValuesNormalized(t *testing.T) {
 	// Create a bright-red 50×50 image.
 	img := image.NewRGBA(image.Rect(0, 0, 50, 50))
@@ -143,8 +144,8 @@ func TestPreprocessForSCRFD_ValuesNormalized(t *testing.T) {
 
 	tensor := preprocessForSCRFD(img, scrfdInputSize)
 	for i, v := range tensor {
-		if v < 0 || v > 1 {
-			t.Errorf("tensor[%d] = %f, out of [0,1] range", i, v)
+		if v < -1.01 || v > 1.01 {
+			t.Errorf("tensor[%d] = %f, out of [-1,1] range", i, v)
 			break
 		}
 	}

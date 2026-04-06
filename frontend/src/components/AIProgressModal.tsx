@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, CheckCircle, Circle, Loader, AlertCircle } from 'lucide-react';
-import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
+import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { CancelAIAnalysis } from '../../wailsjs/go/app/App';
 
 type StepStatus = 'pending' | 'running' | 'done' | 'error';
@@ -15,10 +15,10 @@ interface Step {
 }
 
 interface CompleteSummary {
-    photosAnalyzed: number;
+    scored: number;
     faces: number;
     clusters: number;
-    topRated: number;
+    topScore: number;
 }
 
 interface Props {
@@ -93,7 +93,7 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
         const stepProgress = (data: any) => {
             const key = mapStep(data?.step ?? '');
             if (!key) return;
-            const count = data?.count ?? 0;
+            const count = data?.current ?? 0;
             const total = data?.total ?? 0;
             if (key === 'score') {
                 if (!scoreStartRef.current) {
@@ -147,26 +147,26 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
             setEta(null);
             setSteps(prev => prev.map(s => s.status !== 'error' ? { ...s, status: 'done' } : s));
             setSummary({
-                photosAnalyzed: data?.photosAnalyzed ?? 0,
+                scored: data?.scored ?? 0,
                 faces: data?.faces ?? 0,
                 clusters: data?.clusters ?? 0,
-                topRated: data?.topRated ?? 0,
+                topScore: data?.topScore ?? 0,
             });
             setComplete(true);
         };
 
-        EventsOn('ai:step-started', stepStarted);
-        EventsOn('ai:step-progress', stepProgress);
-        EventsOn('ai:step-completed', stepCompleted);
-        EventsOn('ai:error', errorHandler);
-        EventsOn('ai:complete', completeHandler);
+        const unsub1 = EventsOn('ai:step-started', stepStarted);
+        const unsub2 = EventsOn('ai:step-progress', stepProgress);
+        const unsub3 = EventsOn('ai:step-completed', stepCompleted);
+        const unsub4 = EventsOn('ai:error', errorHandler);
+        const unsub5 = EventsOn('ai:complete', completeHandler);
 
         return () => {
-            EventsOff('ai:step-started');
-            EventsOff('ai:step-progress');
-            EventsOff('ai:step-completed');
-            EventsOff('ai:error');
-            EventsOff('ai:complete');
+            unsub1();
+            unsub2();
+            unsub3();
+            unsub4();
+            unsub5();
         };
     }, [visible, updateStep]);
 
@@ -232,10 +232,10 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
                                 Analysis complete
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
-                                <SummaryRow label="Photos analyzed" value={summary.photosAnalyzed} />
+                                <SummaryRow label="Photos analyzed" value={summary.scored} />
                                 <SummaryRow label="Faces detected" value={summary.faces} />
                                 <SummaryRow label="People clusters" value={summary.clusters} />
-                                <SummaryRow label="High quality" value={summary.topRated} />
+                                <SummaryRow label="Top score" value={summary.topScore} />
                             </div>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

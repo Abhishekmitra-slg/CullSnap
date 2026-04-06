@@ -76,6 +76,10 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 		return fmt.Errorf("unknown model: %s", name)
 	}
 
+	if spec.URL == "" {
+		return fmt.Errorf("model %s has no download URL configured", name)
+	}
+
 	destPath := filepath.Join(m.modelsDir, spec.Filename)
 
 	logger.Log.Info("scoring: downloading model",
@@ -120,9 +124,14 @@ func (m *ModelManager) Download(ctx context.Context, name string) error {
 		return fmt.Errorf("close temp file: %w", err)
 	}
 
-	// Verify hash.
-	if err := m.verifyHash(tmpPath, spec.SHA256); err != nil {
-		return fmt.Errorf("model %s hash mismatch: %w", name, err)
+	// Verify hash (skip if no expected hash is configured).
+	if spec.SHA256 != "" {
+		if err := m.verifyHash(tmpPath, spec.SHA256); err != nil {
+			os.Remove(tmpPath) //nolint:errcheck // cleanup best-effort
+			return fmt.Errorf("model %s hash mismatch: %w", name, err)
+		}
+	} else {
+		logger.Log.Warn("scoring: model has no SHA256 hash configured, skipping verification", "name", name)
 	}
 
 	// Atomic rename.
@@ -169,6 +178,11 @@ func (m *ModelManager) DownloadAll(ctx context.Context, progressFn func(name str
 	for name, spec := range m.specs {
 		if m.IsDownloaded(name) {
 			logger.Log.Debug("scoring: model already present, skipping", "name", name)
+			continue
+		}
+
+		if spec.URL == "" {
+			logger.Log.Warn("scoring: model has no download URL, skipping", "name", name)
 			continue
 		}
 

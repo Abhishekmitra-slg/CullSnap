@@ -15,16 +15,21 @@ import (
 )
 
 const (
-	scrfdModelName   = "scrfd_2_5g"
-	scrfdModelURL    = "" // placeholder — will be populated in Task 21
-	scrfdModelSHA256 = "" // placeholder — will be populated in Task 21
+	scrfdModelName = "scrfd_2_5g"
+	// scrfdModelURL is the direct HuggingFace resolve URL for scrfd_2.5g.onnx
+	// hosted in the JackCui/facefusion repository (3.29 MB, stable URL).
+	// Input:  "input.1" — [1, 3, 640, 640] float32
+	// Outputs: score_8/16/32 — confidence per anchor per stride
+	//          bbox_8/16/32  — bbox deltas per anchor per stride
+	scrfdModelURL    = "https://huggingface.co/JackCui/facefusion/resolve/main/scrfd_2.5g.onnx"
+	scrfdModelSHA256 = "bc24bb349491481c3ca793cf89306723162c280cb284c5a5e49df3760bf5c2ce"
 	scrfdModelFile   = "scrfd_2_5g.onnx"
 	scrfdInputSize   = 640
 	scrfdConfThresh  = 0.5
 	scrfdIOUThresh   = 0.4
 
-	// scrfdModelSizeMB is the approximate model size in bytes (~3 MB).
-	scrfdModelSizeMB = 3 * 1024 * 1024
+	// scrfdModelSize is the exact model file size in bytes (3.29 MB).
+	scrfdModelSizeMB = 3_450_109
 )
 
 // scrfdTensor holds the extracted data from a single ONNX output tensor.
@@ -212,7 +217,8 @@ func (p *FaceDetectorPlugin) Process(ctx context.Context, img image.Image) (Plug
 }
 
 // preprocessForSCRFD resizes img to targetSize×targetSize using nearest-neighbor
-// and returns a flat NCHW float32 tensor normalized to [0,1].
+// and returns a flat NCHW float32 tensor with mean=[127.5,127.5,127.5]
+// std=[128,128,128] normalization, mapping [0,255] to [-1,1].
 func preprocessForSCRFD(img image.Image, targetSize int) []float32 {
 	bounds := img.Bounds()
 	srcW := bounds.Dx()
@@ -229,10 +235,10 @@ func preprocessForSCRFD(img image.Image, targetSize int) []float32 {
 			r, g, b, _ := img.At(srcX, srcY).RGBA()
 
 			idx := y*targetSize + x
-			// Normalize from [0, 65535] to [0.0, 1.0].
-			tensor[0*targetSize*targetSize+idx] = float32(r) / 65535.0
-			tensor[1*targetSize*targetSize+idx] = float32(g) / 65535.0
-			tensor[2*targetSize*targetSize+idx] = float32(b) / 65535.0
+			// Convert from [0, 65535] to [0, 255], then apply (x - 127.5) / 128.0.
+			tensor[0*targetSize*targetSize+idx] = (float32(r)/257.0 - 127.5) / 128.0
+			tensor[1*targetSize*targetSize+idx] = (float32(g)/257.0 - 127.5) / 128.0
+			tensor[2*targetSize*targetSize+idx] = (float32(b)/257.0 - 127.5) / 128.0
 		}
 	}
 
@@ -346,25 +352,16 @@ func parseSCRFDStridedOutputs(tensors []scrfdTensor, imgW, imgH int, confThresh 
 				continue
 			}
 
-			// Box deltas in SCRFD: [cx_offset, cy_offset, half_w, half_h] (distance-based).
+			// SCRFD distance-based bbox: [left, top, right, bottom] distances
+			// from anchor center to each edge, each multiplied by stride.
 			boxOff := i * 4
 			if boxOff+4 > len(boxData) {
 				break
 			}
-			dx := float64(boxData[boxOff])
-			dy := float64(boxData[boxOff+1])
-			dw := float64(boxData[boxOff+2])
-			dh := float64(boxData[boxOff+3])
-
-			cx := anchor[0] - dx*float64(stride)
-			cy := anchor[1] - dy*float64(stride)
-			w := (dx + dw) * float64(stride)
-			h := (dy + dh) * float64(stride)
-
-			x1 := cx - w/2
-			y1 := cy - h/2
-			x2 := cx + w/2
-			y2 := cy + h/2
+			x1 := anchor[0] - float64(boxData[boxOff+0])*float64(stride)
+			y1 := anchor[1] - float64(boxData[boxOff+1])*float64(stride)
+			x2 := anchor[0] + float64(boxData[boxOff+2])*float64(stride)
+			y2 := anchor[1] + float64(boxData[boxOff+3])*float64(stride)
 
 			// Scale back to original image coordinates.
 			x1 *= scaleX
@@ -515,21 +512,21 @@ func nms(faces []FaceRegion, iouThresh float64) []FaceRegion {
 		return faces[i].Confidence > faces[j].Confidence
 	})
 
-	kept := make([]bool, len(faces))
+	suppressed := make([]bool, len(faces))
 	result := make([]FaceRegion, 0, len(faces))
 
 	for i := range faces {
-		if kept[i] {
+		if suppressed[i] {
 			continue
 		}
 		result = append(result, faces[i])
 		// Suppress all lower-confidence detections that overlap significantly.
 		for j := i + 1; j < len(faces); j++ {
-			if kept[j] {
+			if suppressed[j] {
 				continue
 			}
 			if iou(faces[i].BoundingBox, faces[j].BoundingBox) > iouThresh {
-				kept[j] = true
+				suppressed[j] = true
 			}
 		}
 	}

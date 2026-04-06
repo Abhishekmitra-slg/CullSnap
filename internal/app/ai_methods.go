@@ -34,15 +34,21 @@ func (a *App) GetAIScoringStatus() (*AIScoringStatus, error) {
 	statuses := a.registry.PluginStatuses()
 	allModels := a.registry.AllModels()
 	hasModels := true
-	for _, m := range allModels {
-		if m.URL == "" {
-			// Model spec is a placeholder — not yet sourced.
-			continue
-		}
-		p := filepath.Join(os.Getenv("HOME"), ".cullsnap", "models", m.Filename)
-		if _, err := os.Stat(p); err != nil {
-			hasModels = false
-			break
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		logger.Log.Warn("app: failed to get home dir for model check", "error", homeErr)
+		hasModels = false
+	} else {
+		for _, m := range allModels {
+			if m.URL == "" {
+				// Model spec is a placeholder — not yet sourced.
+				continue
+			}
+			p := filepath.Join(home, ".cullsnap", "models", m.Filename)
+			if _, err := os.Stat(p); err != nil {
+				hasModels = false
+				break
+			}
 		}
 	}
 
@@ -180,7 +186,9 @@ func (a *App) DownloadAIModels() error {
 	}
 	logger.Log.Info("app: ONNX Runtime provisioned", "path", libPath)
 
-	// Step 2: Download all model files via ModelManager.
+	// Step 2: Download all model files via a shared ModelManager.
+	// This manager uses the same directory (~/.cullsnap/models/) that each plugin's
+	// own ModelManager references, so InitAll below will find the files correctly.
 	mm, mmErr := scoring.NewModelManager(cullsnapDir)
 	if mmErr != nil {
 		return fmt.Errorf("create model manager: %w", mmErr)
@@ -190,7 +198,16 @@ func (a *App) DownloadAIModels() error {
 	if dlErr := mm.DownloadAll(a.ctx, nil); dlErr != nil {
 		return fmt.Errorf("download models: %w", dlErr)
 	}
-	logger.Log.Info("app: all models downloaded", "count", len(allModels))
+
+	// Verify every model file exists before proceeding to init.
+	modelsDir := filepath.Join(cullsnapDir, "models")
+	for _, m := range allModels {
+		p := filepath.Join(modelsDir, m.Filename)
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("model file missing after download: %s: %w", m.Filename, err)
+		}
+	}
+	logger.Log.Info("app: all models downloaded and verified", "count", len(allModels))
 
 	// Step 3: Initialise all plugins with the provisioned runtime.
 	if initErr := a.registry.InitAll(libPath); initErr != nil {
@@ -461,6 +478,11 @@ func (a *App) scoreAndSavePhoto(
 	// Save face detections and embeddings.
 	faceCount := len(cs.Faces)
 	for i, face := range cs.Faces {
+		// Only assign sharpness to the best face; others get 0.
+		eyeSharp := 0.0
+		if i == cs.BestFaceIdx {
+			eyeSharp = cs.BestFaceSharp
+		}
 		det := &storage.FaceDetection{
 			PhotoPath:    photoPath,
 			BboxX:        face.BoundingBox.Min.X,
@@ -468,7 +490,7 @@ func (a *App) scoreAndSavePhoto(
 			BboxW:        face.BoundingBox.Dx(),
 			BboxH:        face.BoundingBox.Dy(),
 			Confidence:   face.Confidence,
-			EyeSharpness: cs.BestFaceSharp,
+			EyeSharpness: eyeSharp,
 		}
 		// Attach embedding if available.
 		if i < len(cs.Embeddings) && len(cs.Embeddings[i]) > 0 {
@@ -537,6 +559,11 @@ func (a *App) readPhotoForScoring(photoPath string) (*os.File, error) {
 // runFaceClustering loads embeddings from DB, clusters them, and saves results.
 // Returns the number of clusters created.
 func (a *App) runFaceClustering(folderPath string) int {
+	// Delete existing clusters for this folder so they don't accumulate on re-run.
+	if err := a.store.DeleteFaceClustersForFolder(folderPath); err != nil {
+		logger.Log.Warn("app: clustering: failed to delete old clusters", "error", err)
+	}
+
 	// Load all face detections for this folder that have embeddings.
 	scores, err := a.store.GetAIScoresForFolder(folderPath)
 	if err != nil {

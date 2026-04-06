@@ -18,7 +18,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [deletingAlbum, setDeletingAlbum] = useState<string | null>(null);
     const [downloadingModels, setDownloadingModels] = useState(false);
     const [downloadResult, setDownloadResult] = useState<string | null>(null);
-    const [weights, setWeights] = useState({ aesthetic: 0.4, sharpness: 0.3, face: 0.2, eyes: 0.1 });
+    const [weights, setWeights] = useState({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 });
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
@@ -566,7 +566,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                                     <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Score Weights</span>
                                     <button
-                                        onClick={() => setWeights({ aesthetic: 0.4, sharpness: 0.3, face: 0.2, eyes: 0.1 })}
+                                        onClick={() => setWeights({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 })}
                                         style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.7rem', cursor: 'pointer' }}
                                     >
                                         Reset to Defaults

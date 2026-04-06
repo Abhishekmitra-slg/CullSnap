@@ -8,6 +8,10 @@ import (
 // DefaultClusterThreshold is the default cosine similarity threshold for agglomerative clustering.
 const DefaultClusterThreshold float32 = 0.45
 
+// maxClusterFaces is the maximum number of faces to cluster. Beyond this the
+// O(n^2) distance matrix becomes prohibitively expensive.
+const maxClusterFaces = 2000
+
 // FaceClusterResult holds the faces and centroid embedding for a single cluster.
 type FaceClusterResult struct {
 	Faces    []FaceEmbedding
@@ -22,6 +26,14 @@ func ClusterFacesAgglomerative(faces []FaceEmbedding, threshold float32) []FaceC
 	if len(faces) == 0 {
 		logger.Log.Debug("scoring: agglomerative clustering: no faces to cluster")
 		return nil
+	}
+
+	if len(faces) > maxClusterFaces {
+		logger.Log.Warn("scoring: agglomerative clustering: capping face count",
+			"actual", len(faces),
+			"max", maxClusterFaces,
+		)
+		faces = faces[:maxClusterFaces]
 	}
 
 	// Initialise one cluster per face.
