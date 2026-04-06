@@ -151,3 +151,79 @@ func TestModelManager_Download_UnknownModel(t *testing.T) {
 		t.Error("download of unknown model should fail")
 	}
 }
+
+func TestModelManager_RegisterAll(t *testing.T) {
+	tmp := t.TempDir()
+	mm, err := NewModelManager(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	specs := []ModelSpec{
+		{Name: "model-a", Filename: "a.onnx", URL: "https://example.com/a.onnx", SHA256: "aaa"},
+		{Name: "model-b", Filename: "b.onnx", URL: "https://example.com/b.onnx", SHA256: "bbb"},
+	}
+	mm.RegisterAll(specs)
+
+	if mm.ModelPath("model-a") == "" {
+		t.Error("model-a should be registered")
+	}
+	if mm.ModelPath("model-b") == "" {
+		t.Error("model-b should be registered")
+	}
+}
+
+func TestModelManager_AllDownloaded_Empty(t *testing.T) {
+	tmp := t.TempDir()
+	mm, err := NewModelManager(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mm.AllDownloaded() {
+		t.Error("AllDownloaded should be false when no models are registered")
+	}
+}
+
+func TestModelManager_AllDownloaded_SomePresent(t *testing.T) {
+	tmp := t.TempDir()
+	mm, err := NewModelManager(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	specs := []ModelSpec{
+		{Name: "present", Filename: "present.onnx", URL: "https://example.com/present.onnx", SHA256: "p"},
+		{Name: "missing", Filename: "missing.onnx", URL: "https://example.com/missing.onnx", SHA256: "m"},
+	}
+	mm.RegisterAll(specs)
+
+	// Create only the first model file.
+	presentPath := filepath.Join(mm.modelsDir, "present.onnx")
+	if err := os.WriteFile(presentPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if mm.AllDownloaded() {
+		t.Error("AllDownloaded should be false when some models are missing")
+	}
+}
+
+func TestModelManager_RegisteredModels(t *testing.T) {
+	tmp := t.TempDir()
+	mm, err := NewModelManager(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	specs := []ModelSpec{
+		{Name: "x", Filename: "x.onnx", URL: "https://example.com/x.onnx", SHA256: "x"},
+		{Name: "y", Filename: "y.onnx", URL: "https://example.com/y.onnx", SHA256: "y"},
+	}
+	mm.RegisterAll(specs)
+
+	registered := mm.RegisteredModels()
+	if len(registered) != 2 {
+		t.Errorf("RegisteredModels count = %d, want 2", len(registered))
+	}
+}
