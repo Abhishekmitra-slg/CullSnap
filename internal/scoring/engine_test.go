@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+// mockProvider is a test double for ScoringProvider used in engine tests.
+type mockProvider struct {
+	name      string
+	available bool
+	scores    *ScoreResult
+	err       error
+}
+
+func (m *mockProvider) Name() string           { return m.name }
+func (m *mockProvider) Available() bool        { return m.available }
+func (m *mockProvider) RequiresAPIKey() bool   { return false }
+func (m *mockProvider) RequiresDownload() bool { return false }
+func (m *mockProvider) Score(_ context.Context, _ []byte) (*ScoreResult, error) {
+	return m.scores, m.err
+}
+
 func TestEngine_RegisterAndScore(t *testing.T) {
 	engine := NewEngine()
 

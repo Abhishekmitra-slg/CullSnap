@@ -5,13 +5,6 @@ import (
 	"math"
 )
 
-// FaceEmbedding holds the embedding vector for a single detected face.
-type FaceEmbedding struct {
-	PhotoPath   string
-	DetectionID int64
-	Embedding   []float32
-}
-
 // CosineSimilarity computes the cosine similarity between two embedding vectors.
 // Returns 0 if vectors have different lengths or either is zero-length.
 func CosineSimilarity(a, b []float32) float32 {

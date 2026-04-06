@@ -133,8 +133,8 @@ func TestParseCloudResponse_Valid(t *testing.T) {
 	if len(result.Faces) != 1 {
 		t.Fatalf("expected 1 face, got %d", len(result.Faces))
 	}
-	if !result.Faces[0].EyesOpen {
-		t.Error("expected EyesOpen = true")
+	if result.Faces[0].Confidence != 0.9 {
+		t.Errorf("expected Confidence = 0.9, got %f", result.Faces[0].Confidence)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestParseCloudResponse_NoFaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if result.HasFaces() {
+	if len(result.Faces) != 0 {
 		t.Error("expected no faces")
 	}
 }

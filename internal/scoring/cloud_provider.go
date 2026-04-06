@@ -157,11 +157,8 @@ func parseCloudResponse(content string) (*ScoreResult, error) {
 		}
 
 		result.Faces = append(result.Faces, FaceRegion{
-			BoundingBox:  bb,
-			EyeSharpness: face.EyeSharpness,
-			EyesOpen:     face.EyesOpen,
-			Expression:   face.Expression,
-			Confidence:   face.Confidence,
+			BoundingBox: bb,
+			Confidence:  face.Confidence,
 		})
 	}
 

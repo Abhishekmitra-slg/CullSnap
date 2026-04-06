@@ -19,14 +19,6 @@ const (
 	modelFilePerm        = 0o600
 )
 
-// ModelSpec describes an ONNX model to download and cache.
-type ModelSpec struct {
-	Name     string // e.g., "blazeface"
-	URL      string // download URL
-	SHA256   string // expected hash (hex-encoded)
-	Filename string // local filename in models directory
-}
-
 // ModelManager handles downloading and caching ONNX models in ~/.cullsnap/models/.
 type ModelManager struct {
 	modelsDir string

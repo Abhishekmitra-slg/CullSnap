@@ -448,7 +448,6 @@ func parseSelectedBoxes(data []float32, shape []int64) []FaceRegion {
 		face := FaceRegion{
 			BoundingBox: bb,
 			Confidence:  1.0,
-			EyesOpen:    true,
 		}
 
 		faces = append(faces, face)
