@@ -1,6 +1,7 @@
 package scoring
 
 import (
+	"context"
 	"image"
 	"image/color"
 	"testing"
@@ -87,6 +88,74 @@ func TestEyeSharpnessFromFace_NoFaces(t *testing.T) {
 	// Should return some value (eye region is top 40% of face).
 	if score < 0 {
 		t.Errorf("sharpness score should be non-negative, got %f", score)
+	}
+}
+
+func TestNormalizeLaplacian_BlurryImage(t *testing.T) {
+	// Very low variance (blurry) should map to < 0.15.
+	score := NormalizeLaplacian(30)
+	if score >= 0.15 {
+		t.Errorf("blurry variance=30: NormalizeLaplacian = %f, want < 0.15", score)
+	}
+}
+
+func TestNormalizeLaplacian_SharpImage(t *testing.T) {
+	// High variance (sharp) should map to > 0.95.
+	score := NormalizeLaplacian(600)
+	if score <= 0.95 {
+		t.Errorf("sharp variance=600: NormalizeLaplacian = %f, want > 0.95", score)
+	}
+}
+
+func TestNormalizeLaplacian_MidRange(t *testing.T) {
+	// Sigmoid midpoint at variance=200 should be ~0.5.
+	score := NormalizeLaplacian(200)
+	if score < 0.49 || score > 0.51 {
+		t.Errorf("mid-range variance=200: NormalizeLaplacian = %f, want ~0.5", score)
+	}
+}
+
+func TestSharpnessPlugin_Process(t *testing.T) {
+	p := &SharpnessPlugin{}
+
+	// Metadata checks.
+	if p.Name() != "sharpness" {
+		t.Errorf("Name() = %q, want %q", p.Name(), "sharpness")
+	}
+	if p.Category() != CategoryQuality {
+		t.Errorf("Category() = %v, want CategoryQuality", p.Category())
+	}
+	if !p.Available() {
+		t.Error("Available() = false, want true")
+	}
+	if len(p.Models()) != 0 {
+		t.Errorf("Models() len = %d, want 0", len(p.Models()))
+	}
+
+	// Process a simple RGBA image — mix of light and dark pixels for measurable sharpness.
+	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	for y := range 32 {
+		for x := range 32 {
+			if (x+y)%4 == 0 {
+				img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+			} else {
+				img.Set(x, y, color.RGBA{R: 50, G: 50, B: 50, A: 255})
+			}
+		}
+	}
+
+	result, err := p.Process(context.Background(), img)
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if result.Quality == nil {
+		t.Fatal("Process returned nil Quality")
+	}
+	if result.Quality.Name != "sharpness" {
+		t.Errorf("Quality.Name = %q, want %q", result.Quality.Name, "sharpness")
+	}
+	if result.Quality.Score < 0 || result.Quality.Score > 1 {
+		t.Errorf("Quality.Score = %f, want in [0,1]", result.Quality.Score)
 	}
 }
 

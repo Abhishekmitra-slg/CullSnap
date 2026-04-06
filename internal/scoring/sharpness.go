@@ -2,6 +2,7 @@ package scoring
 
 import (
 	"image"
+	"math"
 )
 
 // 3x3 Laplacian kernel for edge detection.
@@ -58,6 +59,14 @@ func LaplacianVariance(gray *image.Gray, region image.Rectangle) float64 {
 	variance := sumSq/float64(n) - mean*mean
 
 	return variance
+}
+
+// NormalizeLaplacian maps a raw Laplacian variance value to a [0,1] sharpness
+// score using a sigmoid centred at variance=200 with slope 0.015.
+// A variance of 30 (very blurry) maps to <0.15; 600 (very sharp) maps to >0.95.
+func NormalizeLaplacian(rawVariance float64) float64 {
+	score := 1.0 / (1.0 + math.Exp(-0.015*(rawVariance-200)))
+	return clamp01(score)
 }
 
 // EyeSharpnessFromFace computes the Laplacian variance of the eye region within a face.
