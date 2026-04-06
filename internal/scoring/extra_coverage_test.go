@@ -642,3 +642,13 @@ func TestONNXRuntimeLibName_Exported(t *testing.T) {
 		t.Errorf("ONNXRuntimeLibName() = %q, onnxRuntimeLibName() = %q", name, onnxRuntimeLibName())
 	}
 }
+
+func TestRegistry_InitAll_RecognitionSkipped(t *testing.T) {
+	r := NewRegistry()
+	r.Register(newDetector("det", true))
+	r.Register(newQuality("qual", true))
+	r.Register(newRecognition("rec", true))
+	// InitAll should not fail even though recognition plugin has no real runtime
+	// Recognition failures are non-fatal (logged and skipped)
+	_ = r.InitAll("")
+}
