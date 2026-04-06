@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -133,6 +134,35 @@ func (s *SQLiteStore) initSchema() error {
 			return fmt.Errorf("failed to create schema: %w", err)
 		}
 	}
+
+	// Add sub-score columns to ai_scores (ignore duplicate column errors for existing DBs).
+	alterStatements := []string{
+		"ALTER TABLE ai_scores ADD COLUMN aesthetic_score REAL NOT NULL DEFAULT 0",
+		"ALTER TABLE ai_scores ADD COLUMN sharpness_score REAL NOT NULL DEFAULT 0",
+		"ALTER TABLE ai_scores ADD COLUMN best_face_sharpness REAL NOT NULL DEFAULT 0",
+		"ALTER TABLE ai_scores ADD COLUMN eye_openness REAL NOT NULL DEFAULT 0",
+		"ALTER TABLE face_clusters ADD COLUMN centroid BLOB",
+	}
+	for _, stmt := range alterStatements {
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("failed to migrate schema: %w", err)
+			}
+		}
+	}
+
+	// Create scoring_plugins table for per-plugin score provenance.
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS scoring_plugins (
+		photo_path TEXT NOT NULL,
+		plugin_name TEXT NOT NULL,
+		version TEXT,
+		scored_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (photo_path, plugin_name)
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create scoring_plugins table: %w", err)
+	}
+
 	return nil
 }
 
@@ -427,11 +457,15 @@ func (s *SQLiteStore) GetCloudMediaMeta(localPath string) (CloudMediaMeta, error
 
 // AIScore stores the AI quality analysis result for a single photo.
 type AIScore struct {
-	PhotoPath    string    `json:"photoPath"`
-	OverallScore float64   `json:"overallScore"`
-	FaceCount    int       `json:"faceCount"`
-	Provider     string    `json:"provider"`
-	ScoredAt     time.Time `json:"scoredAt"`
+	PhotoPath         string    `json:"photoPath"`
+	OverallScore      float64   `json:"overallScore"`
+	FaceCount         int       `json:"faceCount"`
+	Provider          string    `json:"provider"`
+	ScoredAt          time.Time `json:"scoredAt"`
+	AestheticScore    float64   `json:"aestheticScore"`
+	SharpnessScore    float64   `json:"sharpnessScore"`
+	BestFaceSharpness float64   `json:"bestFaceSharpness"`
+	EyeOpenness       float64   `json:"eyeOpenness"`
 }
 
 // FaceDetection stores a single detected face within a photo.
@@ -461,12 +495,16 @@ type FaceCluster struct {
 }
 
 // SaveAIScore inserts or replaces an AI quality score for a photo.
-func (s *SQLiteStore) SaveAIScore(photoPath string, overallScore float64, faceCount int, provider string) error {
+func (s *SQLiteStore) SaveAIScore(score *AIScore) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(
-		`INSERT OR REPLACE INTO ai_scores (photo_path, overall_score, face_count, provider, scored_at) VALUES (?, ?, ?, ?, ?)`,
-		photoPath, overallScore, faceCount, provider, time.Now(),
+		`INSERT OR REPLACE INTO ai_scores
+		 (photo_path, overall_score, face_count, provider, scored_at,
+		  aesthetic_score, sharpness_score, best_face_sharpness, eye_openness)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		score.PhotoPath, score.OverallScore, score.FaceCount, score.Provider, time.Now(),
+		score.AestheticScore, score.SharpnessScore, score.BestFaceSharpness, score.EyeOpenness,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save AI score: %w", err)
@@ -478,9 +516,16 @@ func (s *SQLiteStore) SaveAIScore(photoPath string, overallScore float64, faceCo
 func (s *SQLiteStore) GetAIScore(photoPath string) (*AIScore, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	row := s.db.QueryRow(`SELECT photo_path, overall_score, face_count, provider, scored_at FROM ai_scores WHERE photo_path = ?`, photoPath)
+	row := s.db.QueryRow(
+		`SELECT photo_path, overall_score, face_count, provider, scored_at,
+		        COALESCE(aesthetic_score, 0), COALESCE(sharpness_score, 0),
+		        COALESCE(best_face_sharpness, 0), COALESCE(eye_openness, 0)
+		 FROM ai_scores WHERE photo_path = ?`, photoPath)
 	var score AIScore
-	err := row.Scan(&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt)
+	err := row.Scan(
+		&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt,
+		&score.AestheticScore, &score.SharpnessScore, &score.BestFaceSharpness, &score.EyeOpenness,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -495,7 +540,10 @@ func (s *SQLiteStore) GetAIScoresForFolder(folderPath string) ([]AIScore, error)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	rows, err := s.db.Query(
-		`SELECT photo_path, overall_score, face_count, provider, scored_at FROM ai_scores WHERE photo_path LIKE ?`,
+		`SELECT photo_path, overall_score, face_count, provider, scored_at,
+		        COALESCE(aesthetic_score, 0), COALESCE(sharpness_score, 0),
+		        COALESCE(best_face_sharpness, 0), COALESCE(eye_openness, 0)
+		 FROM ai_scores WHERE photo_path LIKE ?`,
 		folderPath+"/%",
 	)
 	if err != nil {
@@ -505,7 +553,10 @@ func (s *SQLiteStore) GetAIScoresForFolder(folderPath string) ([]AIScore, error)
 	var scores []AIScore
 	for rows.Next() {
 		var score AIScore
-		if err := rows.Scan(&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt); err != nil {
+		if err := rows.Scan(
+			&score.PhotoPath, &score.OverallScore, &score.FaceCount, &score.Provider, &score.ScoredAt,
+			&score.AestheticScore, &score.SharpnessScore, &score.BestFaceSharpness, &score.EyeOpenness,
+		); err != nil {
 			return nil, fmt.Errorf("failed to scan AI score: %w", err)
 		}
 		scores = append(scores, score)
@@ -693,4 +744,10 @@ func (s *SQLiteStore) DeleteAIDataForFolder(folderPath string) error {
 	}
 
 	return nil
+}
+
+// AssignFaceToCluster sets the cluster_id for a face detection record.
+func (s *SQLiteStore) AssignFaceToCluster(detectionID, clusterID int64) error {
+	_, err := s.db.Exec("UPDATE face_detections SET cluster_id = ? WHERE id = ?", clusterID, detectionID)
+	return err
 }

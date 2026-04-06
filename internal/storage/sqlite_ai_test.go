@@ -7,7 +7,7 @@ import (
 func TestSaveAndGetAIScore(t *testing.T) {
 	store := newTestStore(t)
 
-	err := store.SaveAIScore("/photos/test.jpg", 0.87, 2, "Local ONNX")
+	err := store.SaveAIScore(&AIScore{PhotoPath: "/photos/test.jpg", OverallScore: 0.87, FaceCount: 2, Provider: "Local ONNX"})
 	if err != nil {
 		t.Fatalf("SaveAIScore failed: %v", err)
 	}
@@ -45,9 +45,9 @@ func TestGetAIScore_NotFound(t *testing.T) {
 func TestGetAIScoresForFolder(t *testing.T) {
 	store := newTestStore(t)
 
-	_ = store.SaveAIScore("/photos/a.jpg", 0.9, 1, "Local ONNX")
-	_ = store.SaveAIScore("/photos/b.jpg", 0.7, 0, "Local ONNX")
-	_ = store.SaveAIScore("/other/c.jpg", 0.5, 1, "Cloud")
+	_ = store.SaveAIScore(&AIScore{PhotoPath: "/photos/a.jpg", OverallScore: 0.9, FaceCount: 1, Provider: "Local ONNX"})
+	_ = store.SaveAIScore(&AIScore{PhotoPath: "/photos/b.jpg", OverallScore: 0.7, FaceCount: 0, Provider: "Local ONNX"})
+	_ = store.SaveAIScore(&AIScore{PhotoPath: "/other/c.jpg", OverallScore: 0.5, FaceCount: 1, Provider: "Cloud"})
 
 	scores, err := store.GetAIScoresForFolder("/photos")
 	if err != nil {
