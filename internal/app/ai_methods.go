@@ -1,28 +1,56 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/scoring"
 	"cullsnap/internal/storage"
+	"encoding/binary"
 	"fmt"
 	"image"
-	"image/color"
+	_ "image/jpeg"
+	_ "image/png"
+	"math"
 	"os"
 	"path/filepath"
+	stdruntime "runtime"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/zalando/go-keyring"
 )
 
-// GetAIScoringStatus returns the current AI scoring configuration and provider status.
+// GetAIScoringStatus returns the current AI scoring configuration and plugin status.
 func (a *App) GetAIScoringStatus() (*AIScoringStatus, error) {
 	logger.Log.Debug("app: getting AI scoring status")
+	if a.registry == nil {
+		return &AIScoringStatus{Enabled: a.aiEnabled}, nil
+	}
+
+	statuses := a.registry.PluginStatuses()
+	allModels := a.registry.AllModels()
+	hasModels := true
+	for _, m := range allModels {
+		if m.URL == "" {
+			// Model spec is a placeholder — not yet sourced.
+			continue
+		}
+		p := filepath.Join(os.Getenv("HOME"), ".cullsnap", "models", m.Filename)
+		if _, err := os.Stat(p); err != nil {
+			hasModels = false
+			break
+		}
+	}
+
 	status := &AIScoringStatus{
 		Enabled:   a.aiEnabled,
-		Providers: a.scoringEngine.Providers(),
+		Plugins:   statuses,
+		Ready:     a.registry.Available(),
+		HasModels: hasModels,
 	}
 	return status, nil
 }
@@ -93,13 +121,12 @@ func (a *App) HideFaceCluster(clusterID int, hidden bool) error {
 }
 
 // RunAIAnalysis starts AI scoring and clustering for all photos in a folder.
-// Emits ai:progress, ai:photo-scored, ai:error, and ai:clustering-complete events.
 func (a *App) RunAIAnalysis(folderPath string) error {
 	if !a.aiEnabled {
 		return fmt.Errorf("AI scoring is disabled — enable it in Settings")
 	}
-	if !a.scoringEngine.Enabled() {
-		return fmt.Errorf("no AI scoring provider available — download models in Settings or configure a cloud API key")
+	if a.registry == nil || !a.registry.Available() {
+		return fmt.Errorf("no AI scoring plugins available — download models in Settings")
 	}
 
 	a.analysisMu.Lock()
@@ -120,192 +147,6 @@ func (a *App) RunAIAnalysis(folderPath string) error {
 	return nil
 }
 
-// runAIAnalysisPipeline scans photos, scores each one, then clusters faces.
-func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
-	// 1. Scan directory for photos.
-	photos, err := scanner.ScanDirectory(folderPath)
-	if err != nil {
-		logger.Log.Error("app: AI analysis scan failed", "error", err)
-		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
-			"error": fmt.Sprintf("Scan failed: %v", err),
-		})
-		return
-	}
-
-	total := len(photos)
-	if total == 0 {
-		logger.Log.Info("app: no photos found for AI analysis", "folder", folderPath)
-		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
-			"error": "No photos found in this folder",
-		})
-		return
-	}
-
-	logger.Log.Info("app: AI analysis scanning complete", "photos", total)
-
-	wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
-		"phase":  "scoring",
-		"scored": 0,
-		"total":  total,
-	})
-
-	// 2. Score each photo.
-	scored := 0
-	errors := 0
-
-	for i := range photos {
-		photo := &photos[i]
-		if ctx.Err() != nil {
-			logger.Log.Info("app: AI analysis cancelled")
-			wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
-				"error": "Analysis cancelled",
-			})
-			return
-		}
-
-		result, scoreErr := a.scorePhoto(ctx, photo.Path)
-		if scoreErr != nil {
-			logger.Log.Warn("app: failed to score photo", "path", photo.Path, "error", scoreErr)
-			errors++
-			// Emit progress even on failure so the bar advances.
-			wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
-				"phase":  "scoring",
-				"scored": i + 1,
-				"total":  total,
-			})
-			continue
-		}
-
-		// Save score to DB for ALL analyzed photos (even those with 0 faces).
-		// This ensures the UI shows "Analyzed — 0 faces" instead of "Not analyzed".
-		if dbErr := a.store.SaveAIScore(photo.Path, result.OverallScore, len(result.Faces), "Local (ONNX)"); dbErr != nil {
-			logger.Log.Warn("app: failed to save AI score", "path", photo.Path, "error", dbErr)
-		}
-
-		// Save face detections if any were found.
-		for _, face := range result.Faces {
-			det := &storage.FaceDetection{
-				PhotoPath:    photo.Path,
-				BboxX:        face.BoundingBox.Min.X,
-				BboxY:        face.BoundingBox.Min.Y,
-				BboxW:        face.BoundingBox.Dx(),
-				BboxH:        face.BoundingBox.Dy(),
-				EyeSharpness: face.EyeSharpness,
-				EyesOpen:     face.EyesOpen,
-				Expression:   face.Expression,
-				Confidence:   face.Confidence,
-			}
-			if _, detErr := a.store.SaveFaceDetection(det); detErr != nil {
-				logger.Log.Warn("app: failed to save face detection", "error", detErr)
-			}
-		}
-
-		scored++
-		wailsRuntime.EventsEmit(a.ctx, "ai:photo-scored", map[string]interface{}{
-			"path":      photo.Path,
-			"score":     result.OverallScore,
-			"faceCount": len(result.Faces),
-		})
-
-		wailsRuntime.EventsEmit(a.ctx, "ai:progress", map[string]interface{}{
-			"phase":  "scoring",
-			"scored": i + 1,
-			"total":  total,
-		})
-	}
-
-	logger.Log.Info("app: AI scoring phase complete", "scored", scored, "errors", errors, "total", total)
-
-	wailsRuntime.EventsEmit(a.ctx, "ai:clustering-complete", map[string]interface{}{
-		"scored":   scored,
-		"total":    total,
-		"errors":   errors,
-		"clusters": []interface{}{},
-	})
-	logger.Log.Info("app: AI analysis complete", "folder", folderPath, "scored", scored)
-}
-
-// scorePhoto scores a single photo by reading its thumbnail and running inference.
-func (a *App) scorePhoto(ctx context.Context, photoPath string) (*scoring.ScoreResult, error) {
-	// Try cached thumbnail first (300px JPEG — fast, small, no RAW decode needed).
-	imgData, err := a.readPhotoForScoring(photoPath)
-	if err != nil {
-		return nil, fmt.Errorf("read photo: %w", err)
-	}
-
-	result, err := a.scoringEngine.Score(ctx, imgData)
-	if err != nil {
-		return nil, fmt.Errorf("score: %w", err)
-	}
-
-	if result == nil {
-		// No provider could score — return nil to differentiate from "scored but no faces".
-		return nil, fmt.Errorf("no scoring provider available")
-	}
-
-	// Post-process: compute eye sharpness for each detected face.
-	if result.HasFaces() {
-		a.computeEyeSharpness(imgData, result)
-	}
-
-	return result, nil
-}
-
-// readPhotoForScoring reads the photo data, preferring cached thumbnails.
-func (a *App) readPhotoForScoring(photoPath string) ([]byte, error) {
-	// Try the thumbnail cache first — it's a 300px JPEG that's fast to decode
-	// and already handles RAW/HEIC conversion.
-	if a.thumbCache != nil {
-		info, err := os.Stat(photoPath)
-		if err == nil {
-			thumbPath := a.thumbCache.GetCachedPath(photoPath, info.ModTime())
-			if thumbPath != "" {
-				data, readErr := os.ReadFile(thumbPath) //nolint:gosec // trusted internal path
-				if readErr == nil {
-					logger.Log.Debug("app: scoring from cached thumbnail", "path", photoPath)
-					return data, nil
-				}
-			}
-		}
-	}
-
-	// Fallback: read the original file.
-	// This works for JPEG/PNG but will fail for RAW/HEIC — that's OK,
-	// those photos will be scored after thumbnail generation.
-	data, err := os.ReadFile(photoPath) //nolint:gosec // trusted internal path
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Log.Debug("app: scoring from original file", "path", photoPath, "size", len(data))
-	return data, nil
-}
-
-// computeEyeSharpness adds Laplacian variance eye sharpness scores to detected faces.
-func (a *App) computeEyeSharpness(imgData []byte, result *scoring.ScoreResult) {
-	srcImg, _, err := image.Decode(bytes.NewReader(imgData))
-	if err != nil {
-		logger.Log.Debug("app: failed to decode image for sharpness", "error", err)
-		return
-	}
-
-	// Convert to grayscale for Laplacian variance.
-	bounds := srcImg.Bounds()
-	gray := image.NewGray(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, _ := srcImg.At(x, y).RGBA()
-			// Standard luminance formula.
-			lum := uint8((299*r + 587*g + 114*b + 500) / 1000 >> 8)
-			gray.SetGray(x, y, color.Gray{Y: lum})
-		}
-	}
-
-	for i := range result.Faces {
-		result.Faces[i].EyeSharpness = scoring.EyeSharpnessFromFace(gray, result.Faces[i])
-	}
-}
-
 // CancelAIAnalysis cancels any in-progress AI analysis.
 func (a *App) CancelAIAnalysis() error {
 	a.analysisMu.Lock()
@@ -318,12 +159,12 @@ func (a *App) CancelAIAnalysis() error {
 	return nil
 }
 
-// DownloadAIModels provisions ONNX Runtime + BlazeFace model, then initializes the provider.
-// Downloads both the shared library (~10MB) and the model (~524KB) on first use.
+// DownloadAIModels provisions ONNX Runtime and downloads all model files,
+// then initialises the plugins.
 func (a *App) DownloadAIModels() error {
 	logger.Log.Info("app: downloading AI models and runtime")
-	if a.localProvider == nil {
-		return fmt.Errorf("local AI provider not initialized")
+	if a.registry == nil {
+		return fmt.Errorf("plugin registry not initialized")
 	}
 
 	home, err := os.UserHomeDir()
@@ -337,38 +178,484 @@ func (a *App) DownloadAIModels() error {
 	if err != nil {
 		return fmt.Errorf("provision ONNX Runtime: %w", err)
 	}
+	logger.Log.Info("app: ONNX Runtime provisioned", "path", libPath)
 
-	// Step 2: Download BlazeFace model.
-	if err := a.localProvider.DownloadModel(a.ctx); err != nil {
-		return fmt.Errorf("download AI model: %w", err)
+	// Step 2: Download all model files via ModelManager.
+	mm, mmErr := scoring.NewModelManager(cullsnapDir)
+	if mmErr != nil {
+		return fmt.Errorf("create model manager: %w", mmErr)
 	}
+	allModels := a.registry.AllModels()
+	mm.RegisterAll(allModels)
+	if dlErr := mm.DownloadAll(a.ctx, nil); dlErr != nil {
+		return fmt.Errorf("download models: %w", dlErr)
+	}
+	logger.Log.Info("app: all models downloaded", "count", len(allModels))
 
-	// Step 3: Initialize the runtime with the provisioned library.
-	if err := a.localProvider.InitRuntime(libPath); err != nil {
-		return fmt.Errorf("init ONNX runtime: %w", err)
+	// Step 3: Initialise all plugins with the provisioned runtime.
+	if initErr := a.registry.InitAll(libPath); initErr != nil {
+		return fmt.Errorf("init plugins: %w", initErr)
 	}
 
 	logger.Log.Info("app: AI models and runtime ready")
 	return nil
 }
 
-// SetCloudAPIKey stores a cloud AI provider API key in the OS keychain.
-func (a *App) SetCloudAPIKey(provider, apiKey string) error {
-	logger.Log.Info("app: setting cloud API key", "provider", provider)
-	service := "cullsnap-ai-" + provider
-	if err := keyring.Set(service, "api-key", apiKey); err != nil {
-		return fmt.Errorf("store API key: %w", err)
+// GetAIWeights returns the current score blending weights.
+func (a *App) GetAIWeights() AIWeightsConfig {
+	if a.pipeline == nil {
+		dw := scoring.DefaultWeights()
+		return AIWeightsConfig{
+			Aesthetic: dw.Aesthetic,
+			Sharpness: dw.Sharpness,
+			Face:      dw.Face,
+			Eyes:      dw.Eyes,
+		}
 	}
+	w := a.pipeline.Weights()
+	return AIWeightsConfig{
+		Aesthetic: w.Aesthetic,
+		Sharpness: w.Sharpness,
+		Face:      w.Face,
+		Eyes:      w.Eyes,
+	}
+}
+
+// SetAIWeights updates the score blending weights and persists them.
+func (a *App) SetAIWeights(weights AIWeightsConfig) error {
+	logger.Log.Info("app: setting AI weights",
+		"aesthetic", weights.Aesthetic,
+		"sharpness", weights.Sharpness,
+		"face", weights.Face,
+		"eyes", weights.Eyes,
+	)
+	sw := scoring.ScoreWeights{
+		Aesthetic: weights.Aesthetic,
+		Sharpness: weights.Sharpness,
+		Face:      weights.Face,
+		Eyes:      weights.Eyes,
+	}.Normalize()
+
+	if a.pipeline != nil {
+		a.pipeline.SetWeights(sw)
+	}
+
+	// Persist individual weights.
+	_ = a.store.SetConfig("ai_weight_aesthetic", strconv.FormatFloat(sw.Aesthetic, 'f', 4, 64))
+	_ = a.store.SetConfig("ai_weight_sharpness", strconv.FormatFloat(sw.Sharpness, 'f', 4, 64))
+	_ = a.store.SetConfig("ai_weight_face", strconv.FormatFloat(sw.Face, 'f', 4, 64))
+	_ = a.store.SetConfig("ai_weight_eyes", strconv.FormatFloat(sw.Eyes, 'f', 4, 64))
 	return nil
 }
 
-// TestCloudConnection validates a cloud AI provider API key by sending a minimal request.
-func (a *App) TestCloudConnection(provider string) error {
-	logger.Log.Info("app: testing cloud connection", "provider", provider)
-	service := "cullsnap-ai-" + provider
-	key, err := keyring.Get(service, "api-key")
-	if err != nil || key == "" {
-		return fmt.Errorf("no API key found for provider %s", provider)
+// loadAIWeights reads persisted weights from config KV and sets them on the pipeline.
+func (a *App) loadAIWeights() {
+	if a.pipeline == nil {
+		return
 	}
-	return nil
+	w := scoring.DefaultWeights()
+	if v, _ := a.store.GetConfig("ai_weight_aesthetic"); v != "" {
+		w.Aesthetic, _ = strconv.ParseFloat(v, 64)
+	}
+	if v, _ := a.store.GetConfig("ai_weight_sharpness"); v != "" {
+		w.Sharpness, _ = strconv.ParseFloat(v, 64)
+	}
+	if v, _ := a.store.GetConfig("ai_weight_face"); v != "" {
+		w.Face, _ = strconv.ParseFloat(v, 64)
+	}
+	if v, _ := a.store.GetConfig("ai_weight_eyes"); v != "" {
+		w.Eyes, _ = strconv.ParseFloat(v, 64)
+	}
+	w = w.Normalize()
+	a.pipeline.SetWeights(w)
+	logger.Log.Debug("app: loaded AI weights",
+		"aesthetic", w.Aesthetic,
+		"sharpness", w.Sharpness,
+		"face", w.Face,
+		"eyes", w.Eyes,
+	)
+}
+
+// ── Internal pipeline ───────────────────────────────────────────────────────
+
+// runAIAnalysisPipeline scans photos, scores via worker pool, then clusters faces.
+func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
+	start := time.Now()
+
+	// Step 1: Scan directory for photos.
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "scanning", Total: 0})
+	photos, err := scanner.ScanDirectory(folderPath)
+	if err != nil {
+		logger.Log.Error("app: AI analysis scan failed", "error", err)
+		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+			"step":  "scanning",
+			"error": fmt.Sprintf("Scan failed: %v", err),
+		})
+		return
+	}
+	total := len(photos)
+	if total == 0 {
+		logger.Log.Info("app: no photos found for AI analysis", "folder", folderPath)
+		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+			"step":  "scanning",
+			"error": "No photos found in this folder",
+		})
+		return
+	}
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "scanning", Total: total})
+	logger.Log.Info("app: AI analysis scanning complete", "photos", total)
+
+	// Step 2: Filter already-scored photos (check mtime).
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "filtering", Total: total})
+	var toScore []model.Photo
+	for i := range photos {
+		if ctx.Err() != nil {
+			return
+		}
+		existing, _ := a.store.GetAIScore(photos[i].Path)
+		if existing != nil {
+			info, statErr := os.Stat(photos[i].Path)
+			if statErr == nil && !info.ModTime().After(existing.ScoredAt) {
+				// Already scored and file hasn't changed — skip.
+				continue
+			}
+		}
+		toScore = append(toScore, photos[i])
+	}
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "filtering", Total: len(toScore)})
+	logger.Log.Info("app: AI analysis filtering complete", "toScore", len(toScore), "skipped", total-len(toScore))
+
+	if len(toScore) == 0 {
+		// All photos already scored — skip to clustering.
+		clusterCount := a.runFaceClustering(folderPath)
+		elapsed := time.Since(start).Milliseconds()
+		wailsRuntime.EventsEmit(a.ctx, "ai:complete", AICompleteEvent{
+			Scored:    0,
+			Faces:     0,
+			Clusters:  clusterCount,
+			ElapsedMs: elapsed,
+		})
+		return
+	}
+
+	// Step 3: Score photos with worker pool.
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "scoring", Total: len(toScore)})
+
+	numWorkers := workerCount()
+	var scored int64
+	var totalFaces int64
+	var topPhoto string
+	var topScore float64
+	var topMu sync.Mutex
+
+	work := make(chan int, len(toScore))
+	for i := range toScore {
+		work <- i
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range work {
+				if ctx.Err() != nil {
+					return
+				}
+				a.scoreAndSavePhoto(ctx, toScore[idx].Path, &scored, &totalFaces, len(toScore), &topPhoto, &topScore, &topMu)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		logger.Log.Info("app: AI analysis cancelled during scoring")
+		wailsRuntime.EventsEmit(a.ctx, "ai:error", map[string]interface{}{
+			"step":  "scoring",
+			"error": "Analysis cancelled",
+		})
+		return
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "scoring", Total: int(scored)})
+	logger.Log.Info("app: AI scoring phase complete", "scored", scored, "faces", totalFaces, "total", len(toScore))
+
+	// Step 4: Cluster faces.
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "clustering", Total: 0})
+	clusterCount := a.runFaceClustering(folderPath)
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "clustering", Total: clusterCount})
+
+	elapsed := time.Since(start).Milliseconds()
+	wailsRuntime.EventsEmit(a.ctx, "ai:complete", AICompleteEvent{
+		Scored:    int(scored),
+		Faces:     int(totalFaces),
+		Clusters:  clusterCount,
+		ElapsedMs: elapsed,
+		TopPhoto:  topPhoto,
+		TopScore:  topScore,
+	})
+	logger.Log.Info("app: AI analysis complete",
+		"folder", folderPath,
+		"scored", scored,
+		"faces", totalFaces,
+		"clusters", clusterCount,
+		"elapsedMs", elapsed,
+	)
+}
+
+// scoreAndSavePhoto scores a single photo, saves results to DB, and emits events.
+func (a *App) scoreAndSavePhoto(
+	ctx context.Context,
+	photoPath string,
+	scored, totalFaces *int64,
+	total int,
+	topPhoto *string,
+	topScore *float64,
+	topMu *sync.Mutex,
+) {
+	// Read the photo data (prefer cached thumbnail).
+	f, err := a.readPhotoForScoring(photoPath)
+	if err != nil {
+		logger.Log.Warn("app: failed to read photo for scoring", "path", photoPath, "error", err)
+		return
+	}
+	defer f.Close() //nolint:errcheck // best-effort close
+
+	img, _, decErr := image.Decode(f)
+	if decErr != nil {
+		logger.Log.Warn("app: failed to decode image for scoring", "path", photoPath, "error", decErr)
+		return
+	}
+
+	// Run the pipeline.
+	cs, pipeErr := a.pipeline.Execute(ctx, img)
+	if pipeErr != nil {
+		logger.Log.Warn("app: pipeline failed", "path", photoPath, "error", pipeErr)
+		return
+	}
+	if cs == nil {
+		logger.Log.Warn("app: pipeline returned nil score", "path", photoPath)
+		return
+	}
+
+	// Compute overall score with current weights.
+	weights := a.pipeline.Weights()
+	overall := cs.OverallScore(weights)
+
+	// Save AIScore to DB.
+	aiScore := &storage.AIScore{
+		PhotoPath:         photoPath,
+		OverallScore:      overall,
+		FaceCount:         cs.FaceCount,
+		Provider:          cs.Provider,
+		AestheticScore:    cs.AestheticScore,
+		SharpnessScore:    cs.SharpnessScore,
+		BestFaceSharpness: cs.BestFaceSharp,
+		EyeOpenness:       cs.EyeOpenness,
+	}
+	if dbErr := a.store.SaveAIScore(aiScore); dbErr != nil {
+		logger.Log.Warn("app: failed to save AI score", "path", photoPath, "error", dbErr)
+	}
+
+	// Save face detections and embeddings.
+	faceCount := len(cs.Faces)
+	for i, face := range cs.Faces {
+		det := &storage.FaceDetection{
+			PhotoPath:    photoPath,
+			BboxX:        face.BoundingBox.Min.X,
+			BboxY:        face.BoundingBox.Min.Y,
+			BboxW:        face.BoundingBox.Dx(),
+			BboxH:        face.BoundingBox.Dy(),
+			Confidence:   face.Confidence,
+			EyeSharpness: cs.BestFaceSharp,
+		}
+		// Attach embedding if available.
+		if i < len(cs.Embeddings) && len(cs.Embeddings[i]) > 0 {
+			det.Embedding = float32SliceToBytes(cs.Embeddings[i])
+		}
+		detID, detErr := a.store.SaveFaceDetection(det)
+		if detErr != nil {
+			logger.Log.Warn("app: failed to save face detection", "error", detErr)
+		}
+		logger.Log.Debug("app: saved face detection", "path", photoPath, "detID", detID, "face", i)
+	}
+
+	count := atomic.AddInt64(scored, 1)
+	atomic.AddInt64(totalFaces, int64(faceCount))
+
+	// Track top scoring photo.
+	topMu.Lock()
+	if overall > *topScore {
+		*topScore = overall
+		*topPhoto = photoPath
+	}
+	topMu.Unlock()
+
+	// Emit events.
+	wailsRuntime.EventsEmit(a.ctx, "ai:photo-scored", map[string]interface{}{
+		"path":      photoPath,
+		"score":     overall,
+		"faceCount": faceCount,
+	})
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
+		Step:      "scoring",
+		Current:   int(count),
+		Total:     total,
+		PhotoPath: photoPath,
+	})
+}
+
+// readPhotoForScoring opens a photo file for scoring, preferring the cached thumbnail.
+func (a *App) readPhotoForScoring(photoPath string) (*os.File, error) {
+	// Try the thumbnail cache first — it's a 300px JPEG that's fast to decode
+	// and already handles RAW/HEIC conversion.
+	if a.thumbCache != nil {
+		info, err := os.Stat(photoPath)
+		if err == nil {
+			thumbPath := a.thumbCache.GetCachedPath(photoPath, info.ModTime())
+			if thumbPath != "" {
+				f, readErr := os.Open(thumbPath) //nolint:gosec // trusted internal path
+				if readErr == nil {
+					logger.Log.Debug("app: scoring from cached thumbnail", "path", photoPath)
+					return f, nil
+				}
+			}
+		}
+	}
+
+	// Fallback: read the original file.
+	f, err := os.Open(photoPath) //nolint:gosec // trusted internal path
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Log.Debug("app: scoring from original file", "path", photoPath)
+	return f, nil
+}
+
+// runFaceClustering loads embeddings from DB, clusters them, and saves results.
+// Returns the number of clusters created.
+func (a *App) runFaceClustering(folderPath string) int {
+	// Load all face detections for this folder that have embeddings.
+	scores, err := a.store.GetAIScoresForFolder(folderPath)
+	if err != nil {
+		logger.Log.Warn("app: clustering: failed to load scores", "error", err)
+		return 0
+	}
+
+	var embeddings []scoring.FaceEmbedding
+	for _, score := range scores {
+		dets, detErr := a.store.GetFaceDetections(score.PhotoPath)
+		if detErr != nil {
+			continue
+		}
+		for _, det := range dets {
+			if len(det.Embedding) == 0 {
+				continue
+			}
+			emb := bytesToFloat32Slice(det.Embedding)
+			if len(emb) == 0 {
+				continue
+			}
+			embeddings = append(embeddings, scoring.FaceEmbedding{
+				PhotoPath:   det.PhotoPath,
+				DetectionID: det.ID,
+				Embedding:   emb,
+			})
+		}
+	}
+
+	if len(embeddings) == 0 {
+		logger.Log.Debug("app: clustering: no embeddings to cluster", "folder", folderPath)
+		return 0
+	}
+
+	logger.Log.Info("app: clustering faces", "embeddings", len(embeddings), "folder", folderPath)
+
+	clusters := scoring.ClusterFacesAgglomerative(embeddings, scoring.DefaultClusterThreshold)
+
+	// Save clusters to DB.
+	for i, cluster := range clusters {
+		if len(cluster.Faces) == 0 {
+			continue
+		}
+
+		// Find the representative photo (highest-scored face).
+		representative := cluster.Faces[0].PhotoPath
+		bestScore := -1.0
+		for _, face := range cluster.Faces {
+			score, _ := a.store.GetAIScore(face.PhotoPath)
+			if score != nil && score.OverallScore > bestScore {
+				bestScore = score.OverallScore
+				representative = face.PhotoPath
+			}
+		}
+
+		dbCluster := &storage.FaceCluster{
+			FolderPath:         folderPath,
+			Label:              fmt.Sprintf("Person %d", i+1),
+			RepresentativePath: representative,
+			PhotoCount:         len(cluster.Faces),
+		}
+		clusterID, saveErr := a.store.SaveFaceCluster(dbCluster)
+		if saveErr != nil {
+			logger.Log.Warn("app: clustering: failed to save cluster", "error", saveErr)
+			continue
+		}
+
+		// Assign detections to cluster.
+		for _, face := range cluster.Faces {
+			if assignErr := a.store.AssignFaceToCluster(face.DetectionID, clusterID); assignErr != nil {
+				logger.Log.Warn("app: clustering: failed to assign face", "error", assignErr)
+			}
+		}
+	}
+
+	logger.Log.Info("app: clustering complete", "clusters", len(clusters), "folder", folderPath)
+	return len(clusters)
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// workerCount returns the number of worker goroutines for the scoring pool.
+// Uses NumCPU/2 clamped to [1, 8].
+func workerCount() int {
+	n := maxInt(1, stdruntime.NumCPU()/2)
+	return minInt(n, 8)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// float32SliceToBytes converts a []float32 to []byte using little-endian encoding.
+func float32SliceToBytes(fs []float32) []byte {
+	buf := make([]byte, len(fs)*4)
+	for i, f := range fs {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(f))
+	}
+	return buf
+}
+
+// bytesToFloat32Slice converts a []byte back to []float32 using little-endian encoding.
+func bytesToFloat32Slice(b []byte) []float32 {
+	if len(b)%4 != 0 {
+		return nil
+	}
+	fs := make([]float32, len(b)/4)
+	for i := range fs {
+		fs[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
+	}
+	return fs
 }

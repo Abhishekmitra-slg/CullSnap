@@ -33,7 +33,6 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/zalando/go-keyring"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -82,8 +81,8 @@ type App struct {
 	mirrorCancels           map[string]context.CancelFunc
 	mirrorMu                sync.Mutex
 	deviceDetector          device.Detector
-	scoringEngine           *scoring.Engine
-	localProvider           *scoring.LocalProvider
+	registry                *scoring.Registry
+	pipeline                *scoring.Pipeline
 	analysisMu              sync.Mutex
 	analysisCancel          context.CancelFunc
 	aiEnabled               bool
@@ -165,31 +164,38 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	logger.Log.Info("app: RAW module initialized")
 
-	// Initialize AI scoring engine (guard against double Startup from Wails WebView reload).
-	if a.scoringEngine == nil {
-		a.scoringEngine = scoring.NewEngine()
+	// Initialize AI plugin registry (guard against double Startup from Wails WebView reload).
+	if a.registry == nil {
+		a.registry = scoring.NewRegistry()
+		a.pipeline = scoring.NewPipeline(a.registry)
+
 		cullsnapDir := filepath.Join(home, ".cullsnap")
-		localProv, err := scoring.NewLocalProvider(cullsnapDir)
-		if err != nil {
-			logger.Log.Warn("app: failed to create local AI provider", "error", err)
-		} else {
-			a.localProvider = localProv
-			a.scoringEngine.Register(localProv)
-			if err := localProv.InitRuntime(""); err != nil {
-				logger.Log.Info("app: ONNX runtime not available (will use cloud provider if configured)", "error", err)
+
+		if detector, err := scoring.NewFaceDetectorPlugin(cullsnapDir); err == nil {
+			a.registry.Register(detector)
+		}
+		if embedder, err := scoring.NewFaceEmbedderPlugin(cullsnapDir); err == nil {
+			a.registry.Register(embedder)
+		}
+		if aesthetic, err := scoring.NewAestheticPlugin(cullsnapDir); err == nil {
+			a.registry.Register(aesthetic)
+		}
+		a.registry.Register(&scoring.SharpnessPlugin{})
+
+		// Try init with existing runtime.
+		libPath := filepath.Join(cullsnapDir, "lib", scoring.ONNXRuntimeLibName())
+		if _, err := os.Stat(libPath); err == nil {
+			if initErr := a.registry.InitAll(libPath); initErr != nil {
+				logger.Log.Info("app: plugin init deferred", "error", initErr)
 			}
 		}
-
-		cloudProv := scoring.NewCloudProvider("OpenAI Vision", "", func() (string, error) {
-			return keyring.Get("cullsnap-ai-openai", "api-key")
-		})
-		a.scoringEngine.Register(cloudProv)
+		a.loadAIWeights()
 	}
 
-	// Load AI scoring enabled state
+	// Load AI scoring enabled state.
 	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")
 	a.aiEnabled = aiEnabledStr == "true"
-	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled, "engineEnabled", a.scoringEngine.Enabled())
+	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled, "registryAvailable", a.registry.Available())
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {
@@ -983,17 +989,31 @@ func (a *App) ScanAndDeduplicate(path string, similarityThreshold int) (*DedupeR
 	// 2. Select the best quality photo in each group to represent the unique
 	// Build AI score lookup if scoring is enabled and has results.
 	var aiScoreFn dedupe.AIScoreFunc
-	if a.aiEnabled && a.scoringEngine.Enabled() {
+	if a.aiEnabled && a.registry != nil && a.registry.Available() {
+		var weights scoring.ScoreWeights
+		if a.pipeline != nil {
+			weights = a.pipeline.Weights()
+		} else {
+			weights = scoring.DefaultWeights()
+		}
 		aiScoreFn = func(photoPath string) (float64, bool) {
-			score, err := a.store.GetAIScore(photoPath)
-			if err != nil || score == nil {
+			score, scoreErr := a.store.GetAIScore(photoPath)
+			if scoreErr != nil || score == nil {
 				return 0, false
 			}
-			return score.OverallScore, true
+			// Recompute with current weights from sub-scores.
+			cs := scoring.CompositeScore{
+				AestheticScore: score.AestheticScore,
+				SharpnessScore: score.SharpnessScore,
+				FaceCount:      score.FaceCount,
+				BestFaceSharp:  score.BestFaceSharpness,
+				EyeOpenness:    score.EyeOpenness,
+			}
+			return cs.OverallScore(weights), true
 		}
 	}
 
-	err = dedupe.FindBestPhotos(appCtx, groups, a.thumbCache.CacheDir(), emitProgress, aiScoreFn)
+	err = dedupe.FindBestPhotos(appCtx, groups, thumbnailDir, emitProgress, aiScoreFn)
 	if err != nil {
 		return nil, err
 	}
