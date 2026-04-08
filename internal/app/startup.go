@@ -43,7 +43,7 @@ func logStartupContext(store *storage.SQLiteStore, version string) {
 
 	// Record this startup
 	if err := store.SetConfig("last_startup_time", now.Format(time.RFC3339)); err != nil {
-		logger.Log.Debug("startup: failed to persist last_startup_time", "error", err)
+		logger.Log.Warn("startup: failed to persist last_startup_time — crash-loop detection disabled", "error", err)
 	}
 
 	// Log whether this is a dev build
