@@ -2,6 +2,7 @@ package app
 
 import (
 	"cullsnap/internal/logger"
+	"cullsnap/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
@@ -681,5 +682,54 @@ func TestCheckDedupStatus_DuplicatesDirIsFile(t *testing.T) {
 	}
 	if status.HasDuplicates {
 		t.Error("expected HasDuplicates=false when 'duplicates' is a file, not a directory")
+	}
+}
+
+func TestPreloadThumbnailsForPhotos_NilCache(t *testing.T) {
+	store, err := newTestStore(t)
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	a := NewApp(store)
+	// thumbCache is nil by default (no Startup called)
+	photos := []model.Photo{
+		{Path: "/photos/a.jpg"},
+		{Path: "/photos/b.png"},
+	}
+
+	result, err := a.PreloadThumbnailsForPhotos(photos)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 photos returned, got %d", len(result))
+	}
+}
+
+func TestPreloadThumbnailsForPhotos_EmptyPhotos(t *testing.T) {
+	store, err := newTestStore(t)
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	a := NewApp(store)
+
+	result, err := a.PreloadThumbnailsForPhotos(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for nil input, got %v", result)
+	}
+
+	result, err = a.PreloadThumbnailsForPhotos([]model.Photo{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 photos, got %d", len(result))
 	}
 }

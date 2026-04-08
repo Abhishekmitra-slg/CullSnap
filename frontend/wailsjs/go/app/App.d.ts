@@ -94,6 +94,8 @@ export function OpenLog():Promise<void>;
 
 export function PreloadThumbnails(arg1:string):Promise<Array<model.Photo>>;
 
+export function PreloadThumbnailsForPhotos(arg1:Array<model.Photo>):Promise<Array<model.Photo>>;
+
 export function RenameFaceCluster(arg1:number,arg2:string):Promise<void>;
 
 export function ResetAppConfig():Promise<app.AppConfig>;

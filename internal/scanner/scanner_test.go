@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"cullsnap/internal/model"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,5 +79,194 @@ func TestScanDirectory_ReturnsBeforeFFprobe(t *testing.T) {
 	}
 	if photos[0].Duration != 0 {
 		t.Errorf("Expected Duration=0 (not yet enriched), got %f", photos[0].Duration)
+	}
+}
+
+func TestScanDirectoryStream(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 7 test files across photo and video types
+	names := []string{
+		"a.jpg", "b.jpg", "c.png", "d.jpeg",
+		"e.jpg", "f.mp4", "g.jpg",
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Non-image file should be skipped
+	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("skip"), 0o644)
+
+	var batches [][]model.Photo
+	err := ScanDirectoryStream(dir, 3, func(batch []model.Photo, done bool) {
+		cp := make([]model.Photo, len(batch))
+		copy(cp, batch)
+		batches = append(batches, cp)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 7 files / batch size 3 = 3 batches (3, 3, 1)
+	if len(batches) != 3 {
+		t.Fatalf("expected 3 batches, got %d", len(batches))
+	}
+	if len(batches[0]) != 3 {
+		t.Errorf("batch 0: expected 3 items, got %d", len(batches[0]))
+	}
+	if len(batches[1]) != 3 {
+		t.Errorf("batch 1: expected 3 items, got %d", len(batches[1]))
+	}
+	if len(batches[2]) != 1 {
+		t.Errorf("batch 2: expected 1 item, got %d", len(batches[2]))
+	}
+
+	// Total count should be 7
+	total := 0
+	for _, b := range batches {
+		total += len(b)
+	}
+	if total != 7 {
+		t.Errorf("expected 7 total photos, got %d", total)
+	}
+}
+
+func TestScanDirectoryStream_SmallDir(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "only.jpg"), []byte("fake"), 0o644)
+
+	var batches [][]model.Photo
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		cp := make([]model.Photo, len(batch))
+		copy(cp, batch)
+		batches = append(batches, cp)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Single file should produce exactly 1 batch with done=true
+	if len(batches) != 1 {
+		t.Fatalf("expected 1 batch, got %d", len(batches))
+	}
+	if len(batches[0]) != 1 {
+		t.Errorf("expected 1 photo, got %d", len(batches[0]))
+	}
+}
+
+func TestScanDirectoryStream_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+
+	var called int
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		called++
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Empty dir should still call batchFn once with done=true and empty batch
+	if called != 1 {
+		t.Errorf("expected 1 callback for empty dir, got %d", called)
+	}
+}
+
+func TestScanDirectoryStream_DoneFlag(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 5; i++ {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("img%d.jpg", i)), []byte("x"), 0o644)
+	}
+
+	var doneValues []bool
+	err := ScanDirectoryStream(dir, 3, func(batch []model.Photo, done bool) {
+		doneValues = append(doneValues, done)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 5 files / 3 = 2 batches. Only the last should have done=true
+	if len(doneValues) != 2 {
+		t.Fatalf("expected 2 batches, got %d", len(doneValues))
+	}
+	if doneValues[0] {
+		t.Error("first batch should have done=false")
+	}
+	if !doneValues[1] {
+		t.Error("last batch should have done=true")
+	}
+}
+
+func TestScanDirectoryStream_SkipsDuplicatesDir(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "photo.jpg"), []byte("x"), 0o644)
+	dupeDir := filepath.Join(dir, "duplicates")
+	os.Mkdir(dupeDir, 0o755)
+	os.WriteFile(filepath.Join(dupeDir, "dup.jpg"), []byte("x"), 0o644)
+
+	var total int
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		total += len(batch)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 {
+		t.Errorf("expected 1 photo (duplicates skipped), got %d", total)
+	}
+}
+
+func TestScanDirectoryStream_VideoAndRAW(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "clip.mp4"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "photo.cr2"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "normal.jpg"), []byte("x"), 0o644)
+
+	var photos []model.Photo
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		photos = append(photos, batch...)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 3 {
+		t.Fatalf("expected 3, got %d", len(photos))
+	}
+
+	videoCount, rawCount := 0, 0
+	for _, p := range photos {
+		if p.IsVideo {
+			videoCount++
+		}
+		if p.IsRAW {
+			rawCount++
+			if p.RAWFormat == "" {
+				t.Error("RAW photo should have RAWFormat set")
+			}
+		}
+	}
+	if videoCount != 1 {
+		t.Errorf("expected 1 video, got %d", videoCount)
+	}
+	if rawCount != 1 {
+		t.Errorf("expected 1 RAW, got %d", rawCount)
+	}
+}
+
+func TestScanDirectoryStream_ZeroBatchSize(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.jpg"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.jpg"), []byte("x"), 0o644)
+
+	var batchCount int
+	err := ScanDirectoryStream(dir, 0, func(batch []model.Photo, done bool) {
+		batchCount++
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// batchSize=0 defaults to 50, so 2 files = 1 batch
+	if batchCount != 1 {
+		t.Errorf("expected 1 batch (default batchSize=50), got %d", batchCount)
 	}
 }

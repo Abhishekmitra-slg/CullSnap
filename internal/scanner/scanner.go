@@ -29,11 +29,16 @@ var allowedExtensions = map[string]bool{
 	".avi":  true,
 }
 
-// ScanDirectory walks root and returns Photo structs for supported files.
-// This is intentionally fast — it only reads file metadata (no thumbnails, no ffprobe).
-// Thumbnail generation and video duration enrichment happen in app.go after scan completes.
-func ScanDirectory(root string) ([]model.Photo, error) {
-	var photos []model.Photo
+// ScanDirectoryStream walks root and calls batchFn with batches of photos.
+// batchFn is called every batchSize files with done=false, and once more at the end
+// with done=true (which may carry a non-empty final partial batch, or an empty batch
+// for empty directories). Each batch is a fresh copy — safe to store without cloning.
+func ScanDirectoryStream(root string, batchSize int, batchFn func(batch []model.Photo, done bool)) error {
+	if batchSize <= 0 {
+		batchSize = 50
+	}
+
+	var batch []model.Photo
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -47,32 +52,55 @@ func ScanDirectory(root string) ([]model.Photo, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if allowedExtensions[ext] {
-			info, err := d.Info()
-			if err != nil {
-				return nil // Skip if can't get info
-			}
-
-			isVideo := isVideoExt(ext)
-
-			p := model.Photo{
-				Path:    path,
-				Size:    info.Size(),
-				TakenAt: info.ModTime(),
-				IsVideo: isVideo,
-				// Duration intentionally 0 — enriched asynchronously by app.go
-			}
-
-			if raw.IsRAWExt(ext) {
-				p.IsRAW = true
-				p.RAWFormat = raw.FormatName(ext)
-			}
-
-			photos = append(photos, p)
+		if !allowedExtensions[ext] {
+			return nil
 		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil // Skip if can't get info
+		}
+
+		p := model.Photo{
+			Path:    path,
+			Size:    info.Size(),
+			TakenAt: info.ModTime(),
+			IsVideo: isVideoExt(ext),
+		}
+
+		if raw.IsRAWExt(ext) {
+			p.IsRAW = true
+			p.RAWFormat = raw.FormatName(ext)
+		}
+
+		batch = append(batch, p)
+
+		if len(batch) >= batchSize {
+			out := make([]model.Photo, len(batch))
+			copy(out, batch)
+			batchFn(out, false)
+			batch = batch[:0]
+		}
+
 		return nil
 	})
 
+	// Final batch (may be empty for empty dirs) — copy for safety
+	out := make([]model.Photo, len(batch))
+	copy(out, batch)
+	batchFn(out, true)
+
+	return err
+}
+
+// ScanDirectory walks root and returns Photo structs for supported files.
+// This is intentionally fast — it only reads file metadata (no thumbnails, no ffprobe).
+// Thumbnail generation and video duration enrichment happen in app.go after scan completes.
+func ScanDirectory(root string) ([]model.Photo, error) {
+	var photos []model.Photo
+	err := ScanDirectoryStream(root, 10000, func(batch []model.Photo, done bool) {
+		photos = append(photos, batch...)
+	})
 	return photos, err
 }
 
