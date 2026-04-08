@@ -100,6 +100,9 @@ func NewApp(store *storage.SQLiteStore) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 
+	// Log startup diagnostics: time since last run, quick-restart warning, dev build detection.
+	logStartupContext(a.store, a.Version)
+
 	// Repair bundle signature if the auto-updater replaced the binary
 	// without re-signing. Must run before any TCC-gated operations.
 	ensureBundleSigned()
