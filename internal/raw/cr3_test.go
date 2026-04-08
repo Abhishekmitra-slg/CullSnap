@@ -133,7 +133,8 @@ func TestExtractCR3Preview_TruncatedBox(t *testing.T) {
 // buildTHMBBox builds a THMB box with a 16-byte Canon header followed by the given JPEG data.
 func buildTHMBBox(jpegData []byte) []byte {
 	header := make([]byte, 16) // Canon THMB header placeholder
-	payload := append(header, jpegData...)
+	payload := header
+	payload = append(payload, jpegData...)
 	return buildBMFFBox("THMB", payload)
 }
 
@@ -165,11 +166,14 @@ func TestExtractCR3Preview_THMBFallback(t *testing.T) {
 func TestExtractCR3Preview_THMBFallback_MultipleSizes(t *testing.T) {
 	// Build a moov with two THMB boxes of different sizes; parser should return the largest JPEG.
 	smallJPEG := minimalJPEG
-	largeJPEG := append(minimalJPEG, make([]byte, 100)...) // larger payload
+	largeJPEG := make([]byte, len(minimalJPEG)+100) // larger payload
+	copy(largeJPEG, minimalJPEG)
 
 	thmb1 := buildTHMBBox(smallJPEG)
 	thmb2 := buildTHMBBox(largeJPEG)
-	moovContent := append(thmb1, thmb2...)
+	moovContent := make([]byte, 0, len(thmb1)+len(thmb2))
+	moovContent = append(moovContent, thmb1...)
+	moovContent = append(moovContent, thmb2...)
 	moov := buildBMFFBox("moov", moovContent)
 	ftyp := buildBMFFBox("ftyp", []byte("cr3 "))
 
