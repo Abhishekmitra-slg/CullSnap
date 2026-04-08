@@ -178,6 +178,10 @@ export function PreloadThumbnails(arg1) {
   return window['go']['app']['App']['PreloadThumbnails'](arg1);
 }
 
+export function PreloadThumbnailsForPhotos(arg1) {
+  return window['go']['app']['App']['PreloadThumbnailsForPhotos'](arg1);
+}
+
 export function RenameFaceCluster(arg1, arg2) {
   return window['go']['app']['App']['RenameFaceCluster'](arg1, arg2);
 }

@@ -684,6 +684,79 @@ func (a *App) PreloadThumbnails(dirPath string) ([]model.Photo, error) {
 	return photos, nil
 }
 
+// PreloadThumbnailsForPhotos generates thumbnails for pre-scanned photos.
+// Unlike PreloadThumbnails, this does NOT re-scan the directory or re-enrich video durations.
+// The caller is expected to pass photos already obtained from ScanDirectory.
+func (a *App) PreloadThumbnailsForPhotos(photos []model.Photo) ([]model.Photo, error) {
+	logger.Log.Info("PreloadThumbnailsForPhotos starting", "count", len(photos))
+	if a.thumbCache == nil {
+		return photos, nil
+	}
+
+	if len(photos) == 0 {
+		return photos, nil
+	}
+
+	// Build item list with mod times
+	items := make([]struct {
+		Path    string
+		ModTime time.Time
+	}, len(photos))
+
+	for i := range photos {
+		items[i] = struct {
+			Path    string
+			ModTime time.Time
+		}{Path: photos[i].Path, ModTime: photos[i].TakenAt}
+	}
+
+	// Parallel thumbnail generation with progress
+	numWorkers := 4
+	if a.cfg != nil {
+		numWorkers = a.cfg.ThumbnailWorkers
+	}
+
+	// Count HEIC files in the batch so the UI can show decoder info
+	heicCount := 0
+	for _, item := range items {
+		ext := strings.ToLower(filepath.Ext(item.Path))
+		if ext == ".heic" || ext == ".heif" {
+			heicCount++
+		}
+	}
+	heicDecoder := ""
+	if heicCount > 0 {
+		if a.cfg.UseNativeSips && stdruntime.GOOS == "darwin" {
+			heicDecoder = "sips"
+		} else {
+			heicDecoder = "ffmpeg"
+		}
+		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
+	}
+
+	thumbnailMap := a.thumbCache.GenerateBatch(a.ctx, items, numWorkers, func(completed, total int) {
+		payload := map[string]interface{}{
+			"current": completed,
+			"total":   total,
+		}
+		if heicCount > 0 {
+			payload["heicCount"] = heicCount
+			payload["heicDecoder"] = heicDecoder
+		}
+		wailsRuntime.EventsEmit(a.ctx, "thumb-progress", payload)
+	})
+
+	// Populate ThumbnailPath on photos
+	for i := range photos {
+		if tp, ok := thumbnailMap[photos[i].Path]; ok {
+			photos[i].ThumbnailPath = tp
+		}
+	}
+
+	// NO startEnrichment here — already done by ScanDirectory
+	return photos, nil
+}
+
 // ExportPhotos copies specified photos/videos to a destination directory inside a specific subfolder
 func (a *App) ExportPhotos(photos []model.Photo, destDir string, folderName string) (int, error) {
 	if folderName == "" {
