@@ -2,6 +2,8 @@ module cullsnap
 
 go 1.25.0
 
+toolchain go1.25.9
+
 require (
 	github.com/corona10/goimagehash v1.1.0
 	github.com/creativeprojects/go-selfupdate v1.5.2
