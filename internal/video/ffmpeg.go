@@ -103,7 +103,7 @@ func Init() error {
 }
 
 func downloadFFmpeg() error {
-	fmt.Println("Downloading FFmpeg for video support... This may take a minute.")
+	logger.Log.Info("Downloading FFmpeg for video support — this may take a minute")
 
 	urls := resolveFFmpegURLs(runtime.GOOS, runtime.GOARCH)
 	if urls.err != nil {
@@ -136,7 +136,7 @@ func downloadFFmpeg() error {
 		}
 	}
 
-	fmt.Println("FFmpeg downloaded successfully.")
+	logger.Log.Info("FFmpeg downloaded successfully")
 	return nil
 }
 
@@ -182,7 +182,7 @@ func downloadAndExtractZip(url, destPath, binName string) error {
 	// Cap download to prevent zip bomb (CWE-400).
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxFFmpegBinaryBytes))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body from %s: %w", url, err)
 	}
 
 	zipReader, err := zip.NewReader(bytes.NewReader(bodyBytes), int64(len(bodyBytes)))
@@ -203,13 +203,13 @@ func downloadAndExtractZip(url, destPath, binName string) error {
 func extractZipEntry(file *zip.File, destPath string) error {
 	zippedFile, err := file.Open()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open zip entry %s: %w", file.Name, err)
 	}
 	defer func() { _ = zippedFile.Close() }()
 
 	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create %s: %w", destPath, err)
 	}
 	defer func() { _ = outFile.Close() }()
 
@@ -227,6 +227,9 @@ func FFmpegPath() string {
 
 // GetDuration returns the duration of a video in seconds.
 func GetDuration(path string) (float64, error) {
+	if ffprobePath == "" {
+		return 0, fmt.Errorf("ffprobe not available — cannot get video duration")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), durationTimeout)
 	defer cancel()
 
@@ -255,13 +258,13 @@ func ExtractThumbnail(videoPath, outPath string) error {
 	// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
 	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", "0.5", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	if out, err := cmd.CombinedOutput(); err != nil {
-		logger.Log.Debug("FFmpeg thumbnail extraction failed at 0.5s", "error", err, "output", string(out))
+		logger.Log.Warn("ffmpeg thumbnail first attempt failed, trying fallback", "error", err, "output", string(out))
 		// Fallback to start of file — reuse same timeout context.
 		// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
 		cmdFallback := exec.CommandContext(ctx, ffmpegPath, "-y", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		if outF, errF := cmdFallback.CombinedOutput(); errF != nil {
-			logger.Log.Debug("FFmpeg thumbnail extraction fallback failed", "error", errF, "output", string(outF))
-			return errF
+			logger.Log.Warn("ffmpeg thumbnail fallback also failed", "error", errF, "output", string(outF))
+			return fmt.Errorf("ffmpeg thumbnail extraction failed for %s: %w", videoPath, errF)
 		}
 	}
 	return nil

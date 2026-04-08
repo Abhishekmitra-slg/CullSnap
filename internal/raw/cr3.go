@@ -212,15 +212,17 @@ func findTHMBRecursive(f *os.File, start, end int64) ([]byte, error) {
 			payloadSize := boxSize - 8
 			if payloadSize > 0 && payloadSize < 10*1024*1024 {
 				payload := make([]byte, payloadSize)
-				if _, err := f.ReadAt(payload, payloadStart); err == nil {
-					soiIdx := bytes.Index(payload, []byte{0xFF, 0xD8})
-					if soiIdx >= 0 {
-						jpegData := payload[soiIdx:]
-						logger.Log.Debug("cr3: found THMB JPEG", "offset", offset, "jpegSize", len(jpegData))
-						// Keep the largest THMB (there can be multiple sizes)
-						if len(jpegData) > len(bestJPEG) {
-							bestJPEG = jpegData
-						}
+				if _, err := f.ReadAt(payload, payloadStart); err != nil {
+					logger.Log.Warn("cr3: failed to read THMB payload", "offset", payloadStart, "size", payloadSize, "error", err)
+					offset += boxSize
+					continue
+				}
+				soiIdx := bytes.Index(payload, []byte{0xFF, 0xD8})
+				if soiIdx >= 0 {
+					jpegData := payload[soiIdx:]
+					logger.Log.Debug("cr3: found THMB JPEG", "offset", offset, "jpegSize", len(jpegData))
+					if len(jpegData) > len(bestJPEG) {
+						bestJPEG = jpegData
 					}
 				}
 			}
@@ -246,7 +248,8 @@ func findTHMBRecursive(f *os.File, start, end int64) ([]byte, error) {
 // isContainerBox reports whether the box type is a known BMFF container.
 func isContainerBox(boxType string) bool {
 	switch boxType {
-	case "moov", "trak", "mdia", "minf", "stbl", "dinf", "edts":
+	case "moov", "trak", "mdia", "minf", "stbl", "dinf", "edts",
+		"CRAW", "CMT1", "CMT2", "CMT3", "CMT4":
 		return true
 	}
 	return false

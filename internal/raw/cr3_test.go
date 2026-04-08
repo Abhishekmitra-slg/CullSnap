@@ -187,7 +187,7 @@ func TestExtractCR3Preview_THMBFallback_MultipleSizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected THMB fallback to succeed: %v", err)
 	}
-	if len(data) < len(smallJPEG) {
+	if len(data) < len(largeJPEG) {
 		t.Errorf("expected at least %d bytes (largest JPEG), got %d", len(largeJPEG), len(data))
 	}
 }
