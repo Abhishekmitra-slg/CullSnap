@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug Fixes
 
-- *(settings)* Save button now closes modal on success and shows inline error on failure (#104)
+- *(settings)* Save button now closes modal and shows errors inline (#105)
+
+### Miscellaneous
+
+- Update changelog for v2.16.1
 
 ## [v2.16.0] - 2026-04-08
 
