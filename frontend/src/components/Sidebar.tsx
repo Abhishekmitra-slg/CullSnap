@@ -29,6 +29,8 @@ interface SidebarProps {
     onAnalyze?: () => void;
     aiPanelVisible?: boolean;
     onToggleAIPanel?: () => void;
+    hasAIScores?: boolean;
+    onReanalyze?: () => void;
 }
 
 export function Sidebar({
@@ -57,6 +59,8 @@ export function Sidebar({
     onAnalyze,
     aiPanelVisible,
     onToggleAIPanel,
+    hasAIScores,
+    onReanalyze,
 }: SidebarProps) {
     const [recents, setRecents] = useState<string[]>([]);
     const [isExporting, setIsExporting] = useState(false);
@@ -158,15 +162,37 @@ export function Sidebar({
                 )}
 
                 {aiEnabled && (
-                    <button
-                        className="btn w-full mt-2"
-                        onClick={onAnalyze}
-                        disabled={isAnalyzing || photosCount === 0 || !currentDir}
-                        title="Run AI face detection and quality scoring"
-                    >
-                        <Sparkles size={16} />
-                        {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
-                    </button>
+                    <>
+                        <button
+                            className="btn w-full mt-2"
+                            onClick={onAnalyze}
+                            disabled={isAnalyzing || photosCount === 0 || !currentDir}
+                            title="Run AI face detection and quality scoring"
+                        >
+                            <Sparkles size={16} />
+                            {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+                        </button>
+                        {hasAIScores && !isAnalyzing && (
+                            <div style={{ textAlign: 'center', marginTop: 2 }}>
+                                <button
+                                    onClick={onReanalyze}
+                                    disabled={!currentDir}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--text-muted)',
+                                        fontSize: '0.65rem',
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline',
+                                        padding: '2px 4px',
+                                    }}
+                                    title="Clear existing AI data and re-run analysis from scratch"
+                                >
+                                    Re-analyze from scratch
+                                </button>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 

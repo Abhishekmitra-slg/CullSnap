@@ -18,6 +18,10 @@ export function CancelDeduplicate() {
   return window['go']['app']['App']['CancelDeduplicate']();
 }
 
+export function ClearAIData(arg1) {
+  return window['go']['app']['App']['ClearAIData'](arg1);
+}
+
 export function CancelImport(arg1) {
   return window['go']['app']['App']['CancelImport'](arg1);
 }

@@ -9,6 +9,7 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/shota3506/onnxruntime-purego/onnxruntime"
@@ -299,9 +300,16 @@ func parseSCRFDOutputs(outputs map[string]*onnxruntime.Value, imgW, imgH int, co
 
 // parseSCRFDStridedOutputs handles the canonical SCRFD output format where
 // separate score and box tensors are emitted for each of the 3 strides.
+//
+// Tensors are matched by name first (e.g. "score_8", "bbox_16") to avoid
+// ambiguity — different strides can have identical element counts
+// (stride 8 scores == stride 16 boxes == 12800 elements).
 func parseSCRFDStridedOutputs(tensors []scrfdTensor, imgW, imgH int, confThresh float32) []FaceRegion {
 	strides := []int{8, 16, 32}
 	numAnchors := 2 // SCRFD 2.5G uses 2 anchors per location
+
+	// Track which tensors have been claimed to prevent cross-stride reuse.
+	used := make(map[int]bool)
 
 	var faces []FaceRegion
 	found := false
@@ -311,29 +319,81 @@ func parseSCRFDStridedOutputs(tensors []scrfdTensor, imgW, imgH int, confThresh 
 		featW := scrfdInputSize / stride
 		numLocs := featH * featW * numAnchors
 
-		// Find matching score tensor (shape [1, numLocs, 1] or [1, numLocs]).
 		var scoreData []float32
 		var boxData []float32
 		var kpsData []float32
+		var scoreIdx, boxIdx, kpsIdx int = -1, -1, -1
 
-		for _, t := range tensors {
-			n := tensorNumElements(t.shape)
-			if n == 0 {
+		strideStr := fmt.Sprintf("%d", stride)
+
+		// Pass 1: match by tensor name (e.g. "score_8", "bbox_32").
+		for i, t := range tensors {
+			if used[i] {
 				continue
 			}
+			nameLower := strings.ToLower(t.name)
+			if !strings.Contains(nameLower, strideStr) {
+				continue
+			}
+			n := tensorNumElements(t.shape)
 			switch {
-			case n == numLocs && matchesScoreShape(t.shape, numLocs):
+			case strings.Contains(nameLower, "score") && n == numLocs:
 				scoreData = t.data
-			case n == numLocs*4 && matchesBoxShape(t.shape, numLocs):
+				scoreIdx = i
+			case (strings.Contains(nameLower, "bbox") || strings.Contains(nameLower, "box")) && n == numLocs*4:
 				boxData = t.data
-			case n == numLocs*10 && matchesKpsShape(t.shape, numLocs):
+				boxIdx = i
+			case strings.Contains(nameLower, "kps") && n == numLocs*10:
 				kpsData = t.data
+				kpsIdx = i
+			}
+		}
+
+		// Pass 2: fall back to size-based matching only for tensors not yet claimed.
+		if scoreData == nil || boxData == nil {
+			for i, t := range tensors {
+				if used[i] {
+					continue
+				}
+				n := tensorNumElements(t.shape)
+				if n == 0 {
+					continue
+				}
+				switch {
+				case scoreData == nil && n == numLocs && matchesScoreShape(t.shape, numLocs) && i != boxIdx && i != kpsIdx:
+					scoreData = t.data
+					scoreIdx = i
+				case boxData == nil && n == numLocs*4 && matchesBoxShape(t.shape, numLocs) && i != scoreIdx && i != kpsIdx:
+					boxData = t.data
+					boxIdx = i
+				case kpsData == nil && n == numLocs*10 && matchesKpsShape(t.shape, numLocs) && i != scoreIdx && i != boxIdx:
+					kpsData = t.data
+					kpsIdx = i
+				}
 			}
 		}
 
 		if scoreData == nil || boxData == nil {
 			continue
 		}
+
+		// Mark claimed tensors so other strides cannot reuse them.
+		if scoreIdx >= 0 {
+			used[scoreIdx] = true
+		}
+		if boxIdx >= 0 {
+			used[boxIdx] = true
+		}
+		if kpsIdx >= 0 {
+			used[kpsIdx] = true
+		}
+
+		logger.Log.Debug("scoring: face-detector stride matched",
+			"stride", stride,
+			"scoreTensor", tensorNameAt(tensors, scoreIdx),
+			"boxTensor", tensorNameAt(tensors, boxIdx),
+			"kpsTensor", tensorNameAt(tensors, kpsIdx),
+		)
 
 		found = true
 
@@ -562,6 +622,13 @@ func tensorNumElements(shape []int64) int {
 		n *= int(d)
 	}
 	return n
+}
+
+func tensorNameAt(tensors []scrfdTensor, idx int) string {
+	if idx < 0 || idx >= len(tensors) {
+		return "<none>"
+	}
+	return tensors[idx].name
 }
 
 func matchesScoreShape(shape []int64, numLocs int) bool {
