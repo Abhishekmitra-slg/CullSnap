@@ -196,3 +196,77 @@ func TestScanDirectoryStream_DoneFlag(t *testing.T) {
 		t.Error("last batch should have done=true")
 	}
 }
+
+func TestScanDirectoryStream_SkipsDuplicatesDir(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "photo.jpg"), []byte("x"), 0o644)
+	dupeDir := filepath.Join(dir, "duplicates")
+	os.Mkdir(dupeDir, 0o755)
+	os.WriteFile(filepath.Join(dupeDir, "dup.jpg"), []byte("x"), 0o644)
+
+	var total int
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		total += len(batch)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 {
+		t.Errorf("expected 1 photo (duplicates skipped), got %d", total)
+	}
+}
+
+func TestScanDirectoryStream_VideoAndRAW(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "clip.mp4"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "photo.cr2"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "normal.jpg"), []byte("x"), 0o644)
+
+	var photos []model.Photo
+	err := ScanDirectoryStream(dir, 50, func(batch []model.Photo, done bool) {
+		photos = append(photos, batch...)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 3 {
+		t.Fatalf("expected 3, got %d", len(photos))
+	}
+
+	videoCount, rawCount := 0, 0
+	for _, p := range photos {
+		if p.IsVideo {
+			videoCount++
+		}
+		if p.IsRAW {
+			rawCount++
+			if p.RAWFormat == "" {
+				t.Error("RAW photo should have RAWFormat set")
+			}
+		}
+	}
+	if videoCount != 1 {
+		t.Errorf("expected 1 video, got %d", videoCount)
+	}
+	if rawCount != 1 {
+		t.Errorf("expected 1 RAW, got %d", rawCount)
+	}
+}
+
+func TestScanDirectoryStream_ZeroBatchSize(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.jpg"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.jpg"), []byte("x"), 0o644)
+
+	var batchCount int
+	err := ScanDirectoryStream(dir, 0, func(batch []model.Photo, done bool) {
+		batchCount++
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// batchSize=0 defaults to 50, so 2 files = 1 batch
+	if batchCount != 1 {
+		t.Errorf("expected 1 batch (default batchSize=50), got %d", batchCount)
+	}
+}
