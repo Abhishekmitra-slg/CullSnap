@@ -36,6 +36,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const scanBatchSize = 50
+
 // Contributor represents a project contributor parsed from CONTRIBUTORS.yml.
 type Contributor struct {
 	Name   string `json:"name"`
@@ -528,27 +530,59 @@ func (a *App) enrichVideoDurations(ctx context.Context, videoPaths []string) {
 	wailsRuntime.EventsEmit(a.ctx, "video-duration-complete")
 }
 
-// ScanDirectory returns all photos in the directory
+// ScanDirectory returns the first batch of photos immediately and streams
+// remaining batches as "scan-batch" events. Emits "scan-complete" when done.
+// Video enrichment runs once after the full scan completes.
 func (a *App) ScanDirectory(path string) ([]model.Photo, error) {
 	logger.Log.Info("Scanning directory", "path", path)
 	_ = a.store.AddRecent(path)
 	if a.OnAllowDir != nil {
 		a.OnAllowDir(path)
 	}
-	photos, err := scanner.ScanDirectory(path)
+
+	var firstBatch []model.Photo
+	var firstBatchSet bool
+	var allVideoPaths []string
+	var totalCount int
+
+	err := scanner.ScanDirectoryStream(path, scanBatchSize, func(batch []model.Photo, done bool) {
+		// Collect video paths for enrichment
+		for i := range batch {
+			if batch[i].IsVideo {
+				allVideoPaths = append(allVideoPaths, batch[i].Path)
+			}
+		}
+		totalCount += len(batch)
+
+		if !firstBatchSet {
+			firstBatch = make([]model.Photo, len(batch))
+			copy(firstBatch, batch)
+			firstBatchSet = true
+			return
+		}
+
+		// Subsequent batches — emit as events
+		if len(batch) > 0 {
+			logger.Log.Debug("Emitting scan-batch", "count", len(batch), "total", totalCount)
+			wailsRuntime.EventsEmit(a.ctx, "scan-batch", batch)
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
-	var videoPaths []string
-	for i := range photos {
-		if photos[i].IsVideo {
-			videoPaths = append(videoPaths, photos[i].Path)
-		}
+
+	// Emit scan-complete
+	logger.Log.Debug("Scan complete", "total", totalCount, "videos", len(allVideoPaths))
+	wailsRuntime.EventsEmit(a.ctx, "scan-complete", map[string]interface{}{
+		"total": totalCount,
+	})
+
+	// Enrich video durations ONCE (not in PreloadThumbnails)
+	if len(allVideoPaths) > 0 {
+		a.startEnrichment(allVideoPaths)
 	}
-	if len(videoPaths) > 0 {
-		a.startEnrichment(videoPaths)
-	}
-	return photos, nil
+
+	return firstBatch, nil
 }
 
 // GetSelections returns map of selections for a session
