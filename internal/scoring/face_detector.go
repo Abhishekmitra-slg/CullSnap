@@ -322,7 +322,7 @@ func parseSCRFDStridedOutputs(tensors []scrfdTensor, imgW, imgH int, confThresh 
 		var scoreData []float32
 		var boxData []float32
 		var kpsData []float32
-		var scoreIdx, boxIdx, kpsIdx int = -1, -1, -1
+		scoreIdx, boxIdx, kpsIdx := -1, -1, -1
 
 		strideStr := fmt.Sprintf("%d", stride)
 
