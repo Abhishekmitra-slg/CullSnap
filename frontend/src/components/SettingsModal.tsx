@@ -19,6 +19,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [downloadingModels, setDownloadingModels] = useState(false);
     const [downloadResult, setDownloadResult] = useState<string | null>(null);
     const [weights, setWeights] = useState({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 });
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     useEffect(() => {
         GetAppConfig().then(setConfig).catch(console.error);
@@ -138,6 +139,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const handleSave = async () => {
         if (!config) return;
         setSaving(true);
+        setSaveError(null);
         try {
             await SaveAppConfig(config);
             // Normalize weights so they sum to 1.0 before saving
@@ -151,8 +153,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 }
                 : weights;
             await SetAIWeights(app.AIWeightsConfig.createFrom(normalized));
+            onClose();
         } catch (e) {
-            console.error('Failed to save config:', e);
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error('Failed to save config:', msg);
+            setSaveError(`Failed to save settings: ${msg}`);
         } finally {
             setSaving(false);
         }
@@ -603,6 +608,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         </div>
                     )}
                 </section>
+
+                {saveError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '0 1.5rem', marginBottom: '0.5rem' }}>
+                        {saveError}
+                    </div>
+                )}
 
                 <div className="settings-footer">
                     <button className="btn outline" onClick={handleReset}>
