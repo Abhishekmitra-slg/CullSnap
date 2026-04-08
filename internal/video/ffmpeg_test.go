@@ -4,8 +4,84 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestResolveFFmpegURLs_KnownPlatforms(t *testing.T) {
+	tests := []struct {
+		goos   string
+		goarch string
+	}{
+		{"darwin", "arm64"},
+		{"darwin", "amd64"},
+		{"linux", "amd64"},
+		{"windows", "amd64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.goos+"/"+tt.goarch, func(t *testing.T) {
+			result := resolveFFmpegURLs(tt.goos, tt.goarch)
+			if result.err != nil {
+				t.Errorf("unexpected error: %v", result.err)
+			}
+			if result.ffmpegURL == "" {
+				t.Error("ffmpegURL is empty")
+			}
+			if result.ffprobeURL == "" {
+				t.Error("ffprobeURL is empty")
+			}
+			if !strings.HasPrefix(result.ffmpegURL, "https://") {
+				t.Errorf("ffmpegURL is not a valid HTTPS URL: %s", result.ffmpegURL)
+			}
+			if !strings.HasPrefix(result.ffprobeURL, "https://") {
+				t.Errorf("ffprobeURL is not a valid HTTPS URL: %s", result.ffprobeURL)
+			}
+			if !result.isGz {
+				t.Error("isGz should be true for all platforms (eugeneware/ffmpeg-static uses .gz)")
+			}
+		})
+	}
+}
+
+func TestResolveFFmpegURLs_UnsupportedPlatform(t *testing.T) {
+	result := resolveFFmpegURLs("plan9", "arm64")
+	if result.err == nil {
+		t.Error("expected error for unsupported platform, got nil")
+	}
+	if result.ffmpegURL != "" {
+		t.Errorf("expected empty ffmpegURL for unsupported platform, got %s", result.ffmpegURL)
+	}
+}
+
+func TestResolveFFmpegURLs_URLContainsPlatformSlug(t *testing.T) {
+	tests := []struct {
+		goos        string
+		goarch      string
+		ffmpegSlug  string
+		ffprobeSlug string
+	}{
+		{"darwin", "arm64", "ffmpeg-darwin-arm64", "ffprobe-darwin-arm64"},
+		{"darwin", "amd64", "ffmpeg-darwin-x64", "ffprobe-darwin-x64"},
+		{"linux", "amd64", "ffmpeg-linux-x64", "ffprobe-linux-x64"},
+		{"windows", "amd64", "ffmpeg-win32-x64", "ffprobe-win32-x64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.goos+"/"+tt.goarch, func(t *testing.T) {
+			result := resolveFFmpegURLs(tt.goos, tt.goarch)
+			if result.err != nil {
+				t.Fatalf("unexpected error: %v", result.err)
+			}
+			if !strings.Contains(result.ffmpegURL, tt.ffmpegSlug) {
+				t.Errorf("ffmpegURL %q does not contain expected slug %q", result.ffmpegURL, tt.ffmpegSlug)
+			}
+			if !strings.Contains(result.ffprobeURL, tt.ffprobeSlug) {
+				t.Errorf("ffprobeURL %q does not contain expected slug %q", result.ffprobeURL, tt.ffprobeSlug)
+			}
+		})
+	}
+}
 
 // createMockBin creates a temporary shell script that prints the given output.
 func createMockBin(t *testing.T, output string) string {

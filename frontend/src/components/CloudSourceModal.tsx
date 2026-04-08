@@ -62,6 +62,7 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
     const [mirrorResult, setMirrorResult] = useState<MirrorResultData | null>(null);
     const [errorsExpanded, setErrorsExpanded] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [permissionDenied, setPermissionDenied] = useState(false);
     const mountedRef = useRef(true);
 
     useEffect(() => {
@@ -134,6 +135,10 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
         };
     }, [onLoadDir, onClose]);
 
+    const isPermissionDeniedError = (e: unknown): boolean => {
+        return String(e).includes('PERMISSION_DENIED:');
+    };
+
     const loadProviders = async () => {
         setLoadingProviders(true);
         setError(null);
@@ -153,13 +158,20 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
         setLoadingAlbums(true);
         setAlbums([]);
         setError(null);
+        setPermissionDenied(false);
         try {
             const result = await ListCloudAlbums(providerID);
             if (!mountedRef.current) return;
             setAlbums(result || []);
         } catch (e) {
             console.error('[cloud] failed to load albums:', e);
-            if (mountedRef.current) setError(`Failed to load albums: ${e}`);
+            if (mountedRef.current) {
+                if (isPermissionDeniedError(e)) {
+                    setPermissionDenied(true);
+                } else {
+                    setError(`Failed to load albums: ${e}`);
+                }
+            }
         } finally {
             if (mountedRef.current) setLoadingAlbums(false);
         }
@@ -221,7 +233,11 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
             if (mountedRef.current) {
                 setMirroring(null);
                 setMirrorProgress(null);
-                setError(`Mirror failed: ${e}`);
+                if (isPermissionDeniedError(e)) {
+                    setPermissionDenied(true);
+                } else {
+                    setError(`Mirror failed: ${e}`);
+                }
             }
         }
     };
@@ -251,6 +267,48 @@ export function CloudSourceModal({ onClose, onLoadDir }: CloudSourceModalProps) 
                     </h2>
                     <button className="btn icon-btn" onClick={onClose}><X size={16} /></button>
                 </div>
+
+                {permissionDenied && (
+                    <div style={{
+                        padding: '12px 14px',
+                        marginBottom: 12,
+                        background: 'rgba(245, 158, 11, 0.08)',
+                        border: '1px solid rgba(245, 158, 11, 0.35)',
+                        borderRadius: 8,
+                        fontSize: '0.82rem',
+                        color: 'var(--text-primary)',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <AlertTriangle size={16} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: '#fbbf24' }}>Automation permission required</span>
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
+                            CullSnap needs permission to control Photos.app. Grant access in System Settings:
+                        </div>
+                        <ol style={{
+                            margin: '0 0 10px 0',
+                            paddingLeft: 20,
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.8,
+                            fontSize: '0.8rem',
+                        }}>
+                            <li>Open <strong style={{ color: 'var(--text-primary)' }}>System Settings</strong></li>
+                            <li>Go to <strong style={{ color: 'var(--text-primary)' }}>Privacy &amp; Security → Automation</strong></li>
+                            <li>Find <strong style={{ color: 'var(--text-primary)' }}>CullSnap</strong> and enable the toggle next to <strong style={{ color: 'var(--text-primary)' }}>Photos</strong></li>
+                            <li>Return here and try again</li>
+                        </ol>
+                        <button
+                            className="btn"
+                            style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+                            onClick={() => {
+                                setPermissionDenied(false);
+                                if (selectedProvider) loadAlbums(selectedProvider);
+                            }}
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                )}
 
                 {error && (
                     <div style={{
