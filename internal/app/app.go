@@ -697,41 +697,28 @@ func (a *App) PreloadThumbnailsForPhotos(photos []model.Photo) ([]model.Photo, e
 		return photos, nil
 	}
 
-	// Build item list with mod times
+	prepItems := buildThumbnailItems(photos)
+	useNativeSips := a.cfg != nil && a.cfg.UseNativeSips
+	heicCount, heicDecoder := detectHEICInfo(prepItems, useNativeSips)
+	if heicCount > 0 {
+		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
+	}
+
+	// Convert to GenerateBatch's expected type
 	items := make([]struct {
 		Path    string
 		ModTime time.Time
-	}, len(photos))
-
-	for i := range photos {
+	}, len(prepItems))
+	for i, item := range prepItems {
 		items[i] = struct {
 			Path    string
 			ModTime time.Time
-		}{Path: photos[i].Path, ModTime: photos[i].TakenAt}
+		}{Path: item.Path, ModTime: item.ModTime}
 	}
 
-	// Parallel thumbnail generation with progress
 	numWorkers := 4
 	if a.cfg != nil {
 		numWorkers = a.cfg.ThumbnailWorkers
-	}
-
-	// Count HEIC files in the batch so the UI can show decoder info
-	heicCount := 0
-	for _, item := range items {
-		ext := strings.ToLower(filepath.Ext(item.Path))
-		if ext == ".heic" || ext == ".heif" {
-			heicCount++
-		}
-	}
-	heicDecoder := ""
-	if heicCount > 0 {
-		if a.cfg.UseNativeSips && stdruntime.GOOS == "darwin" {
-			heicDecoder = "sips"
-		} else {
-			heicDecoder = "ffmpeg"
-		}
-		logger.Log.Debug("HEIC files in batch", "heicCount", heicCount, "decoder", heicDecoder)
 	}
 
 	thumbnailMap := a.thumbCache.GenerateBatch(a.ctx, items, numWorkers, func(completed, total int) {
@@ -746,12 +733,7 @@ func (a *App) PreloadThumbnailsForPhotos(photos []model.Photo) ([]model.Photo, e
 		wailsRuntime.EventsEmit(a.ctx, "thumb-progress", payload)
 	})
 
-	// Populate ThumbnailPath on photos
-	for i := range photos {
-		if tp, ok := thumbnailMap[photos[i].Path]; ok {
-			photos[i].ThumbnailPath = tp
-		}
-	}
+	applyThumbnailPaths(photos, thumbnailMap)
 
 	// NO startEnrichment here — already done by ScanDirectory
 	return photos, nil
