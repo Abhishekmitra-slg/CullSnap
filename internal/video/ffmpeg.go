@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"cullsnap/internal/logger"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +23,9 @@ const (
 	durationTimeout  = 30 * time.Second
 	trimTimeout      = 10 * time.Minute
 	versionTimeout   = 10 * time.Second
+
+	// maxFFmpegBinaryBytes caps extraction size to 512 MB to prevent zip/gzip bomb DoS.
+	maxFFmpegBinaryBytes = 512 * 1024 * 1024
 )
 
 var (
@@ -31,6 +33,45 @@ var (
 	ffmpegPath  string
 	ffprobePath string
 )
+
+// ffmpegURLs holds the resolved download URLs for ffmpeg and ffprobe.
+type ffmpegURLs struct {
+	ffmpegURL  string
+	ffprobeURL string
+	isGz       bool
+	err        error
+}
+
+const ffmpegStaticBase = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/"
+
+// resolveFFmpegURLs returns hardcoded download URLs for the given OS/arch combination.
+// All platforms use eugeneware/ffmpeg-static GitHub release assets (.gz format).
+func resolveFFmpegURLs(goos, goarch string) ffmpegURLs {
+	type platformURLs struct {
+		ffmpeg  string
+		ffprobe string
+	}
+
+	// Map of "goos/goarch" -> asset name slugs from eugeneware/ffmpeg-static b6.1.1.
+	platforms := map[string]platformURLs{
+		"darwin/arm64":  {ffmpeg: "ffmpeg-darwin-arm64.gz", ffprobe: "ffprobe-darwin-arm64.gz"},
+		"darwin/amd64":  {ffmpeg: "ffmpeg-darwin-x64.gz", ffprobe: "ffprobe-darwin-x64.gz"},
+		"linux/amd64":   {ffmpeg: "ffmpeg-linux-x64.gz", ffprobe: "ffprobe-linux-x64.gz"},
+		"windows/amd64": {ffmpeg: "ffmpeg-win32-x64.gz", ffprobe: "ffprobe-win32-x64.gz"},
+	}
+
+	key := goos + "/" + goarch
+	p, ok := platforms[key]
+	if !ok {
+		return ffmpegURLs{err: fmt.Errorf("unsupported platform: %s/%s", goos, goarch)}
+	}
+
+	return ffmpegURLs{
+		ffmpegURL:  ffmpegStaticBase + p.ffmpeg,
+		ffprobeURL: ffmpegStaticBase + p.ffprobe,
+		isGz:       true,
+	}
+}
 
 // Init initializes the video package by ensuring FFmpeg is available.
 func Init() error {
@@ -51,92 +92,46 @@ func Init() error {
 	ffmpegPath = filepath.Join(binDir, "ffmpeg"+ext)
 	ffprobePath = filepath.Join(binDir, "ffprobe"+ext)
 
-	// Check if already installed
+	// Check if already installed.
 	if _, err := os.Stat(ffmpegPath); err == nil {
 		if _, err := os.Stat(ffprobePath); err == nil {
 			return nil // Already installed
 		}
 	}
 
-	// Download from ffbinaries
 	return downloadFFmpeg()
-}
-
-// Structs for ffbinaries API
-type ffbinariesResponse struct {
-	Bin struct {
-		Windows64 struct {
-			Ffmpeg  string `json:"ffmpeg"`
-			Ffprobe string `json:"ffprobe"`
-		} `json:"windows-64"`
-		MacArm struct {
-			Ffmpeg  string `json:"ffmpeg"`
-			Ffprobe string `json:"ffprobe"`
-		} `json:"osx-arm-64"`
-		Mac64 struct {
-			Ffmpeg  string `json:"ffmpeg"`
-			Ffprobe string `json:"ffprobe"`
-		} `json:"osx-64"`
-		Linux64 struct {
-			Ffmpeg  string `json:"ffmpeg"`
-			Ffprobe string `json:"ffprobe"`
-		} `json:"linux-64"`
-	} `json:"bin"`
 }
 
 func downloadFFmpeg() error {
 	fmt.Println("Downloading FFmpeg for video support... This may take a minute.")
 
-	var ffmpegURL, ffprobeURL string
-	isGz := false
-
-	// Handle Apple Silicon Native
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		logger.Log.Info("Detected Apple Silicon, downloading native ARM64 binary")
-		// Using eugeneware/ffmpeg-static releases for native arm64 (both binaries are here)
-		ffmpegURL = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz"
-		ffprobeURL = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-darwin-arm64.gz"
-		isGz = true
-	} else {
-		resp, err := http.Get("https://ffbinaries.com/api/v1/version/latest")
-		if err != nil {
-			return fmt.Errorf("failed to fetch ffbinaries API: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var apiResp ffbinariesResponse
-		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			return fmt.Errorf("failed to decode ffbinaries API: %w", err)
-		}
-
-		switch runtime.GOOS {
-		case "windows":
-			ffmpegURL = apiResp.Bin.Windows64.Ffmpeg
-			ffprobeURL = apiResp.Bin.Windows64.Ffprobe
-		case "darwin":
-			ffmpegURL = apiResp.Bin.Mac64.Ffmpeg
-			ffprobeURL = apiResp.Bin.Mac64.Ffprobe
-		case "linux":
-			ffmpegURL = apiResp.Bin.Linux64.Ffmpeg
-			ffprobeURL = apiResp.Bin.Linux64.Ffprobe
-		default:
-			return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
-		}
+	urls := resolveFFmpegURLs(runtime.GOOS, runtime.GOARCH)
+	if urls.err != nil {
+		return fmt.Errorf("cannot provision FFmpeg: %w", urls.err)
 	}
 
-	if isGz {
-		if err := downloadAndExtractGz(ffmpegURL, ffmpegPath); err != nil {
-			return err
+	logger.Log.Info("Resolved FFmpeg download URLs",
+		"goos", runtime.GOOS,
+		"goarch", runtime.GOARCH,
+		"ffmpegURL", urls.ffmpegURL,
+		"ffprobeURL", urls.ffprobeURL,
+		"isGz", urls.isGz,
+	)
+
+	// All supported platforms currently use .gz format from eugeneware/ffmpeg-static.
+	if urls.isGz {
+		if err := downloadAndExtractGz(urls.ffmpegURL, ffmpegPath); err != nil {
+			return fmt.Errorf("failed to download ffmpeg: %w", err)
 		}
-		if err := downloadAndExtractGz(ffprobeURL, ffprobePath); err != nil {
-			// If native probe fails, fallback to x64 for probe is fine
-			logger.Log.Warn("Native ffprobe download failed, skipping (using ffmpeg only for now or existing)")
+		if err := downloadAndExtractGz(urls.ffprobeURL, ffprobePath); err != nil {
+			// ffprobe is non-fatal — ffmpeg alone covers most functionality.
+			logger.Log.Warn("ffprobe download failed, continuing without it", "error", err)
 		}
 	} else {
-		if err := downloadAndExtractZip(ffmpegURL, ffmpegPath, "ffmpeg"); err != nil {
+		if err := downloadAndExtractZip(urls.ffmpegURL, ffmpegPath, "ffmpeg"); err != nil {
 			return err
 		}
-		if err := downloadAndExtractZip(ffprobeURL, ffprobePath, "ffprobe"); err != nil {
+		if err := downloadAndExtractZip(urls.ffprobeURL, ffprobePath, "ffprobe"); err != nil {
 			return err
 		}
 	}
@@ -146,6 +141,7 @@ func downloadFFmpeg() error {
 }
 
 func downloadAndExtractGz(url, destPath string) error {
+	// #nosec G107 -- URL is a hardcoded GitHub release asset; not derived from user input.
 	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download %s: %w", url, err)
@@ -168,25 +164,27 @@ func downloadAndExtractGz(url, destPath string) error {
 	}
 	defer func() { _ = outFile.Close() }()
 
-	if _, err := io.Copy(outFile, gzReader); err != nil {
-		return err
+	// Use CopyN to cap extraction size and prevent gzip bomb DoS (CWE-400).
+	if _, err := io.CopyN(outFile, gzReader, maxFFmpegBinaryBytes); err != nil && err != io.EOF {
+		return fmt.Errorf("failed to write %s: %w", destPath, err)
 	}
 	return nil
 }
 
 func downloadAndExtractZip(url, destPath, binName string) error {
+	// #nosec G107 -- URL is a hardcoded GitHub release asset; not derived from user input.
 	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Cap download to prevent zip bomb (CWE-400).
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxFFmpegBinaryBytes))
 	if err != nil {
 		return err
 	}
 
-	// ffbinaries serves zip files
 	zipReader, err := zip.NewReader(bytes.NewReader(bodyBytes), int64(len(bodyBytes)))
 	if err != nil {
 		return fmt.Errorf("failed to read zip: %w", err)
@@ -215,8 +213,9 @@ func extractZipEntry(file *zip.File, destPath string) error {
 	}
 	defer func() { _ = outFile.Close() }()
 
-	if _, err := io.Copy(outFile, zippedFile); err != nil {
-		return err
+	// Cap extraction size to prevent zip bomb DoS (CWE-400).
+	if _, err := io.CopyN(outFile, zippedFile, maxFFmpegBinaryBytes); err != nil && err != io.EOF {
+		return fmt.Errorf("failed to extract zip entry: %w", err)
 	}
 	return nil
 }
@@ -231,7 +230,8 @@ func GetDuration(path string) (float64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), durationTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, ffprobePath, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
+	// ffprobePath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
+	cmd := exec.CommandContext(ctx, ffprobePath, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, fmt.Errorf("ffprobe failed: %w", err)
@@ -252,11 +252,13 @@ func ExtractThumbnail(videoPath, outPath string) error {
 
 	// Move -ss before -i for fast seeking. Use -update 1 to treat output as a single image.
 	// Explicitly set -f mjpeg because output path ends in .tmp
-	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", "0.5", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
+	// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", "0.5", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	if out, err := cmd.CombinedOutput(); err != nil {
 		logger.Log.Debug("FFmpeg thumbnail extraction failed at 0.5s", "error", err, "output", string(out))
 		// Fallback to start of file — reuse same timeout context.
-		cmdFallback := exec.CommandContext(ctx, ffmpegPath, "-y", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath)
+		// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
+		cmdFallback := exec.CommandContext(ctx, ffmpegPath, "-y", "-i", videoPath, "-vframes", "1", "-update", "1", "-q:v", "2", "-f", "mjpeg", outPath) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		if outF, errF := cmdFallback.CombinedOutput(); errF != nil {
 			logger.Log.Debug("FFmpeg thumbnail extraction fallback failed", "error", errF, "output", string(outF))
 			return errF
@@ -279,7 +281,8 @@ func TrimVideo(src, dest string, start, end float64) error {
 	// Place -ss before -i for fast seeking (same as ExtractThumbnail).
 	// With input-side seek, -to is an absolute output timestamp which is correct
 	// since TrimEnd is measured from the start of the file.
-	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", startStr, "-i", src, "-to", endStr, "-c", "copy", dest)
+	// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-y", "-ss", startStr, "-i", src, "-to", endStr, "-c", "copy", dest) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg trim failed: %s", string(out))
 	}
@@ -294,7 +297,8 @@ func GetFFmpegVersion() string {
 	ctx, cancel := context.WithTimeout(context.Background(), versionTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, ffmpegPath, "-version")
+	// ffmpegPath is set to a fixed path under ~/.cullsnap/bin/ during Init; not user input. #nosec G204
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-version") // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	out, err := cmd.Output()
 	if err != nil {
 		return "not installed"
