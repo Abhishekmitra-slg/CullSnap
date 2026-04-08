@@ -397,6 +397,12 @@ func (p *Provider) Disconnect() error {
 	return nil
 }
 
+// isTCCError reports whether an osascript error message indicates a macOS TCC
+// (Transparency, Consent, and Control) Automation permission denial.
+func isTCCError(errMsg string) bool {
+	return strings.Contains(errMsg, "-1743") || strings.Contains(errMsg, "Not authorized")
+}
+
 // runOsascript executes an AppleScript via osascript with context support.
 func runOsascript(ctx context.Context, script string) (string, error) {
 	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
@@ -414,8 +420,9 @@ func runOsascript(ctx context.Context, script string) (string, error) {
 		logger.Log.Debug("icloud: osascript failed", "stderr", errMsg)
 
 		// macOS TCC error -1743: app lacks Automation permission for Photos.app
-		if strings.Contains(errMsg, "-1743") || strings.Contains(errMsg, "Not authorized") {
-			return "", fmt.Errorf("CullSnap needs Automation permission to access Photos. " +
+		if isTCCError(errMsg) {
+			logger.Log.Debug("icloud: TCC Automation permission denied", "errMsg", errMsg)
+			return "", fmt.Errorf("PERMISSION_DENIED: CullSnap needs Automation permission to access Photos. " +
 				"Open System Settings \u2192 Privacy & Security \u2192 Automation and enable Photos for CullSnap, then try again")
 		}
 		return "", fmt.Errorf("osascript: %s", errMsg)

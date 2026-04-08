@@ -274,6 +274,28 @@ func TestCopyFile(t *testing.T) {
 	}
 }
 
+func TestIsTCCError(t *testing.T) {
+	tccStrings := []string{
+		"execution error: (-1743)",
+		"Not authorized to send Apple events",
+	}
+	for _, s := range tccStrings {
+		if !isTCCError(s) {
+			t.Errorf("expected isTCCError(%q) = true", s)
+		}
+	}
+	nonTCC := []string{
+		"syntax error",
+		"connection is invalid",
+		"timeout",
+	}
+	for _, s := range nonTCC {
+		if isTCCError(s) {
+			t.Errorf("expected isTCCError(%q) = false", s)
+		}
+	}
+}
+
 func TestValidatePhotoID_Valid(t *testing.T) {
 	valid := []string{
 		"ABC-123",
