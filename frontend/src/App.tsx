@@ -10,7 +10,7 @@ import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
 import { AIProgressModal } from './components/AIProgressModal';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnails, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnailsForPhotos, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis } from '../wailsjs/go/app/App';
 import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import AIPanel from './components/AIPanel';
@@ -68,12 +68,50 @@ function App() {
     const [deviceToast, setDeviceToast] = useState<{ name: string; serial: string } | null>(null);
     const [gridColumns, setGridColumns] = useState(1);
 
+    // Streaming scan: accumulate batches in ref, flush to state via rAF
+    const scanPhotosRef = useRef<appModel.Photo[]>([]);
+    const scanRafRef = useRef<number>(0);
+    const scanUnsubRef = useRef<(() => void)[]>([]);
+
+    const flushScanPhotos = useCallback(() => {
+        setPhotos([...scanPhotosRef.current]);
+        scanRafRef.current = 0;
+    }, []);
+
+    const appendScanBatch = useCallback((batch: appModel.Photo[]) => {
+        if (!batch || batch.length === 0) return;
+        // Wails events deliver raw objects — wrap them as Photo instances
+        const wrapped = batch.map((p: any) => appModel.Photo.createFrom(p));
+        scanPhotosRef.current = [...scanPhotosRef.current, ...wrapped];
+        if (!scanRafRef.current) {
+            scanRafRef.current = requestAnimationFrame(flushScanPhotos);
+        }
+    }, [flushScanPhotos]);
+
+    const cleanupScanEvents = useCallback(() => {
+        for (const unsub of scanUnsubRef.current) {
+            unsub();
+        }
+        scanUnsubRef.current = [];
+        if (scanRafRef.current) {
+            cancelAnimationFrame(scanRafRef.current);
+            scanRafRef.current = 0;
+        }
+    }, []);
+
     useEffect(() => {
         EventsOn('sys-metrics', (data: any) => {
             setSysMetrics(data);
         });
         return () => { EventsOff('sys-metrics'); };
     }, []);
+
+    // Cleanup scan events on unmount
+    useEffect(() => {
+        return () => {
+            cleanupScanEvents();
+        };
+    }, [cleanupScanEvents]);
 
     // Refresh AI scoring status from backend
     const refreshAIStatus = () => {
@@ -401,18 +439,43 @@ function App() {
     };
 
     const loadDirectory = async (dir: string) => {
+        // Clean up previous scan events
+        cleanupScanEvents();
         EventsOff('video-duration-ready');
         EventsOff('video-duration-complete');
         setLoading(true);
         setCurrentDir(dir);
         setThumbProgress(null);
-        try {
-            // Phase 1: Quick scan — show photos immediately with original paths
-            const quickPhotos = await ScanDirectory(dir);
-            setPhotos(quickPhotos || []);
+        scanPhotosRef.current = [];
 
+        try {
+            // Subscribe to streaming events BEFORE calling ScanDirectory
+            // (events fire during the RPC call as batches are found)
+            const unsubBatch = EventsOn('scan-batch', (data: any) => {
+                // data is the batch array emitted from Go
+                const batch = Array.isArray(data) ? data : [];
+                appendScanBatch(batch);
+            });
+            const unsubComplete = EventsOn('scan-complete', (data: any) => {
+                console.log(`[scan] complete: ${data?.total ?? 0} photos`);
+            });
+            scanUnsubRef.current = [unsubBatch, unsubComplete];
+
+            // Phase 1: Quick scan — first batch returns immediately
+            const firstBatch = await ScanDirectory(dir);
+            const wrappedFirst = (firstBatch || []).map((p: any) => appModel.Photo.createFrom(p));
+
+            // Merge first batch into accumulator
+            scanPhotosRef.current = [...scanPhotosRef.current, ...wrappedFirst];
+            // Force immediate flush (don't wait for rAF)
+            setPhotos([...scanPhotosRef.current]);
+
+            // Video duration enrichment events
             EventsOn('video-duration-ready', (data: any) => {
                 const { path, duration } = data;
+                scanPhotosRef.current = scanPhotosRef.current.map(p =>
+                    p.Path === path ? appModel.Photo.createFrom({ ...p, Duration: duration }) : p
+                );
                 setPhotos(prev => prev.map(p =>
                     p.Path === path ? appModel.Photo.createFrom({ ...p, Duration: duration }) : p
                 ));
@@ -426,9 +489,9 @@ function App() {
             const exportedStatus = await GetExportedStatus(dir);
             setExportedPaths(new Set(Object.keys(exportedStatus || {})));
 
-            if (quickPhotos && quickPhotos.length > 0) {
-                setActivePhoto(quickPhotos[0]);
-                setActivePhotoPath(quickPhotos[0].Path);
+            if (scanPhotosRef.current.length > 0) {
+                setActivePhoto(scanPhotosRef.current[0]);
+                setActivePhotoPath(scanPhotosRef.current[0].Path);
             } else {
                 setActivePhoto(null);
                 setActivePhotoPath('');
@@ -466,17 +529,16 @@ function App() {
 
             setLoading(false);
 
-            // Phase 2: Preload thumbnails in background (parallel goroutines)
-            // Listen for progress events
+            // Phase 2: Preload thumbnails using already-scanned photos (no re-scan!)
             const thumbHandler = (data: any) => {
                 setThumbProgress(data);
             };
             EventsOn('thumb-progress', thumbHandler);
 
             try {
-                const thumbPhotos = await PreloadThumbnails(dir);
+                const thumbPhotos = await PreloadThumbnailsForPhotos(scanPhotosRef.current);
                 if (thumbPhotos && thumbPhotos.length > 0) {
-                    // Update photos with thumbnail paths
+                    scanPhotosRef.current = thumbPhotos;
                     setPhotos(thumbPhotos);
                 }
             } catch (e) {
