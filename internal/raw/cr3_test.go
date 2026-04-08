@@ -129,3 +129,72 @@ func TestExtractCR3Preview_TruncatedBox(t *testing.T) {
 		t.Fatal("expected error for truncated file")
 	}
 }
+
+// buildTHMBBox builds a THMB box with a 16-byte Canon header followed by the given JPEG data.
+func buildTHMBBox(jpegData []byte) []byte {
+	header := make([]byte, 16) // Canon THMB header placeholder
+	payload := append(header, jpegData...)
+	return buildBMFFBox("THMB", payload)
+}
+
+// buildSyntheticCR3WithTHMBOnly builds a minimal CR3-like file with a THMB box in moov but no PRVW.
+func buildSyntheticCR3WithTHMBOnly(jpegData []byte) []byte {
+	ftyp := buildBMFFBox("ftyp", []byte("cr3 "))
+	thmb := buildTHMBBox(jpegData)
+	moov := buildBMFFBox("moov", thmb)
+
+	var file []byte
+	file = append(file, ftyp...)
+	file = append(file, moov...)
+	return file
+}
+
+func TestExtractCR3Preview_THMBFallback(t *testing.T) {
+	cr3Data := buildSyntheticCR3WithTHMBOnly(minimalJPEG)
+	path := writeCR3TempFile(t, "thmb_fallback.cr3", cr3Data)
+
+	data, err := extractCR3Preview(path)
+	if err != nil {
+		t.Fatalf("expected THMB fallback to succeed: %v", err)
+	}
+	if len(data) < 2 || data[0] != 0xFF || data[1] != 0xD8 {
+		t.Errorf("extracted data is not a JPEG, got %x", data[:min(4, len(data))])
+	}
+}
+
+func TestExtractCR3Preview_THMBFallback_MultipleSizes(t *testing.T) {
+	// Build a moov with two THMB boxes of different sizes; parser should return the largest JPEG.
+	smallJPEG := minimalJPEG
+	largeJPEG := append(minimalJPEG, make([]byte, 100)...) // larger payload
+
+	thmb1 := buildTHMBBox(smallJPEG)
+	thmb2 := buildTHMBBox(largeJPEG)
+	moovContent := append(thmb1, thmb2...)
+	moov := buildBMFFBox("moov", moovContent)
+	ftyp := buildBMFFBox("ftyp", []byte("cr3 "))
+
+	var file []byte
+	file = append(file, ftyp...)
+	file = append(file, moov...)
+
+	path := writeCR3TempFile(t, "thmb_multiple.cr3", file)
+
+	data, err := extractCR3Preview(path)
+	if err != nil {
+		t.Fatalf("expected THMB fallback to succeed: %v", err)
+	}
+	if len(data) < len(smallJPEG) {
+		t.Errorf("expected at least %d bytes (largest JPEG), got %d", len(largeJPEG), len(data))
+	}
+}
+
+func TestExtractCR3Preview_NoPRVWNoTHMB(t *testing.T) {
+	// File with only ftyp — no PRVW, no THMB.
+	ftyp := buildBMFFBox("ftyp", []byte("cr3 "))
+	path := writeCR3TempFile(t, "no_preview.cr3", ftyp)
+
+	_, err := extractCR3Preview(path)
+	if err == nil {
+		t.Fatal("expected error when neither PRVW nor THMB is present")
+	}
+}
