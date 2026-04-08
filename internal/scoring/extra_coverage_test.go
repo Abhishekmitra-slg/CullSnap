@@ -4,6 +4,7 @@ package scoring
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -136,6 +137,92 @@ func TestParseSCRFDGeneric_PicksLargestTensor(t *testing.T) {
 	result := parseSCRFDGeneric(tensors, 640, 480, 0.5)
 	if len(result) != 2 {
 		t.Errorf("parseSCRFDGeneric(largest tensor) = %d faces, want 2", len(result))
+	}
+}
+
+// TestParseSCRFDStridedOutputs_NameBasedMatching verifies that tensors are matched
+// by name to avoid cross-stride collisions where element counts are ambiguous
+// (e.g. stride-8 scores = 12800 elements = stride-16 boxes).
+func TestParseSCRFDStridedOutputs_NameBasedMatching(t *testing.T) {
+	// Simulate SCRFD 2.5G output tensors with realistic naming and sizes.
+	// Only populate stride-8 with a detectable face; other strides are zeros.
+	const inputSize = 640
+	numAnchors := 2
+
+	type strideSpec struct {
+		stride  int
+		numLocs int
+	}
+	strides := []strideSpec{
+		{8, (inputSize / 8) * (inputSize / 8) * numAnchors},    // 12800
+		{16, (inputSize / 16) * (inputSize / 16) * numAnchors}, // 3200
+		{32, (inputSize / 32) * (inputSize / 32) * numAnchors}, // 800
+	}
+
+	var tensors []scrfdTensor
+	for _, s := range strides {
+		scores := make([]float32, s.numLocs)
+		boxes := make([]float32, s.numLocs*4)
+
+		// Put a single high-confidence detection in stride 8 only.
+		if s.stride == 8 {
+			scores[0] = 0.95 // high confidence
+			// Distance-based bbox: [left, top, right, bottom] distances from anchor.
+			boxes[0] = 2.0 // left
+			boxes[1] = 2.0 // top
+			boxes[2] = 2.0 // right
+			boxes[3] = 2.0 // bottom
+		}
+
+		tensors = append(tensors,
+			scrfdTensor{
+				name:  fmt.Sprintf("score_%d", s.stride),
+				shape: []int64{1, int64(s.numLocs), 1},
+				data:  scores,
+			},
+			scrfdTensor{
+				name:  fmt.Sprintf("bbox_%d", s.stride),
+				shape: []int64{1, int64(s.numLocs), 4},
+				data:  boxes,
+			},
+		)
+	}
+
+	faces := parseSCRFDStridedOutputs(tensors, 300, 200, scrfdConfThresh)
+
+	// With correct name-based matching, only 1 face should be detected.
+	// The old size-only matching could produce thousands of false detections
+	// because box data (large floats) would be misread as confidence scores.
+	if len(faces) != 1 {
+		t.Errorf("parseSCRFDStridedOutputs() detected %d faces, want 1", len(faces))
+	}
+	if len(faces) > 0 && faces[0].Confidence < 0.9 {
+		t.Errorf("face confidence = %f, want >= 0.9", faces[0].Confidence)
+	}
+}
+
+// TestParseSCRFDStridedOutputs_FallbackSizeBased verifies that unnamed tensors
+// still work via the size-based fallback with used-tensor tracking.
+func TestParseSCRFDStridedOutputs_FallbackSizeBased(t *testing.T) {
+	// Use unnamed tensors (no stride info in name) for stride 32 only (simplest).
+	numLocs := (640 / 32) * (640 / 32) * 2 // 800
+
+	scores := make([]float32, numLocs)
+	boxes := make([]float32, numLocs*4)
+	scores[0] = 0.85
+	boxes[0] = 1.0
+	boxes[1] = 1.0
+	boxes[2] = 1.0
+	boxes[3] = 1.0
+
+	tensors := []scrfdTensor{
+		{name: "output_a", shape: []int64{1, int64(numLocs), 1}, data: scores},
+		{name: "output_b", shape: []int64{1, int64(numLocs), 4}, data: boxes},
+	}
+
+	faces := parseSCRFDStridedOutputs(tensors, 300, 200, scrfdConfThresh)
+	if len(faces) != 1 {
+		t.Errorf("parseSCRFDStridedOutputs(unnamed) detected %d faces, want 1", len(faces))
 	}
 }
 

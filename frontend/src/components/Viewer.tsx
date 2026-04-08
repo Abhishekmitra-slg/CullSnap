@@ -37,7 +37,7 @@ const THUMB_WIDTH = 300;
 
 export function Viewer({ photo, onTrimChange, isSelected, faceDetections, aiPanelVisible, onFaceClick }: ViewerProps) {
     const [exif, setExif] = useState<PhotoEXIF | null>(null);
-    const [showFaceOverlay, setShowFaceOverlay] = useState(true);
+    const [showFaceOverlay, setShowFaceOverlay] = useState(false);
     const [hoveredFace, setHoveredFace] = useState<number | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);

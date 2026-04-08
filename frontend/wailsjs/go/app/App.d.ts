@@ -14,6 +14,8 @@ export function CancelAIAnalysis():Promise<void>;
 
 export function CancelDeduplicate():Promise<void>;
 
+export function ClearAIData(arg1:string):Promise<void>;
+
 export function CancelImport(arg1:string):Promise<void>;
 
 export function CancelMirror(arg1:string,arg2:string):Promise<void>;

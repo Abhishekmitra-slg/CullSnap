@@ -165,6 +165,17 @@ func (a *App) CancelAIAnalysis() error {
 	return nil
 }
 
+// ClearAIData removes all AI scores, face detections, and face clusters
+// for the given folder so the next RunAIAnalysis re-processes every photo.
+func (a *App) ClearAIData(folderPath string) error {
+	logger.Log.Info("app: clearing AI data", "folder", folderPath)
+	if err := a.store.DeleteAIDataForFolder(folderPath); err != nil {
+		logger.Log.Error("app: failed to clear AI data", "error", err)
+		return fmt.Errorf("clear AI data: %w", err)
+	}
+	return nil
+}
+
 // DownloadAIModels provisions ONNX Runtime and downloads all model files,
 // then initialises the plugins.
 func (a *App) DownloadAIModels() error {

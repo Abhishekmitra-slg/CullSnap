@@ -10,7 +10,7 @@ import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
 import { AIProgressModal } from './components/AIProgressModal';
-import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnailsForPhotos, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis } from '../wailsjs/go/app/App';
+import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnailsForPhotos, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis, ClearAIData } from '../wailsjs/go/app/App';
 import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import AIPanel from './components/AIPanel';
@@ -729,6 +729,21 @@ function App() {
                 }}
                 aiPanelVisible={aiPanelVisible}
                 onToggleAIPanel={() => setAiPanelVisible(prev => !prev)}
+                hasAIScores={Object.keys(aiScores).length > 0}
+                onReanalyze={() => {
+                    if (!currentDir) return;
+                    setIsAnalyzing(true);
+                    setAiPanelVisible(true);
+                    setShowAIModal(true);
+                    setAiScores({});
+                    setAiClusters([]);
+                    ClearAIData(currentDir).then(() => {
+                        return RunAIAnalysis(currentDir);
+                    }).catch((err: unknown) => {
+                        console.error('[ai] re-analysis failed:', err);
+                        setIsAnalyzing(false);
+                    });
+                }}
             />
 
             <div
