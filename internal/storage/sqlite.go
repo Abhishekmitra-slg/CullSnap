@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -127,6 +128,63 @@ func (s *SQLiteStore) initSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_face_detections_cluster ON face_detections(cluster_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_face_clusters_folder ON face_clusters(folder_path);`,
 		`CREATE INDEX IF NOT EXISTS idx_ai_scores_score ON ai_scores(overall_score);`,
+		`CREATE TABLE IF NOT EXISTS vlm_scores (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			photo_path TEXT NOT NULL UNIQUE,
+			folder_path TEXT NOT NULL,
+			aesthetic REAL NOT NULL DEFAULT 0,
+			composition REAL NOT NULL DEFAULT 0,
+			expression REAL NOT NULL DEFAULT 0,
+			technical_quality REAL NOT NULL DEFAULT 0,
+			scene_type TEXT NOT NULL DEFAULT '',
+			issues TEXT NOT NULL DEFAULT '',
+			explanation TEXT NOT NULL DEFAULT '',
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			model_name TEXT NOT NULL DEFAULT '',
+			model_variant TEXT NOT NULL DEFAULT '',
+			backend TEXT NOT NULL DEFAULT '',
+			prompt_version INTEGER NOT NULL DEFAULT 0,
+			scored_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS vlm_rankings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			folder_path TEXT NOT NULL,
+			group_label TEXT NOT NULL,
+			photo_path TEXT NOT NULL,
+			rank INTEGER NOT NULL,
+			relative_score REAL NOT NULL DEFAULT 0,
+			notes TEXT NOT NULL DEFAULT '',
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			model_name TEXT NOT NULL DEFAULT '',
+			prompt_version INTEGER NOT NULL DEFAULT 0,
+			ranked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(folder_path, group_label, photo_path)
+		);`,
+		`CREATE TABLE IF NOT EXISTS vlm_ranking_groups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			folder_path TEXT NOT NULL,
+			group_label TEXT NOT NULL,
+			photo_count INTEGER NOT NULL DEFAULT 0,
+			explanation TEXT NOT NULL DEFAULT '',
+			model_name TEXT NOT NULL DEFAULT '',
+			prompt_version INTEGER NOT NULL DEFAULT 0,
+			ranked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(folder_path, group_label)
+		);`,
+		`CREATE TABLE IF NOT EXISTS vlm_token_usage (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL DEFAULT '',
+			folder_path TEXT NOT NULL DEFAULT '',
+			stage TEXT NOT NULL DEFAULT '',
+			tokens_input INTEGER NOT NULL DEFAULT 0,
+			tokens_output INTEGER NOT NULL DEFAULT 0,
+			photo_count INTEGER NOT NULL DEFAULT 0,
+			recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_vlm_scores_folder ON vlm_scores(folder_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_vlm_scores_prompt_ver ON vlm_scores(prompt_version);`,
+		`CREATE INDEX IF NOT EXISTS idx_vlm_rankings_folder ON vlm_rankings(folder_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_vlm_token_usage_provider ON vlm_token_usage(provider);`,
 	}
 
 	for _, query := range queries {
@@ -162,6 +220,9 @@ func (s *SQLiteStore) initSchema() error {
 	if err != nil {
 		return fmt.Errorf("failed to create scoring_plugins table: %w", err)
 	}
+
+	// Clean up stale NIMA scores — NIMA replaced by VLM.
+	s.db.Exec("DELETE FROM scoring_plugins WHERE plugin_name = 'NIMA'") //nolint:errcheck
 
 	return nil
 }
@@ -494,6 +555,64 @@ type FaceCluster struct {
 	Hidden             bool   `json:"hidden"`
 }
 
+// VLMScoreRow stores a single VLM scoring result.
+type VLMScoreRow struct {
+	PhotoPath     string  `json:"photoPath"`
+	FolderPath    string  `json:"folderPath"`
+	Aesthetic     float64 `json:"aesthetic"`
+	Composition   float64 `json:"composition"`
+	Expression    float64 `json:"expression"`
+	TechnicalQual float64 `json:"technicalQuality"`
+	SceneType     string  `json:"sceneType"`
+	Issues        string  `json:"issues"` // JSON array string
+	Explanation   string  `json:"explanation"`
+	TokensUsed    int     `json:"tokensUsed"`
+	ModelName     string  `json:"modelName"`
+	ModelVariant  string  `json:"modelVariant"`
+	Backend       string  `json:"backend"`
+	PromptVersion int     `json:"promptVersion"`
+	ScoredAt      string  `json:"scoredAt"`
+}
+
+// VLMRankingRow stores a single photo's rank within a ranking group.
+type VLMRankingRow struct {
+	PhotoPath     string  `json:"photoPath"`
+	Rank          int     `json:"rank"`
+	RelativeScore float64 `json:"relativeScore"`
+	Notes         string  `json:"notes"`
+	TokensUsed    int     `json:"tokensUsed"`
+}
+
+// VLMRankingGroupRow stores a ranking group with its ranked photos.
+type VLMRankingGroupRow struct {
+	FolderPath    string          `json:"folderPath"`
+	GroupLabel    string          `json:"groupLabel"`
+	PhotoCount    int             `json:"photoCount"`
+	Explanation   string          `json:"explanation"`
+	ModelName     string          `json:"modelName"`
+	PromptVersion int             `json:"promptVersion"`
+	Rankings      []VLMRankingRow `json:"rankings"`
+}
+
+// TokenUsageRow records token consumption for a batch of VLM calls.
+type TokenUsageRow struct {
+	Provider     string `json:"provider"`
+	FolderPath   string `json:"folderPath"`
+	Stage        string `json:"stage"`
+	TokensInput  int    `json:"tokensInput"`
+	TokensOutput int    `json:"tokensOutput"`
+	PhotoCount   int    `json:"photoCount"`
+}
+
+// TokenUsageSummary aggregates token usage per provider.
+type TokenUsageSummary struct {
+	Provider     string `json:"provider"`
+	TotalInput   int    `json:"totalInput"`
+	TotalOutput  int    `json:"totalOutput"`
+	TotalPhotos  int    `json:"totalPhotos"`
+	SessionCount int    `json:"sessionCount"`
+}
+
 // SaveAIScore inserts or replaces an AI quality score for a photo.
 func (s *SQLiteStore) SaveAIScore(score *AIScore) error {
 	s.mu.Lock()
@@ -594,6 +713,32 @@ func (s *SQLiteStore) GetFaceDetections(photoPath string) ([]FaceDetection, erro
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get face detections: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var dets []FaceDetection
+	for rows.Next() {
+		var det FaceDetection
+		var eyesOpenInt int
+		if err := rows.Scan(&det.ID, &det.PhotoPath, &det.ClusterID, &det.BboxX, &det.BboxY, &det.BboxW, &det.BboxH,
+			&det.EyeSharpness, &eyesOpenInt, &det.Expression, &det.Confidence, &det.Embedding); err != nil {
+			return nil, fmt.Errorf("failed to scan face detection: %w", err)
+		}
+		det.EyesOpen = eyesOpenInt != 0
+		dets = append(dets, det)
+	}
+	return dets, nil
+}
+
+// GetFaceDetectionsForCluster retrieves all face detections assigned to a cluster.
+func (s *SQLiteStore) GetFaceDetectionsForCluster(clusterID int64) ([]FaceDetection, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.db.Query(
+		`SELECT id, photo_path, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, eye_sharpness, eyes_open, expression, confidence, embedding
+		 FROM face_detections WHERE cluster_id = ?`, clusterID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get face detections for cluster: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var dets []FaceDetection
@@ -787,6 +932,276 @@ func (s *SQLiteStore) DeleteFaceClustersForFolder(folderPath string) error {
 
 // AssignFaceToCluster sets the cluster_id for a face detection record.
 func (s *SQLiteStore) AssignFaceToCluster(detectionID, clusterID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, err := s.db.Exec("UPDATE face_detections SET cluster_id = ? WHERE id = ?", clusterID, detectionID)
 	return err
+}
+
+// SaveVLMScore inserts or replaces a VLM score for a photo.
+func (s *SQLiteStore) SaveVLMScore(score VLMScoreRow) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO vlm_scores
+		 (photo_path, folder_path, aesthetic, composition, expression, technical_quality,
+		  scene_type, issues, explanation, tokens_used, model_name, model_variant,
+		  backend, prompt_version, scored_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		score.PhotoPath, score.FolderPath, score.Aesthetic, score.Composition, score.Expression,
+		score.TechnicalQual, score.SceneType, score.Issues, score.Explanation, score.TokensUsed,
+		score.ModelName, score.ModelVariant, score.Backend, score.PromptVersion, score.ScoredAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save VLM score: %w", err)
+	}
+	return nil
+}
+
+// GetVLMScore retrieves the VLM score for a single photo, or nil if not scored.
+func (s *SQLiteStore) GetVLMScore(photoPath string) (*VLMScoreRow, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var row VLMScoreRow
+	err := s.db.QueryRow(
+		`SELECT photo_path, folder_path, aesthetic, composition, expression, technical_quality,
+		        scene_type, issues, explanation, tokens_used, model_name, model_variant,
+		        backend, prompt_version, scored_at
+		 FROM vlm_scores WHERE photo_path = ?`, photoPath,
+	).Scan(
+		&row.PhotoPath, &row.FolderPath, &row.Aesthetic, &row.Composition, &row.Expression,
+		&row.TechnicalQual, &row.SceneType, &row.Issues, &row.Explanation, &row.TokensUsed,
+		&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion, &row.ScoredAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get VLM score: %w", err)
+	}
+	return &row, nil
+}
+
+// GetVLMScoresForFolder retrieves all VLM scores for photos within a folder.
+func (s *SQLiteStore) GetVLMScoresForFolder(folderPath string) ([]VLMScoreRow, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(
+		`SELECT photo_path, folder_path, aesthetic, composition, expression, technical_quality,
+		        scene_type, issues, explanation, tokens_used, model_name, model_variant,
+		        backend, prompt_version, scored_at
+		 FROM vlm_scores WHERE folder_path = ?`, folderPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VLM scores for folder: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var scores []VLMScoreRow
+	for rows.Next() {
+		var row VLMScoreRow
+		if err := rows.Scan(
+			&row.PhotoPath, &row.FolderPath, &row.Aesthetic, &row.Composition, &row.Expression,
+			&row.TechnicalQual, &row.SceneType, &row.Issues, &row.Explanation, &row.TokensUsed,
+			&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion, &row.ScoredAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan VLM score: %w", err)
+		}
+		scores = append(scores, row)
+	}
+	return scores, nil
+}
+
+// DeleteVLMDataForFolder removes all VLM scores, rankings, and ranking groups for a folder.
+func (s *SQLiteStore) DeleteVLMDataForFolder(folderPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.db.Exec(`DELETE FROM vlm_scores WHERE folder_path = ?`, folderPath); err != nil {
+		return fmt.Errorf("failed to delete VLM scores: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM vlm_rankings WHERE folder_path = ?`, folderPath); err != nil {
+		return fmt.Errorf("failed to delete VLM rankings: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM vlm_ranking_groups WHERE folder_path = ?`, folderPath); err != nil {
+		return fmt.Errorf("failed to delete VLM ranking groups: %w", err)
+	}
+	return nil
+}
+
+// ClearAllVLMData deletes all VLM scores, rankings, and token usage across all folders.
+func (s *SQLiteStore) ClearAllVLMData() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM vlm_scores`); err != nil {
+		return fmt.Errorf("failed to clear vlm_scores: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM vlm_rankings`); err != nil {
+		return fmt.Errorf("failed to clear vlm_rankings: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM vlm_ranking_groups`); err != nil {
+		return fmt.Errorf("failed to clear vlm_ranking_groups: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM vlm_token_usage`); err != nil {
+		return fmt.Errorf("failed to clear vlm_token_usage: %w", err)
+	}
+	return nil
+}
+
+// GetStaleVLMFolders returns distinct folder paths where the prompt_version is older than currentPromptVersion.
+func (s *SQLiteStore) GetStaleVLMFolders(currentPromptVersion int) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(
+		`SELECT DISTINCT folder_path FROM vlm_scores WHERE prompt_version < ?`, currentPromptVersion,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stale VLM folders: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var folders []string
+	for rows.Next() {
+		var folder string
+		if err := rows.Scan(&folder); err != nil {
+			return nil, fmt.Errorf("failed to scan stale VLM folder: %w", err)
+		}
+		folders = append(folders, folder)
+	}
+	return folders, nil
+}
+
+// SaveVLMRanking saves a ranking group and its individual photo rankings in a transaction.
+func (s *SQLiteStore) SaveVLMRanking(group VLMRankingGroupRow) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // no-op after commit
+
+	_, err = tx.Exec(
+		`INSERT OR REPLACE INTO vlm_ranking_groups
+		 (folder_path, group_label, photo_count, explanation, model_name, prompt_version)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		group.FolderPath, group.GroupLabel, group.PhotoCount,
+		group.Explanation, group.ModelName, group.PromptVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save VLM ranking group: %w", err)
+	}
+
+	for _, r := range group.Rankings {
+		_, err = tx.Exec(
+			`INSERT OR REPLACE INTO vlm_rankings
+			 (folder_path, group_label, photo_path, rank, relative_score, notes, tokens_used, model_name, prompt_version)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			group.FolderPath, group.GroupLabel, r.PhotoPath, r.Rank,
+			r.RelativeScore, r.Notes, r.TokensUsed, group.ModelName, group.PromptVersion,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to save VLM ranking row: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetVLMRankingsForFolder loads all ranking groups for a folder including their individual rankings.
+func (s *SQLiteStore) GetVLMRankingsForFolder(folderPath string) ([]VLMRankingGroupRow, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groupRows, err := s.db.Query(
+		`SELECT folder_path, group_label, photo_count, explanation, model_name, prompt_version
+		 FROM vlm_ranking_groups WHERE folder_path = ?`, folderPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VLM ranking groups: %w", err)
+	}
+	defer func() { _ = groupRows.Close() }()
+
+	var groups []VLMRankingGroupRow
+	for groupRows.Next() {
+		var g VLMRankingGroupRow
+		if err := groupRows.Scan(&g.FolderPath, &g.GroupLabel, &g.PhotoCount, &g.Explanation, &g.ModelName, &g.PromptVersion); err != nil {
+			return nil, fmt.Errorf("failed to scan VLM ranking group: %w", err)
+		}
+		groups = append(groups, g)
+	}
+	if err := groupRows.Err(); err != nil {
+		return nil, fmt.Errorf("VLM ranking groups iteration error: %w", err)
+	}
+
+	for i, g := range groups {
+		rankRows, err := s.db.Query(
+			`SELECT photo_path, rank, relative_score, notes, tokens_used
+			 FROM vlm_rankings WHERE folder_path = ? AND group_label = ? ORDER BY rank ASC`,
+			g.FolderPath, g.GroupLabel,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get VLM rankings for group %s: %w", g.GroupLabel, err)
+		}
+		var rankings []VLMRankingRow
+		for rankRows.Next() {
+			var r VLMRankingRow
+			if err := rankRows.Scan(&r.PhotoPath, &r.Rank, &r.RelativeScore, &r.Notes, &r.TokensUsed); err != nil {
+				_ = rankRows.Close()
+				return nil, fmt.Errorf("failed to scan VLM ranking row: %w", err)
+			}
+			rankings = append(rankings, r)
+		}
+		_ = rankRows.Close()
+		groups[i].Rankings = rankings
+	}
+
+	return groups, nil
+}
+
+// RecordTokenUsage inserts a token usage record.
+func (s *SQLiteStore) RecordTokenUsage(usage TokenUsageRow) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(
+		`INSERT INTO vlm_token_usage (provider, folder_path, stage, tokens_input, tokens_output, photo_count)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		usage.Provider, usage.FolderPath, usage.Stage,
+		usage.TokensInput, usage.TokensOutput, usage.PhotoCount,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to record token usage: %w", err)
+	}
+	return nil
+}
+
+// GetTokenUsageSummary returns aggregated token usage grouped by provider.
+func (s *SQLiteStore) GetTokenUsageSummary() ([]TokenUsageSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(
+		`SELECT provider, SUM(tokens_input), SUM(tokens_output), SUM(photo_count), COUNT(*)
+		 FROM vlm_token_usage GROUP BY provider`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token usage summary: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var summaries []TokenUsageSummary
+	for rows.Next() {
+		var s TokenUsageSummary
+		if err := rows.Scan(&s.Provider, &s.TotalInput, &s.TotalOutput, &s.TotalPhotos, &s.SessionCount); err != nil {
+			return nil, fmt.Errorf("failed to scan token usage summary: %w", err)
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, nil
 }

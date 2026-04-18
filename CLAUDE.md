@@ -40,15 +40,16 @@ internal/
   heic/              — HEIC/HEIF: sips (macOS) + FFmpeg fallback, platform build tags
   dedupe/            — dHash perceptual hashing, multi-factor quality scoring + AI score blending (60/40)
   export/            — File copy with video trim
-  storage/           — SQLite (modernc.org/sqlite, pure Go) — config KV, selections, ratings, cloud data
+  storage/           — SQLite (modernc.org/sqlite, pure Go) — config KV, selections, ratings, cloud data, VLM tables (vlm_scores, vlm_rankings, vlm_ranking_groups, vlm_token_usage)
   video/             — FFmpeg provisioning, trim, thumbnails
   updater/           — Auto-update: state machine, GitHub releases, ECDSA+SHA256 verification
   logger/            — Logging
   model/             — Shared types
-  scoring/           — AI scoring: plugin architecture, ONNX Runtime (purego), face detection (SCRFD), face recognition (ArcFace), aesthetic quality (NIMA), sharpness (Laplacian), pipeline orchestrator, agglomerative clustering
+  scoring/           — AI scoring: plugin architecture, ONNX Runtime (purego), face detection (SCRFD), face recognition (ArcFace), sharpness (Laplacian), pipeline orchestrator, agglomerative clustering
+  vlm/               — VLM integration: Gemma 4 via llama.cpp/MLX subprocess, manager state machine, hardware probe, prompt engine, JSON parser, model registry, provisioner
 frontend/src/
   App.tsx            — Main app shell
-  components/        — Grid, Viewer, Sidebar, SettingsModal, AboutModal, CloudSourceModal, DeviceImportModal, AIProgressModal, AIPanel, etc.
+  components/        — Grid, Viewer, Sidebar, SettingsModal, AboutModal, CloudSourceModal, DeviceImportModal, AIProgressModal, AIPanel, AIOnboardingModal, BottomBar, etc.
   main.tsx           — React entry point
 frontend/wailsjs/    — Generated Wails TS bindings (MUST be committed — CI runs tsc before wails build)
 ```
@@ -61,17 +62,22 @@ frontend/wailsjs/    — Generated Wails TS bindings (MUST be committed — CI r
 - **HEIC conversion** uses `singleflight` to dedup concurrent requests
 - **Dedup hashes/quality scores** computed from 300px cached thumbnails (not originals) for USB drive perf
 - **Platform build tags** on device/ and heic/ packages for cross-platform compilation
+- **No CGO**: All inference (ONNX, future VLM) uses purego or external subprocesses. Keeps cross-compilation clean and CI simple
+- **External binary pattern**: FFmpeg and ONNX Runtime are provisioned at runtime to `~/.cullsnap/`. New runtimes (llama-server, MLX) follow this same pattern
 
 ## AI Scoring
 
 - **Plugin architecture**: `ScoringPlugin` interface, `Registry` for registration, `Pipeline` for orchestration
-- **Models**: SCRFD-2.5GF (face detection, ~3MB), ArcFace-MobileFaceNet (face recognition, ~14MB), NIMA (aesthetic quality — requires manual ONNX export, see README)
+- **ONNX Models**: SCRFD-2.5GF (face detection, ~3MB), ArcFace-MobileFaceNet (face recognition, ~14MB)
+- **VLM Models**: Gemma 4 E4B (~2.8GB) / E2B (~1.5GB) — downloaded at runtime, managed by `internal/vlm/`
 - **Runtime**: ONNX Runtime via `github.com/shota3506/onnxruntime-purego` — no CGO, downloads `.dylib`/`.so` at runtime
 - **Worker pool**: `NumCPU/2` goroutines, bounded 1-8, shared ONNX sessions with per-model mutex
-- **Score weights**: User-configurable (aesthetic/sharpness/face/eyes), persisted to config KV, auto-normalized
+- **Score weights**: User-configurable (aesthetic/sharpness/face/eyes/composition), persisted to config KV, auto-normalized
+- **VLM pipeline**: Stage 4 (individual scoring) + Stage 5 (pairwise ranking) run after ONNX stages. Adaptive threshold sends only top-N photos to VLM
+- **VLM runtime**: Manager state machine (8 states), dual backends (llama.cpp + MLX), idle timeout, crash recovery with exponential backoff
 - **Face clustering**: Agglomerative with cosine similarity, threshold 0.45, capped at 2000 faces
 - **Platform**: macOS + Linux (ONNX via purego). Windows stubbed (Available()=false)
-- **Models stored**: `~/.cullsnap/models/`, ONNX Runtime lib in `~/.cullsnap/lib/`
+- **Models stored**: `~/.cullsnap/models/` (ONNX + GGUF), ONNX Runtime lib in `~/.cullsnap/lib/`, llama-server in `~/.cullsnap/bin/`
 
 ## Gotchas
 
@@ -81,6 +87,10 @@ frontend/wailsjs/    — Generated Wails TS bindings (MUST be committed — CI r
 - **Commit hook**: `commit-msg` hook blocks AI attribution (Co-Authored-By AI lines). Enforced
 - **Wails TS bindings** (`frontend/wailsjs/`) must be committed — CI needs them for `tsc`
 - **SanitizeID** must reject "." and ".." to prevent path traversal via public Wails endpoints
+- **VLM JSON parsing**: Non-greedy regex `\{.*?\}` breaks on nested objects — use brace-depth counting (`extractFirstJSONObject`)
+- **SQLiteStore mutex**: Every write method MUST acquire `s.mu.Lock()` — missing mutex on `AssignFaceToCluster` was a review finding
+- **VLM pipeline slice passing**: Pass full `toScore` slice to VLM stages, not `toScore[:scored]` — `scored` is an atomic counter, not an index
+- **App.Shutdown()**: Must close `vlmEvents` channel in shutdown to prevent goroutine leak from `forwardVLMEvents`
 
 ## CI (GitHub Actions)
 

@@ -7,7 +7,9 @@ import (
 	"cullsnap/internal/scanner"
 	"cullsnap/internal/scoring"
 	"cullsnap/internal/storage"
+	"cullsnap/internal/vlm"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -16,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	stdruntime "runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -234,18 +237,20 @@ func (a *App) GetAIWeights() AIWeightsConfig {
 	if a.pipeline == nil {
 		dw := scoring.DefaultWeights()
 		return AIWeightsConfig{
-			Aesthetic: dw.Aesthetic,
-			Sharpness: dw.Sharpness,
-			Face:      dw.Face,
-			Eyes:      dw.Eyes,
+			Aesthetic:   dw.Aesthetic,
+			Sharpness:   dw.Sharpness,
+			Face:        dw.Face,
+			Eyes:        dw.Eyes,
+			Composition: dw.Composition,
 		}
 	}
 	w := a.pipeline.Weights()
 	return AIWeightsConfig{
-		Aesthetic: w.Aesthetic,
-		Sharpness: w.Sharpness,
-		Face:      w.Face,
-		Eyes:      w.Eyes,
+		Aesthetic:   w.Aesthetic,
+		Sharpness:   w.Sharpness,
+		Face:        w.Face,
+		Eyes:        w.Eyes,
+		Composition: w.Composition,
 	}
 }
 
@@ -256,12 +261,14 @@ func (a *App) SetAIWeights(weights AIWeightsConfig) error {
 		"sharpness", weights.Sharpness,
 		"face", weights.Face,
 		"eyes", weights.Eyes,
+		"composition", weights.Composition,
 	)
 	sw := scoring.ScoreWeights{
-		Aesthetic: weights.Aesthetic,
-		Sharpness: weights.Sharpness,
-		Face:      weights.Face,
-		Eyes:      weights.Eyes,
+		Aesthetic:   weights.Aesthetic,
+		Sharpness:   weights.Sharpness,
+		Face:        weights.Face,
+		Eyes:        weights.Eyes,
+		Composition: weights.Composition,
 	}.Normalize()
 
 	if a.pipeline != nil {
@@ -273,6 +280,7 @@ func (a *App) SetAIWeights(weights AIWeightsConfig) error {
 	_ = a.store.SetConfig("ai_weight_sharpness", strconv.FormatFloat(sw.Sharpness, 'f', 4, 64))
 	_ = a.store.SetConfig("ai_weight_face", strconv.FormatFloat(sw.Face, 'f', 4, 64))
 	_ = a.store.SetConfig("ai_weight_eyes", strconv.FormatFloat(sw.Eyes, 'f', 4, 64))
+	_ = a.store.SetConfig("ai_weight_composition", strconv.FormatFloat(sw.Composition, 'f', 4, 64))
 	return nil
 }
 
@@ -294,6 +302,11 @@ func (a *App) loadAIWeights() {
 	if v, _ := a.store.GetConfig("ai_weight_eyes"); v != "" {
 		w.Eyes, _ = strconv.ParseFloat(v, 64)
 	}
+	if compStr, _ := a.store.GetConfig("ai_weight_composition"); compStr != "" {
+		if v, err := strconv.ParseFloat(compStr, 64); err == nil {
+			w.Composition = v
+		}
+	}
 	w = w.Normalize()
 	a.pipeline.SetWeights(w)
 	logger.Log.Debug("app: loaded AI weights",
@@ -301,6 +314,7 @@ func (a *App) loadAIWeights() {
 		"sharpness", w.Sharpness,
 		"face", w.Face,
 		"eyes", w.Eyes,
+		"composition", w.Composition,
 	)
 }
 
@@ -413,6 +427,24 @@ func (a *App) runAIAnalysisPipeline(ctx context.Context, folderPath string) {
 	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "clustering", Total: 0})
 	clusterCount := a.runFaceClustering(folderPath)
 	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "clustering", Total: clusterCount})
+
+	// VLM Stages — probe hardware once and reuse.
+	if a.vlmManager != nil {
+		hwProfile := a.vlmHWProfile
+		plan := vlm.BuildExecutionPlan(int(scored), hwProfile.Tier)
+
+		// Step 5: VLM Stage 4 — Individual photo scoring.
+		// Pass the full toScore slice — runVLMStage4 re-queries ONNX scores from DB
+		// to apply the adaptive threshold, so it handles partial scoring correctly.
+		if plan.VLMEnabled {
+			a.runVLMStage4(ctx, folderPath, toScore, plan)
+		}
+
+		// Step 6: VLM Stage 5 — Pairwise ranking.
+		if plan.Stage5Count > 0 {
+			a.runVLMStage5(ctx, folderPath, plan)
+		}
+	}
 
 	elapsed := time.Since(start).Milliseconds()
 	wailsRuntime.EventsEmit(a.ctx, "ai:complete", AICompleteEvent{
@@ -567,6 +599,393 @@ func (a *App) readPhotoForScoring(photoPath string) (*os.File, error) {
 	return f, nil
 }
 
+// forwardVLMEvents relays VLM manager events to the frontend via Wails events.
+func (a *App) forwardVLMEvents() {
+	for evt := range a.vlmEvents {
+		wailsRuntime.EventsEmit(a.ctx, "vlm:state-change", evt)
+	}
+}
+
+// runVLMStage4 scores individual photos via the VLM, selecting top-N by ONNX score.
+func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []model.Photo, plan vlm.ExecutionPlan) {
+	// Adaptive threshold: only send top N photos to VLM based on ONNX scores.
+	vlmPhotos := photos
+	if plan.Stage4Count > 0 && plan.Stage4Count < len(photos) {
+		type scoredPhoto struct {
+			photo model.Photo
+			score float64
+		}
+		sp := make([]scoredPhoto, 0, len(photos))
+		for _, p := range photos {
+			aiScore, _ := a.store.GetAIScore(p.Path)
+			var s float64
+			if aiScore != nil {
+				s = aiScore.OverallScore
+			}
+			sp = append(sp, scoredPhoto{photo: p, score: s})
+		}
+		sort.Slice(sp, func(i, j int) bool { return sp[i].score > sp[j].score })
+		vlmPhotos = make([]model.Photo, plan.Stage4Count)
+		for i := 0; i < plan.Stage4Count; i++ {
+			vlmPhotos[i] = sp[i].photo
+		}
+		logger.Log.Info("app: VLM adaptive threshold applied", "original", len(photos), "selected", len(vlmPhotos))
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "describe", Total: len(vlmPhotos)})
+	logger.Log.Info("app: VLM Stage 4 starting", "photos", len(vlmPhotos))
+
+	modelInfo := a.vlmManager.ProviderModelInfo()
+	stage4Start := time.Now()
+	var totalTokens int
+	var scoredCount int
+
+	for i, photo := range vlmPhotos {
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Get ONNX scores for context injection.
+		aiScore, _ := a.store.GetAIScore(photo.Path)
+		var faceCount int
+		var sharpness float64
+		if aiScore != nil {
+			faceCount = aiScore.FaceCount
+			sharpness = aiScore.SharpnessScore
+		}
+
+		req := vlm.ScoreRequest{
+			PhotoPath:   photo.Path,
+			FaceCount:   faceCount,
+			Sharpness:   sharpness,
+			TokenBudget: 280,
+		}
+
+		score, err := a.vlmManager.ScorePhoto(ctx, req)
+		if err != nil {
+			logger.Log.Warn("app: VLM score failed for photo", "path", photo.Path, "error", err)
+			continue
+		}
+
+		totalTokens += score.TokensUsed
+		scoredCount++
+
+		// Save to DB.
+		a.store.SaveVLMScore(storage.VLMScoreRow{ //nolint:errcheck // best-effort persistence
+			PhotoPath:     photo.Path,
+			FolderPath:    folderPath,
+			Aesthetic:     score.Aesthetic,
+			Composition:   score.Composition,
+			Expression:    score.Expression,
+			TechnicalQual: score.TechnicalQual,
+			SceneType:     score.SceneType,
+			Issues:        mustMarshalJSON(score.Issues),
+			Explanation:   score.Explanation,
+			TokensUsed:    score.TokensUsed,
+			ModelName:     modelInfo.Name,
+			ModelVariant:  modelInfo.Variant,
+			Backend:       modelInfo.Backend,
+			PromptVersion: vlm.PromptVersion,
+		})
+
+		// Emit per-photo result.
+		wailsRuntime.EventsEmit(a.ctx, "ai:photo-described", VLMPhotoResult{
+			PhotoPath:   photo.Path,
+			Aesthetic:   score.Aesthetic,
+			Composition: score.Composition,
+			SceneType:   score.SceneType,
+			Explanation: score.Explanation,
+		})
+		wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
+			Step: "describe", Current: i + 1, Total: len(vlmPhotos), PhotoPath: photo.Path,
+		})
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "describe", Total: len(vlmPhotos)})
+	stage4Elapsed := time.Since(stage4Start)
+	logger.Log.Info("app: VLM Stage 4 complete", "photos", len(vlmPhotos), "elapsed", stage4Elapsed)
+
+	// Persist calibration data for future time estimates.
+	if len(vlmPhotos) > 0 {
+		msPerPhoto := int(stage4Elapsed.Milliseconds()) / len(vlmPhotos)
+		key := vlm.CalibrationKey(plan.HardwareTier, modelInfo.Backend, modelInfo.Name)
+		_ = a.store.SetConfig(key, strconv.Itoa(msPerPhoto))
+	}
+
+	// Record token usage.
+	if scoredCount > 0 {
+		_ = a.store.RecordTokenUsage(storage.TokenUsageRow{
+			Provider:     modelInfo.Backend + "/" + modelInfo.Name,
+			FolderPath:   folderPath,
+			Stage:        "stage4",
+			TokensOutput: totalTokens,
+			PhotoCount:   scoredCount,
+		})
+	}
+}
+
+// runVLMStage5 ranks photos within face clusters using the VLM.
+func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.ExecutionPlan) {
+	clusters, err := a.store.GetFaceClusters(folderPath)
+	if err != nil || len(clusters) == 0 {
+		logger.Log.Debug("app: VLM Stage 5 skipped — no clusters")
+		return
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "rank", Total: len(clusters)})
+	logger.Log.Info("app: VLM Stage 5 starting", "groups", len(clusters))
+
+	var stage5Tokens, stage5Groups int
+
+	for i, cluster := range clusters {
+		if ctx.Err() != nil {
+			return
+		}
+		if cluster.PhotoCount < 2 || cluster.PhotoCount > 5 {
+			continue // Only rank groups of 2-5 photos.
+		}
+
+		detections, _ := a.store.GetFaceDetectionsForCluster(cluster.ID)
+		if len(detections) < 2 {
+			continue
+		}
+
+		// Collect unique photo paths from detections (a photo can have multiple faces).
+		seen := make(map[string]bool)
+		paths := make([]string, 0, 5)
+		photoScores := make([]vlm.PhotoContext, 0, 5)
+		for _, d := range detections {
+			if seen[d.PhotoPath] || len(paths) >= 5 {
+				continue
+			}
+			seen[d.PhotoPath] = true
+			vlmScore, _ := a.store.GetVLMScore(d.PhotoPath)
+			pc := vlm.PhotoContext{}
+			if vlmScore != nil {
+				pc.Aesthetic = vlmScore.Aesthetic
+				pc.Sharpness = vlmScore.TechnicalQual
+			}
+			paths = append(paths, d.PhotoPath)
+			photoScores = append(photoScores, pc)
+		}
+
+		if len(paths) < 2 {
+			continue
+		}
+
+		req := vlm.RankRequest{
+			PhotoPaths:  paths,
+			TokenBudget: 280,
+			PhotoScores: photoScores,
+		}
+
+		result, err := a.vlmManager.RankPhotos(ctx, req)
+		if err != nil {
+			logger.Log.Warn("app: VLM ranking failed", "cluster", cluster.Label, "error", err)
+			continue
+		}
+
+		stage5Tokens += result.TokensUsed
+		stage5Groups++
+
+		// Save ranking.
+		modelInfo := a.vlmManager.ProviderModelInfo()
+		rankings := make([]storage.VLMRankingRow, len(result.Ranked))
+		for j, r := range result.Ranked {
+			rankings[j] = storage.VLMRankingRow{
+				PhotoPath:     r.PhotoPath,
+				Rank:          r.Rank,
+				RelativeScore: r.Score,
+				Notes:         r.Notes,
+			}
+		}
+		_ = a.store.SaveVLMRanking(storage.VLMRankingGroupRow{ //nolint:errcheck // best-effort persistence
+			FolderPath:    folderPath,
+			GroupLabel:    cluster.Label,
+			PhotoCount:    len(rankings),
+			Explanation:   result.Explanation,
+			ModelName:     modelInfo.Name,
+			PromptVersion: vlm.PromptVersion,
+			Rankings:      rankings,
+		})
+
+		wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
+			Step: "rank", Current: i + 1, Total: len(clusters),
+		})
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "rank", Total: len(clusters)})
+	logger.Log.Info("app: VLM Stage 5 complete", "groups", stage5Groups, "tokens", stage5Tokens)
+
+	// Record token usage.
+	if stage5Groups > 0 {
+		modelInfo := a.vlmManager.ProviderModelInfo()
+		_ = a.store.RecordTokenUsage(storage.TokenUsageRow{
+			Provider:     modelInfo.Backend + "/" + modelInfo.Name,
+			FolderPath:   folderPath,
+			Stage:        "stage5",
+			TokensOutput: stage5Tokens,
+			PhotoCount:   stage5Groups,
+		})
+	}
+}
+
+// GetVLMStatus returns the current VLM engine status.
+func (a *App) GetVLMStatus() VLMStatus {
+	if a.vlmManager == nil {
+		return VLMStatus{State: "unavailable"}
+	}
+	s := a.vlmManager.Status()
+	prof := a.vlmHWProfile
+	return vlmStatusFromManager(s, prof.Tier)
+}
+
+// StartVLMEngine starts the VLM inference engine.
+func (a *App) StartVLMEngine() error {
+	if a.vlmManager == nil {
+		return fmt.Errorf("VLM not initialized")
+	}
+	return a.vlmManager.EnsureRunning(a.ctx)
+}
+
+// StopVLMEngine stops the VLM inference engine.
+func (a *App) StopVLMEngine() error {
+	if a.vlmManager == nil {
+		return nil
+	}
+	return a.vlmManager.Stop(a.ctx)
+}
+
+// GetVLMScoresForPhoto returns VLM scores for a specific photo.
+func (a *App) GetVLMScoresForPhoto(photoPath string) (*storage.VLMScoreRow, error) {
+	return a.store.GetVLMScore(photoPath)
+}
+
+// GetVLMRankingsForFolder returns all VLM ranking groups for a folder.
+func (a *App) GetVLMRankingsForFolder(folderPath string) ([]storage.VLMRankingGroupRow, error) {
+	return a.store.GetVLMRankingsForFolder(folderPath)
+}
+
+// DownloadVLMModel provisions the VLM runtime and downloads a model.
+func (a *App) DownloadVLMModel(modelName string) error {
+	logger.Log.Info("app: downloading VLM model", "model", modelName)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+
+	hwProfile := a.vlmHWProfile
+	backend := vlm.RecommendBackend(hwProfile)
+
+	entry, ok := vlm.LookupModel(modelName, backend)
+	if !ok {
+		// Try the other backend.
+		if backend == "mlx" {
+			backend = "llamacpp"
+		} else {
+			backend = "mlx"
+		}
+		entry, ok = vlm.LookupModel(modelName, backend)
+		if !ok {
+			return fmt.Errorf("model %q not found in registry", modelName)
+		}
+	}
+
+	if err := vlm.CheckDiskSpace(cullsnapDir, entry.SizeBytes); err != nil {
+		return err
+	}
+
+	destPath := vlm.ModelDownloadPath(cullsnapDir, entry.Filename)
+	wailsRuntime.EventsEmit(a.ctx, "vlm:download-progress", map[string]interface{}{
+		"stage": "model", "model": modelName, "total": entry.SizeBytes,
+	})
+
+	_, dlErr := vlm.DownloadFileResumable(a.ctx, entry.URL, destPath, entry.SHA256,
+		func(downloaded, total int64) {
+			wailsRuntime.EventsEmit(a.ctx, "vlm:download-progress", map[string]interface{}{
+				"stage": "model", "downloaded": downloaded, "total": total,
+			})
+		})
+	if dlErr != nil {
+		return fmt.Errorf("download model: %w", dlErr)
+	}
+
+	// Provision runtime (llama-server binary) if needed.
+	if backend == "llamacpp" {
+		if err := a.provisionLlamaServer(cullsnapDir); err != nil {
+			return fmt.Errorf("provision llama-server: %w", err)
+		}
+	}
+
+	// Configure the manager with the downloaded model.
+	cfg := a.vlmManager.Config()
+	cfg.ModelName = modelName
+	cfg.PreferredBackend = backend
+	a.vlmManager.UpdateConfig(cfg)
+
+	// Set up the provider backend.
+	var provider vlm.VLMProvider
+	if backend == "llamacpp" {
+		binaryPath := vlm.LlamaServerBinaryPath(cullsnapDir)
+		provider = vlm.NewLlamaCppBackend(binaryPath, destPath, entry)
+	} else {
+		venvPath := vlm.MLXVenvPath(cullsnapDir)
+		modelPath := vlm.MLXModelPath(cullsnapDir, entry.Filename)
+		provider = vlm.NewMLXBackend(venvPath, modelPath, entry)
+	}
+	a.vlmManager.SetProvider(provider)
+
+	// Persist setup state.
+	_ = a.store.SetConfig(vlm.ConfigKeyModelName, modelName)
+	_ = a.store.SetConfig(vlm.ConfigKeyModelVariant, entry.Variant)
+	_ = a.store.SetConfig(vlm.ConfigKeyBackend, backend)
+	_ = a.store.SetConfig(vlm.ConfigKeySetupComplete, "true")
+
+	logger.Log.Info("app: VLM model downloaded and configured",
+		"model", modelName, "backend", backend, "variant", entry.Variant)
+	return nil
+}
+
+// provisionLlamaServer downloads the llama-server binary if not already present.
+func (a *App) provisionLlamaServer(cullsnapDir string) error {
+	binaryPath := vlm.LlamaServerBinaryPath(cullsnapDir)
+	if _, err := os.Stat(binaryPath); err == nil {
+		logger.Log.Debug("app: llama-server already provisioned", "path", binaryPath)
+		return nil
+	}
+
+	wailsRuntime.EventsEmit(a.ctx, "vlm:download-progress", map[string]interface{}{
+		"stage": "runtime", "runtime": "llama-server",
+	})
+
+	url := vlm.LlamaServerDownloadURL()
+	if url == "" {
+		return fmt.Errorf("no llama-server download URL for %s/%s", stdruntime.GOOS, stdruntime.GOARCH)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		return err
+	}
+
+	_, err := vlm.DownloadFileResumable(a.ctx, url, binaryPath, "", nil)
+	if err != nil {
+		return err
+	}
+
+	return os.Chmod(binaryPath, 0o755)
+}
+
+// mustMarshalJSON marshals v to JSON, returning "[]" on error.
+func mustMarshalJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // runFaceClustering loads embeddings from DB, clusters them, and saves results.
 // Returns the number of clusters created.
 func (a *App) runFaceClustering(folderPath string) int {
@@ -696,4 +1115,170 @@ func bytesToFloat32Slice(b []byte) []float32 {
 		fs[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
 	}
 	return fs
+}
+
+// GetVLMDetailedStatus returns VLM engine status with runtime stats.
+func (a *App) GetVLMDetailedStatus() VLMDetailedStatus {
+	if a.vlmManager == nil {
+		return VLMDetailedStatus{VLMStatus: VLMStatus{State: "unavailable"}}
+	}
+	s := a.vlmManager.Status()
+	prof := a.vlmHWProfile
+	return VLMDetailedStatus{
+		VLMStatus:    vlmStatusFromManager(s, prof.Tier),
+		RestartCount: s.RestartCount,
+		InferCount:   s.InferCount,
+		RAMUsageMB:   s.RAMUsageMB,
+	}
+}
+
+// GetAIStorageInfo returns disk usage for AI models, runtime, and scores DB.
+func (a *App) GetAIStorageInfo() AIStorageInfo {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return AIStorageInfo{}
+	}
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+
+	modelName, _ := a.store.GetConfig(vlm.ConfigKeyModelName)
+	backend, _ := a.store.GetConfig(vlm.ConfigKeyBackend)
+
+	var modelSize, runtimeSize int64
+	var runtimeName string
+
+	// Scan models directory for total model size.
+	modelsDir := filepath.Join(cullsnapDir, "models")
+	if entries, dirErr := os.ReadDir(modelsDir); dirErr == nil {
+		for _, e := range entries {
+			if info, infoErr := e.Info(); infoErr == nil {
+				modelSize += info.Size()
+			}
+		}
+	}
+
+	// Runtime size: llama-server binary or MLX venv.
+	if backend == "mlx" {
+		runtimeName = "MLX venv"
+		runtimeSize = dirSizeBytes(vlm.MLXVenvPath(cullsnapDir))
+	} else {
+		runtimeName = "llama-server"
+		binaryPath := vlm.LlamaServerBinaryPath(cullsnapDir)
+		if info, statErr := os.Stat(binaryPath); statErr == nil {
+			runtimeSize = info.Size()
+		}
+	}
+
+	// DB size.
+	dbPath := filepath.Join(cullsnapDir, "cullsnap.db")
+	var dbSize int64
+	if info, statErr := os.Stat(dbPath); statErr == nil {
+		dbSize = info.Size()
+	}
+
+	return AIStorageInfo{
+		ModelSizeMB:    modelSize / (1024 * 1024),
+		RuntimeSizeMB:  runtimeSize / (1024 * 1024),
+		ScoresDBSizeMB: dbSize / (1024 * 1024),
+		TotalMB:        (modelSize + runtimeSize + dbSize) / (1024 * 1024),
+		ModelName:      modelName,
+		RuntimeName:    runtimeName,
+	}
+}
+
+// dirSizeBytes returns the total size of all files in a directory tree.
+func dirSizeBytes(path string) int64 {
+	var total int64
+	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
+}
+
+// ClearVLMData deletes VLM scores and rankings for a specific folder.
+func (a *App) ClearVLMData(folderPath string) error {
+	logger.Log.Info("app: clearing VLM data", "folder", folderPath)
+	return a.store.DeleteVLMDataForFolder(folderPath)
+}
+
+// ClearAllVLMData deletes all VLM scores, rankings, and token usage data.
+func (a *App) ClearAllVLMData() error {
+	logger.Log.Info("app: clearing all VLM data")
+	return a.store.ClearAllVLMData()
+}
+
+// DeleteVLMModel stops the engine, removes model files and runtime, and resets config.
+func (a *App) DeleteVLMModel() error {
+	logger.Log.Info("app: deleting VLM model and runtime")
+
+	// Stop the engine first.
+	if a.vlmManager != nil {
+		_ = a.vlmManager.Stop(a.ctx)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	cullsnapDir := filepath.Join(home, ".cullsnap")
+	backend, _ := a.store.GetConfig(vlm.ConfigKeyBackend)
+
+	// Remove model files.
+	modelsDir := filepath.Join(cullsnapDir, "models")
+	if entries, dirErr := os.ReadDir(modelsDir); dirErr == nil {
+		for _, e := range entries {
+			// Only remove VLM models (GGUF/MLX), preserve ONNX models.
+			name := e.Name()
+			if filepath.Ext(name) == ".gguf" {
+				_ = os.Remove(filepath.Join(modelsDir, name))
+				logger.Log.Debug("app: removed model file", "name", name)
+			}
+		}
+	}
+
+	// Remove runtime.
+	if backend == "mlx" {
+		venvPath := vlm.MLXVenvPath(cullsnapDir)
+		_ = os.RemoveAll(venvPath)
+		logger.Log.Debug("app: removed MLX venv", "path", venvPath)
+	} else {
+		binaryPath := vlm.LlamaServerBinaryPath(cullsnapDir)
+		_ = os.Remove(binaryPath)
+		logger.Log.Debug("app: removed llama-server", "path", binaryPath)
+	}
+
+	// Remove MLX model directory if present.
+	mlxModelsDir := filepath.Join(cullsnapDir, "mlx-models")
+	_ = os.RemoveAll(mlxModelsDir)
+
+	// Clear config.
+	_ = a.store.SetConfig(vlm.ConfigKeyModelName, "")
+	_ = a.store.SetConfig(vlm.ConfigKeyModelVariant, "")
+	_ = a.store.SetConfig(vlm.ConfigKeyBackend, "")
+	_ = a.store.SetConfig(vlm.ConfigKeySetupComplete, "false")
+
+	logger.Log.Info("app: VLM model and runtime deleted")
+	return nil
+}
+
+// GetStaleVLMStatus checks if any folders have outdated VLM scores.
+func (a *App) GetStaleVLMStatus() VLMStaleStatus {
+	folders, err := a.store.GetStaleVLMFolders(vlm.PromptVersion)
+	if err != nil {
+		logger.Log.Warn("app: failed to check stale VLM folders", "error", err)
+		return VLMStaleStatus{CurrentPrompt: vlm.PromptVersion}
+	}
+	return VLMStaleStatus{
+		Stale:         len(folders) > 0,
+		StaleFolders:  folders,
+		CurrentPrompt: vlm.PromptVersion,
+	}
+}
+
+// GetTokenUsageSummary returns aggregated VLM token usage statistics.
+func (a *App) GetTokenUsageSummary() ([]storage.TokenUsageSummary, error) {
+	return a.store.GetTokenUsageSummary()
 }

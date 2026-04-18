@@ -138,6 +138,9 @@ type CompositeScore struct {
 	// EyeOpenness is the openness score for the best face's eyes (0.0–1.0).
 	EyeOpenness float64
 
+	// VLMComposition is the VLM-derived composition quality score (0.0–1.0).
+	VLMComposition float64
+
 	// BestFaceIdx is the index into Faces of the highest-quality face.
 	BestFaceIdx int
 

@@ -10,10 +10,12 @@ import { DeviceImportModal } from './components/DeviceImportModal';
 import { UpdateToast } from './components/UpdateToast';
 import { WhatsNewModal } from './components/WhatsNewModal';
 import { AIProgressModal } from './components/AIProgressModal';
+import { AIOnboardingModal } from './components/AIOnboardingModal';
 import { SelectDirectory, ScanDirectory, ScanAndDeduplicate, CancelDeduplicate, GetExportedStatus, GetSelections, ToggleSelection, ExportPhotos, SetPhotoRating, GetRatingsForDirectory, CheckDedupStatus, PreloadThumbnailsForPhotos, GetAppConfig, ShouldShowWhatsNew, GetAIScoringStatus, GetPhotoAIScore, RunAIAnalysis, ClearAIData } from '../wailsjs/go/app/App';
 import { model as appModel, app as appTypes, storage } from '../wailsjs/go/models';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import AIPanel from './components/AIPanel';
+import { BottomBar } from './components/BottomBar';
 
 interface SystemMetrics {
     cpu: number;
@@ -56,6 +58,9 @@ function App() {
     const [aiFaceFilter, setAiFaceFilter] = useState<number[]>([]);
     const [showAIModal, setShowAIModal] = useState(false);
     const [activePhotoDetections, setActivePhotoDetections] = useState<storage.FaceDetection[]>([]);
+    const [vlmStatus, setVlmStatus] = useState<{ state: string; modelName: string; backend: string } | null>(null);
+    const [vlmExplanations, setVlmExplanations] = useState<Record<string, { photoPath: string; aesthetic: number; composition: number; sceneType: string; explanation: string }>>({});
+    const [showAIOnboarding, setShowAIOnboarding] = useState(false);
     const [dedupCompleted, setDedupCompleted] = useState(false);
     const [thumbProgress, setThumbProgress] = useState<{current: number, total: number, heicCount?: number, heicDecoder?: string} | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -182,10 +187,20 @@ function App() {
             setIsAnalyzing(false);
             setAiProgress(null);
         };
+        const vlmUnsub = EventsOn("vlm:state-change", (evt: any) => {
+            console.log('[vlm] state-change:', evt?.state, evt?.modelName);
+            setVlmStatus({ state: evt.state, modelName: evt.modelName || '', backend: evt.backend || '' });
+        });
+        const descUnsub = EventsOn("ai:photo-described", (data: any) => {
+            console.log('[vlm] photo-described:', data?.photoPath);
+            setVlmExplanations(prev => ({ ...prev, [data.photoPath]: data }));
+        });
         EventsOn('ai:photo-scored', scoredHandler);
         EventsOn('ai:complete', completeHandler);
         EventsOn('ai:error', errorHandler);
         return () => {
+            vlmUnsub();
+            descUnsub();
             EventsOff('ai:photo-scored');
             EventsOff('ai:complete');
             EventsOff('ai:error');
@@ -553,6 +568,21 @@ function App() {
         }
     };
 
+    const handleReanalyze = () => {
+        if (!currentDir) return;
+        setIsAnalyzing(true);
+        setAiPanelVisible(true);
+        setShowAIModal(true);
+        setAiScores({});
+        setAiClusters([]);
+        ClearAIData(currentDir).then(() => {
+            return RunAIAnalysis(currentDir);
+        }).catch((err: unknown) => {
+            console.error('[ai] re-analysis failed:', err);
+            setIsAnalyzing(false);
+        });
+    };
+
     const handleDeduplicate = async () => {
         if (!currentDir) return;
         setIsDeduplicating(true);
@@ -730,20 +760,7 @@ function App() {
                 aiPanelVisible={aiPanelVisible}
                 onToggleAIPanel={() => setAiPanelVisible(prev => !prev)}
                 hasAIScores={Object.keys(aiScores).length > 0}
-                onReanalyze={() => {
-                    if (!currentDir) return;
-                    setIsAnalyzing(true);
-                    setAiPanelVisible(true);
-                    setShowAIModal(true);
-                    setAiScores({});
-                    setAiClusters([]);
-                    ClearAIData(currentDir).then(() => {
-                        return RunAIAnalysis(currentDir);
-                    }).catch((err: unknown) => {
-                        console.error('[ai] re-analysis failed:', err);
-                        setIsAnalyzing(false);
-                    });
-                }}
+                onReanalyze={handleReanalyze}
             />
 
             <div
@@ -800,32 +817,18 @@ function App() {
                 providerName={aiProviderName}
                 providerReady={aiProviderReady}
                 onOpenSettings={() => setSettingsOpen(true)}
+                onReanalyze={handleReanalyze}
             />
 
-            <div className="status-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                    {loading ? (
-                        <div className="progress-container"><div className="progress-bar-indeterminate"></div></div>
-                    ) : (
-                <span>{photos.length} photos • {selectedPaths.size} selected{thumbProgress ? ` • Loading thumbnails ${thumbProgress.current}/${thumbProgress.total}` : ''}{thumbProgress && thumbProgress.heicCount && thumbProgress.heicCount > 0 ? (
-                    <span style={{ color: thumbProgress.heicDecoder === 'sips' ? '#a78bfa' : '#d4a017', marginLeft: '6px' }}>
-                        {thumbProgress.heicDecoder === 'sips'
-                            ? `${thumbProgress.heicCount} HEIC via native decoder`
-                            : `${thumbProgress.heicCount} HEIC via FFmpeg (slower)`}
-                    </span>
-                ) : null}</span>
-                    )}
-                </div>
-
-                {sysMetrics && (
-                    <div className="sys-metrics flex items-center gap-3" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}>
-                        <span title="CPU Usage">CPU: {sysMetrics.cpu.toFixed(1)}%</span>
-                        <span title="Backend Engine Memory Usage">Engine RAM: {sysMetrics.ram.toFixed(0)} MB</span>
-                        <span title="Disk Read/Write">Disk: {(sysMetrics.diskRead || 0).toFixed(1)}/{(sysMetrics.diskWrite || 0).toFixed(1)} MB/s</span>
-                        <span title="Network Send/Recv">Net: {(sysMetrics.netSent || 0).toFixed(1)}/{(sysMetrics.netRecv || 0).toFixed(1)} KB/s</span>
-                    </div>
-                )}
-            </div>
+            <BottomBar
+                photoCount={photos.length}
+                selectedCount={selectedPaths.size}
+                loading={loading}
+                thumbProgress={thumbProgress}
+                sysMetrics={sysMetrics}
+                vlmStatus={vlmStatus}
+                onVLMClick={() => setAiPanelVisible(true)}
+            />
 
             {/* Export Success Toast overlay */}
             {exportSuccess && (
@@ -899,6 +902,8 @@ function App() {
                 onClose={() => setShowAIModal(false)}
                 onComplete={() => { refreshAIStatus(); }}
             />
+
+            <AIOnboardingModal visible={showAIOnboarding} onClose={() => setShowAIOnboarding(false)} />
 
             <UpdateToast />
         </div>

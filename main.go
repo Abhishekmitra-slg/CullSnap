@@ -423,7 +423,10 @@ func main() {
 			appCtx = ctx
 			application.Startup(ctx)
 		},
-		OnShutdown:       func(ctx context.Context) { serverCancel() },
+		OnShutdown: func(ctx context.Context) {
+			serverCancel()
+			application.Shutdown()
+		},
 		Bind: []interface{}{
 			application,
 		},

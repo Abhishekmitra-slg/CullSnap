@@ -32,6 +32,8 @@ const INITIAL_STEPS: Step[] = [
     { key: 'filter', label: 'Filtering candidates', status: 'pending' },
     { key: 'score', label: 'Scoring photos', status: 'pending' },
     { key: 'cluster', label: 'Clustering faces', status: 'pending' },
+    { key: 'describe', label: 'Describing photos (AI)', status: 'pending' as const },
+    { key: 'rank', label: 'Ranking photos (AI)', status: 'pending' as const },
 ];
 
 export function AIProgressModal({ visible, onClose, onComplete }: Props) {
@@ -41,6 +43,8 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
     const [summary, setSummary] = useState<CompleteSummary | null>(null);
     const [elapsed, setElapsed] = useState(0);
     const [eta, setEta] = useState<string | null>(null);
+    const [minimized, setMinimized] = useState(false);
+    const [latestResult, setLatestResult] = useState<{ photoPath: string; explanation: string; aesthetic: number } | null>(null);
     const startTimeRef = useRef<number>(0);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const scoreStartRef = useRef<{ time: number; count: number } | null>(null);
@@ -54,6 +58,8 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
         setSummary(null);
         setElapsed(0);
         setEta(null);
+        setMinimized(false);
+        setLatestResult(null);
         startTimeRef.current = Date.now();
         scoreStartRef.current = null;
 
@@ -123,6 +129,7 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
             if (!key) return;
             updateStep(key, { status: 'done', count: data?.count, detail: data?.detail });
             if (key === 'score') setEta(null);
+            if (key === 'describe') setLatestResult(null);
         };
 
         const errorHandler = (data: any) => {
@@ -155,11 +162,21 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
             setComplete(true);
         };
 
+        const photoDescribed = (data: any) => {
+            console.log('[ai-modal] photo-described:', data?.photoPath);
+            setLatestResult({
+                photoPath: data?.photoPath ?? '',
+                explanation: data?.explanation ?? '',
+                aesthetic: data?.aesthetic ?? 0,
+            });
+        };
+
         const unsub1 = EventsOn('ai:step-started', stepStarted);
         const unsub2 = EventsOn('ai:step-progress', stepProgress);
         const unsub3 = EventsOn('ai:step-completed', stepCompleted);
         const unsub4 = EventsOn('ai:error', errorHandler);
         const unsub5 = EventsOn('ai:complete', completeHandler);
+        const unsub6 = EventsOn('ai:photo-described', photoDescribed);
 
         return () => {
             unsub1();
@@ -167,6 +184,7 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
             unsub3();
             unsub4();
             unsub5();
+            unsub6();
         };
     }, [visible, updateStep]);
 
@@ -186,6 +204,66 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
     };
 
     if (!visible) return null;
+
+    if (minimized) {
+        const activeStep = steps.find(s => s.status === 'running');
+        const progressText = activeStep
+            ? activeStep.label + (activeStep.total && activeStep.total > 0
+                ? ` (${activeStep.count ?? 0}/${activeStep.total})`
+                : '')
+            : complete ? 'Analysis complete' : 'Waiting...';
+
+        return (
+            <div
+                onClick={() => !complete && setMinimized(false)}
+                style={{
+                    position: 'fixed', bottom: 16, right: 16,
+                    zIndex: 9999,
+                    background: complete ? '#1a2e1a' : '#1e1e2e',
+                    border: complete ? '1px solid rgba(74,222,128,0.4)' : '1px solid #444',
+                    borderRadius: 24,
+                    padding: '8px 16px',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                    cursor: complete ? 'default' : 'pointer',
+                    minWidth: 200,
+                    maxWidth: 320,
+                }}
+            >
+                {complete ? (
+                    <CheckCircle size={14} color="#4ade80" style={{ flexShrink: 0 }} />
+                ) : (
+                    <Loader size={14} color="#818cf8" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                )}
+                <span style={{ flex: 1, fontSize: '0.78rem', color: complete ? '#4ade80' : '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {progressText}
+                </span>
+                {!complete && eta && (
+                    <span style={{ fontSize: '0.7rem', color: '#666', flexShrink: 0 }}>{eta}</span>
+                )}
+                {complete ? (
+                    <button
+                        onClick={handleViewResults}
+                        style={{
+                            background: 'none', border: '1px solid rgba(74,222,128,0.4)',
+                            borderRadius: 10, padding: '2px 8px',
+                            color: '#4ade80', fontSize: '0.72rem', cursor: 'pointer', flexShrink: 0,
+                        }}
+                    >
+                        View
+                    </button>
+                ) : (
+                    <button
+                        onClick={e => { e.stopPropagation(); setMinimized(false); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 0, flexShrink: 0, fontSize: '0.78rem' }}
+                        title="Expand"
+                    >
+                        <X size={12} />
+                    </button>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div style={{
@@ -209,13 +287,24 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
                     <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#e0e0e0' }}>
                         AI Analysis
                     </h2>
-                    <button
-                        onClick={onClose}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 4 }}
-                        title="Close"
-                    >
-                        <X size={16} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {!complete && (
+                            <button
+                                onClick={() => setMinimized(true)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 4, fontSize: '1rem', lineHeight: 1 }}
+                                title="Minimize"
+                            >
+                                &minus;
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 4 }}
+                            title="Close"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
                 </div>
 
                 {complete && summary ? (
@@ -276,7 +365,30 @@ export function AIProgressModal({ visible, onClose, onComplete }: Props) {
                         {/* Steps */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
                             {steps.map(step => (
-                                <StepRow key={step.key} step={step} />
+                                <div key={step.key}>
+                                    <StepRow step={step} />
+                                    {step.key === 'describe' && step.status === 'running' && latestResult && (
+                                        <div style={{
+                                            marginLeft: 24, marginTop: 6,
+                                            background: '#14141f',
+                                            border: '1px solid #2a2a3e',
+                                            borderRadius: 6,
+                                            padding: '6px 10px',
+                                        }}>
+                                            <div style={{ fontSize: '0.68rem', color: '#666', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {latestResult.photoPath.split('/').pop()}
+                                            </div>
+                                            <div style={{ fontSize: '0.72rem', color: '#aaa', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                {latestResult.explanation}
+                                            </div>
+                                            {latestResult.aesthetic > 0 && (
+                                                <div style={{ fontSize: '0.68rem', color: '#818cf8', marginTop: 3 }}>
+                                                    aesthetic {latestResult.aesthetic.toFixed(2)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             ))}
                         </div>
 
@@ -399,6 +511,10 @@ function mapStep(step: string): string | null {
         scoring: 'score',
         cluster: 'cluster',
         clustering: 'cluster',
+        describe: 'describe',
+        describing: 'describe',
+        rank: 'rank',
+        ranking: 'rank',
     };
     return m[step.toLowerCase()] ?? null;
 }
