@@ -152,7 +152,7 @@ func (c *Client) ChatCompletion(
 	if err != nil {
 		return "", 0, fmt.Errorf("vlm: client: http do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // HTTP response body close
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {

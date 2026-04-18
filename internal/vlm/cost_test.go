@@ -63,3 +63,21 @@ func TestTokenTrackerRemainingLocal(t *testing.T) {
 		t.Fatalf("expected Remaining()=-1 for local mode, got %d", got)
 	}
 }
+
+func TestTokenTrackerUsed(t *testing.T) {
+	tracker := NewTokenTracker(TokenBudgetPolicy{Mode: "local"})
+	tracker.Record(42)
+	tracker.Record(58)
+	if got := tracker.Used(); got != 100 {
+		t.Errorf("Used() = %d, want 100", got)
+	}
+}
+
+func TestTokenTrackerReset(t *testing.T) {
+	tracker := NewTokenTracker(TokenBudgetPolicy{Mode: "local"})
+	tracker.Record(500)
+	tracker.Reset()
+	if got := tracker.Used(); got != 0 {
+		t.Errorf("after Reset, Used() = %d, want 0", got)
+	}
+}

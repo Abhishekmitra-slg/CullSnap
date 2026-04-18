@@ -147,7 +147,7 @@ func DownloadFileResumable(
 	if err != nil {
 		return nil, fmt.Errorf("vlm: http get %q: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // HTTP response body close
 
 	// If server returned 200 (not 206 Partial Content), restart from scratch.
 	if resp.StatusCode == http.StatusOK && resumeOffset > 0 {
@@ -183,19 +183,19 @@ func DownloadFileResumable(
 		return nil, fmt.Errorf("vlm: open partial file: %w", err)
 	}
 
-	var downloaded int64 = resumeOffset
+	downloaded := resumeOffset
 	buf := make([]byte, downloadChunkSize)
 
 	for {
 		if ctx.Err() != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, ctx.Err()
 		}
 
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
-				f.Close()
+				_ = f.Close()
 				return nil, fmt.Errorf("vlm: write to partial file: %w", writeErr)
 			}
 			downloaded += int64(n)
@@ -207,7 +207,7 @@ func DownloadFileResumable(
 			break
 		}
 		if readErr != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, fmt.Errorf("vlm: read response body: %w", readErr)
 		}
 	}
@@ -267,7 +267,7 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only file close
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

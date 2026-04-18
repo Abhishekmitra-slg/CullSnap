@@ -32,12 +32,13 @@ func extractFirstJSONObject(text string) string {
 		if inString {
 			continue
 		}
-		if ch == '{' {
+		switch ch {
+		case '{':
 			if depth == 0 {
 				start = i
 			}
 			depth++
-		} else if ch == '}' {
+		case '}':
 			depth--
 			if depth == 0 && start >= 0 {
 				return text[start : i+1]

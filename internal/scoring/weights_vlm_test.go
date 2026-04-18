@@ -23,7 +23,7 @@ func TestApplyWithVLMComposition(t *testing.T) {
 	w := ScoreWeights{Aesthetic: 0.25, Sharpness: 0.20, Face: 0.20, Eyes: 0.10, Composition: 0.25}
 	cs := CompositeScore{AestheticScore: 0.8, SharpnessScore: 0.7, BestFaceSharp: 0.9, EyeOpenness: 0.6, FaceCount: 1, VLMComposition: 0.85}
 	score := w.Apply(cs)
-	// 0.25*0.8 + 0.20*0.7 + 0.20*0.9 + 0.10*0.6 + 0.25*0.85 = 0.7925
+	// Expected: 0.7925 from weighted sum of aesthetic/sharpness/face/eyes/composition.
 	if score < 0.785 || score > 0.800 {
 		t.Errorf("score = %v, want ~0.7925", score)
 	}

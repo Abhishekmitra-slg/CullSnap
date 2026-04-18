@@ -616,13 +616,14 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 			score float64
 		}
 		sp := make([]scoredPhoto, 0, len(photos))
-		for _, p := range photos {
+		for i := range photos {
+			p := &photos[i]
 			aiScore, _ := a.store.GetAIScore(p.Path)
 			var s float64
 			if aiScore != nil {
 				s = aiScore.OverallScore
 			}
-			sp = append(sp, scoredPhoto{photo: p, score: s})
+			sp = append(sp, scoredPhoto{photo: *p, score: s})
 		}
 		sort.Slice(sp, func(i, j int) bool { return sp[i].score > sp[j].score })
 		vlmPhotos = make([]model.Photo, plan.Stage4Count)
@@ -640,7 +641,8 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 	var totalTokens int
 	var scoredCount int
 
-	for i, photo := range vlmPhotos {
+	for i := range vlmPhotos {
+		photo := &vlmPhotos[i]
 		if ctx.Err() != nil {
 			return
 		}

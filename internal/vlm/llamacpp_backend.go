@@ -19,8 +19,8 @@ const (
 	llamaCppCtxSize       = 4096
 	llamaCppGPULayers     = 99
 	llamaCppReadyTimeout  = 60 * time.Second
-	llamaCppReadyPollMs   = 500 * time.Millisecond
-	llamaCppStopGraceMs   = 5 * time.Second
+	llamaCppReadyPoll     = 500 * time.Millisecond
+	llamaCppStopGrace     = 5 * time.Second
 	llamaCppTokenBytesLen = 32
 	llamaCppMaxImages     = 5
 	llamaCppHost          = "127.0.0.1"
@@ -239,16 +239,14 @@ func (b *LlamaCppBackend) waitForReady(ctx context.Context, baseURL string) erro
 			if logger.Log != nil {
 				logger.Log.Debug("vlm: llamacpp: health check non-200", slog.Int("status", resp.StatusCode))
 			}
-		} else {
-			if logger.Log != nil {
-				logger.Log.Debug("vlm: llamacpp: health check error", slog.Any("err", err))
-			}
+		} else if logger.Log != nil {
+			logger.Log.Debug("vlm: llamacpp: health check error", slog.Any("err", err))
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(llamaCppReadyPollMs):
+		case <-time.After(llamaCppReadyPoll):
 		}
 	}
 }
@@ -296,7 +294,7 @@ func (b *LlamaCppBackend) Stop(ctx context.Context) error {
 			logger.Log.Debug("vlm: llamacpp: server exited", slog.Any("err", err))
 		}
 		return nil
-	case <-time.After(llamaCppStopGraceMs):
+	case <-time.After(llamaCppStopGrace):
 		if logger.Log != nil {
 			logger.Log.Debug("vlm: llamacpp: grace period elapsed, killing process")
 		}
@@ -342,7 +340,7 @@ func (b *LlamaCppBackend) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("vlm: llamacpp: health: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // HTTP response body close
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("vlm: llamacpp: health: server returned %d", resp.StatusCode)
@@ -431,12 +429,7 @@ func (b *LlamaCppBackend) RankPhotos(ctx context.Context, req RankRequest) (*Ran
 
 	photos := make([]Stage5Photo, 0, len(req.PhotoScores))
 	for _, pc := range req.PhotoScores {
-		photos = append(photos, Stage5Photo{
-			Aesthetic: pc.Aesthetic,
-			Sharpness: pc.Sharpness,
-			FaceCount: pc.FaceCount,
-			Issues:    pc.Issues,
-		})
+		photos = append(photos, Stage5Photo(pc))
 	}
 
 	systemPrompt := SystemPrompt("")

@@ -66,3 +66,16 @@ func TestModelsForTier(t *testing.T) {
 		}
 	}
 }
+
+func TestAllModels(t *testing.T) {
+	models := AllModels()
+	if len(models) == 0 {
+		t.Fatal("AllModels() returned no models, expected at least one")
+	}
+	// Verify it returns a copy: mutating the result must not affect subsequent calls.
+	models[0].Name = "MUTATED"
+	fresh := AllModels()
+	if fresh[0].Name == "MUTATED" {
+		t.Error("AllModels() did not return a copy — mutation leaked")
+	}
+}

@@ -178,10 +178,8 @@ func (b *MLXBackend) waitForReady(ctx context.Context, baseURL string) error {
 			if logger.Log != nil {
 				logger.Log.Debug("vlm: mlx: /v1/models not ready yet", slog.Int("status", resp.StatusCode))
 			}
-		} else {
-			if logger.Log != nil {
-				logger.Log.Debug("vlm: mlx: /v1/models poll error", slog.String("err", err.Error()))
-			}
+		} else if logger.Log != nil {
+			logger.Log.Debug("vlm: mlx: /v1/models poll error", slog.String("err", err.Error()))
 		}
 
 		select {
@@ -269,7 +267,7 @@ func (b *MLXBackend) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("vlm: mlx: health: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // HTTP response body close
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("vlm: mlx: health: unexpected status %d", resp.StatusCode)
@@ -356,12 +354,7 @@ func (b *MLXBackend) RankPhotos(ctx context.Context, req RankRequest) (*RankingR
 
 	photos := make([]Stage5Photo, len(req.PhotoScores))
 	for i, pc := range req.PhotoScores {
-		photos[i] = Stage5Photo{
-			Aesthetic: pc.Aesthetic,
-			Sharpness: pc.Sharpness,
-			FaceCount: pc.FaceCount,
-			Issues:    pc.Issues,
-		}
+		photos[i] = Stage5Photo(pc)
 	}
 
 	systemPrompt := SystemPrompt("")

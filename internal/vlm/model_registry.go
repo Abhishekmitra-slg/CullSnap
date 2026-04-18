@@ -86,12 +86,13 @@ func LookupModel(name, backend string) (ModelEntry, bool) {
 		logger.Log.Debug("vlm: looking up model", "name", name, "backend", backend)
 	}
 
-	for _, m := range builtinModels {
+	for i := range builtinModels {
+		m := &builtinModels[i]
 		if m.Name == name && m.Backend == backend {
 			if logger.Log != nil {
 				logger.Log.Debug("vlm: model found", "name", m.Name, "variant", m.Variant)
 			}
-			return m, true
+			return *m, true
 		}
 	}
 
@@ -116,9 +117,10 @@ func ModelsForTier(tier HardwareTier) []ModelEntry {
 	}
 
 	result := make([]ModelEntry, 0, len(builtinModels))
-	for _, m := range builtinModels {
+	for i := range builtinModels {
+		m := &builtinModels[i]
 		if m.MinTier <= tier {
-			result = append(result, m)
+			result = append(result, *m)
 		}
 	}
 

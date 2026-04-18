@@ -195,3 +195,31 @@ func TestCalibrationKey(t *testing.T) {
 		t.Errorf("key = %q, want vlm_bench_capable_mlx_gemma-4-e4b-it", key)
 	}
 }
+
+func TestRecommendModel(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tier HardwareTier
+		want string
+	}{
+		{TierPower, "gemma-4-e4b-it"},
+		{TierCapable, "gemma-4-e4b-it"},
+		{TierBasic, "gemma-4-e2b-it"},
+		{TierLegacy, ""},
+	}
+	for _, c := range cases {
+		if got := RecommendModel(c.tier); got != c.want {
+			t.Errorf("RecommendModel(%v) = %q, want %q", c.tier, got, c.want)
+		}
+	}
+}
+
+func TestRecommendBackend(t *testing.T) {
+	t.Parallel()
+	if got := RecommendBackend(HardwareProfile{MLXCapable: true}); got != "mlx" {
+		t.Errorf("RecommendBackend(MLXCapable) = %q, want mlx", got)
+	}
+	if got := RecommendBackend(HardwareProfile{MLXCapable: false}); got != "llamacpp" {
+		t.Errorf("RecommendBackend(!MLXCapable) = %q, want llamacpp", got)
+	}
+}

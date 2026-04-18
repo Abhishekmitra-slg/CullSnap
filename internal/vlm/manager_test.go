@@ -185,3 +185,92 @@ func TestManagerEnsureRunningIdempotent(t *testing.T) {
 
 	_ = m.Stop(ctx)
 }
+
+// TestManagerConfigUpdate verifies Config returns current config and UpdateConfig replaces it.
+func TestManagerConfigUpdate(t *testing.T) {
+	cfg := DefaultManagerConfig()
+	cfg.KeepAlive = false
+	cfg.IdleTimeout = 10 * time.Second
+
+	m := NewManager(cfg, nil)
+	got := m.Config()
+	if got.KeepAlive != false || got.IdleTimeout != 10*time.Second {
+		t.Errorf("Config() = %+v, want KeepAlive=false IdleTimeout=10s", got)
+	}
+
+	newCfg := ManagerConfig{KeepAlive: true, IdleTimeout: 5 * time.Minute}
+	m.UpdateConfig(newCfg)
+	if got := m.Config(); got.KeepAlive != true || got.IdleTimeout != 5*time.Minute {
+		t.Errorf("after UpdateConfig: Config() = %+v, want KeepAlive=true IdleTimeout=5m", got)
+	}
+}
+
+// TestManagerStatusOff verifies Status on an un-started manager returns StateOff info.
+func TestManagerStatusOff(t *testing.T) {
+	m := NewManager(DefaultManagerConfig(), nil)
+	s := m.Status()
+	if s.State != StateOff.String() {
+		t.Errorf("Status().State = %q, want %q", s.State, StateOff.String())
+	}
+	if s.Uptime != "" {
+		t.Errorf("Status().Uptime = %q, want empty", s.Uptime)
+	}
+}
+
+// TestManagerStatusRunning verifies Status reports model info when provider is set and running.
+func TestManagerStatusRunning(t *testing.T) {
+	cfg := DefaultManagerConfig()
+	cfg.KeepAlive = true
+	m := NewManager(cfg, nil)
+	m.SetProvider(&mockProvider{})
+
+	if err := m.EnsureRunning(context.Background()); err != nil {
+		t.Fatalf("EnsureRunning: %v", err)
+	}
+	defer m.Stop(context.Background())
+
+	s := m.Status()
+	if s.State != StateReady.String() {
+		t.Errorf("Status().State = %q, want %q", s.State, StateReady.String())
+	}
+	if s.ModelName != "mock-model" || s.Backend != "mock" {
+		t.Errorf("Status() model = %q/%q, want mock-model/mock", s.ModelName, s.Backend)
+	}
+}
+
+// TestManagerProviderModelInfoNil verifies ProviderModelInfo returns empty info with no provider.
+func TestManagerProviderModelInfoNil(t *testing.T) {
+	m := NewManager(DefaultManagerConfig(), nil)
+	info := m.ProviderModelInfo()
+	if info.Name != "" || info.Backend != "" {
+		t.Errorf("ProviderModelInfo() with no provider = %+v, want empty", info)
+	}
+}
+
+// TestManagerProviderModelInfoSet verifies ProviderModelInfo delegates to the set provider.
+func TestManagerProviderModelInfoSet(t *testing.T) {
+	m := NewManager(DefaultManagerConfig(), nil)
+	m.SetProvider(&mockProvider{})
+	info := m.ProviderModelInfo()
+	if info.Name != "mock-model" || info.Backend != "mock" {
+		t.Errorf("ProviderModelInfo() = %+v, want mock-model/mock", info)
+	}
+}
+
+// TestManagerResetIdleTimer verifies ResetIdleTimer is safe to call even when no timer is set.
+func TestManagerResetIdleTimer(t *testing.T) {
+	m := NewManager(DefaultManagerConfig(), nil)
+	// Should be safe to call before any timer is set — exercises the cancelLocked no-op branch.
+	m.ResetIdleTimer()
+
+	// Reset while running exercises the AfterFunc branch.
+	cfg := DefaultManagerConfig()
+	cfg.IdleTimeout = 10 * time.Minute
+	m2 := NewManager(cfg, nil)
+	m2.SetProvider(&mockProvider{})
+	if err := m2.EnsureRunning(context.Background()); err != nil {
+		t.Fatalf("EnsureRunning: %v", err)
+	}
+	defer m2.Stop(context.Background())
+	m2.ResetIdleTimer()
+}
