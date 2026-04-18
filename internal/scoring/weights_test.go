@@ -14,30 +14,33 @@ func approxEqual(a, b, tol float64) bool {
 // TestDefaultWeights verifies that the default weights sum to exactly 1.0.
 func TestDefaultWeights(t *testing.T) {
 	w := DefaultWeights()
-	sum := w.Aesthetic + w.Sharpness + w.Face + w.Eyes
+	sum := w.Aesthetic + w.Sharpness + w.Face + w.Eyes + w.Composition
 	if !approxEqual(sum, 1.0, floatTol) {
 		t.Errorf("DefaultWeights sum = %v, want 1.0", sum)
 	}
-	if w.Aesthetic != 0.35 {
-		t.Errorf("Aesthetic = %v, want 0.35", w.Aesthetic)
+	if w.Aesthetic != 0.25 {
+		t.Errorf("Aesthetic = %v, want 0.25", w.Aesthetic)
 	}
-	if w.Sharpness != 0.25 {
-		t.Errorf("Sharpness = %v, want 0.25", w.Sharpness)
+	if w.Sharpness != 0.20 {
+		t.Errorf("Sharpness = %v, want 0.20", w.Sharpness)
 	}
-	if w.Face != 0.25 {
-		t.Errorf("Face = %v, want 0.25", w.Face)
+	if w.Face != 0.20 {
+		t.Errorf("Face = %v, want 0.20", w.Face)
 	}
-	if w.Eyes != 0.15 {
-		t.Errorf("Eyes = %v, want 0.15", w.Eyes)
+	if w.Eyes != 0.10 {
+		t.Errorf("Eyes = %v, want 0.10", w.Eyes)
+	}
+	if w.Composition != 0.25 {
+		t.Errorf("Composition = %v, want 0.25", w.Composition)
 	}
 }
 
 // TestScoreWeights_Normalize_ArbitraryValues checks that Normalize scales
 // arbitrary positive values to sum to 1.0 while preserving ratios.
 func TestScoreWeights_Normalize_ArbitraryValues(t *testing.T) {
-	w := ScoreWeights{Aesthetic: 2, Sharpness: 3, Face: 1, Eyes: 4}
+	w := ScoreWeights{Aesthetic: 2, Sharpness: 3, Face: 1, Eyes: 4, Composition: 0}
 	n := w.Normalize()
-	sum := n.Aesthetic + n.Sharpness + n.Face + n.Eyes
+	sum := n.Aesthetic + n.Sharpness + n.Face + n.Eyes + n.Composition
 	if !approxEqual(sum, 1.0, floatTol) {
 		t.Errorf("Normalize sum = %v, want 1.0", sum)
 	}
@@ -49,12 +52,12 @@ func TestScoreWeights_Normalize_ArbitraryValues(t *testing.T) {
 }
 
 // TestScoreWeights_Normalize_AllZero checks the degenerate case where all
-// weights are zero — result must be equal weights.
+// weights are zero — result must be equal weights (0.2 each of 5 fields).
 func TestScoreWeights_Normalize_AllZero(t *testing.T) {
 	w := ScoreWeights{}
 	n := w.Normalize()
-	want := 0.25
-	for _, v := range []float64{n.Aesthetic, n.Sharpness, n.Face, n.Eyes} {
+	want := 0.2
+	for _, v := range []float64{n.Aesthetic, n.Sharpness, n.Face, n.Eyes, n.Composition} {
 		if !approxEqual(v, want, floatTol) {
 			t.Errorf("Normalize all-zero field = %v, want %v", v, want)
 		}
@@ -62,8 +65,8 @@ func TestScoreWeights_Normalize_AllZero(t *testing.T) {
 }
 
 // TestScoreWeights_Apply_WithFaces checks the weighted blend when faces are
-// present.  With default weights and scores 0.8/0.9/0.7/0.6 the result is
-// 0.35*0.8 + 0.25*0.9 + 0.25*0.7 + 0.15*0.6 = 0.77.
+// present.  With default weights and scores 0.8/0.9/0.7/0.6/0.0:
+// 0.25*0.8 + 0.20*0.9 + 0.20*0.7 + 0.10*0.6 + 0.25*0.0 = 0.20+0.18+0.14+0.06+0.00 = 0.58.
 func TestScoreWeights_Apply_WithFaces(t *testing.T) {
 	w := DefaultWeights()
 	cs := CompositeScore{
@@ -71,21 +74,23 @@ func TestScoreWeights_Apply_WithFaces(t *testing.T) {
 		SharpnessScore: 0.9,
 		BestFaceSharp:  0.7,
 		EyeOpenness:    0.6,
+		VLMComposition: 0.0,
 		FaceCount:      1,
 	}
 	got := w.Apply(cs)
-	want := 0.77
+	want := 0.58
 	if !approxEqual(got, want, 1e-9) {
 		t.Errorf("Apply with faces = %v, want ~%v", got, want)
 	}
 }
 
 // TestScoreWeights_Apply_NoFaces checks redistribution of face/eye weights
-// when FaceCount == 0.  Default weights, aesthetic=0.8, sharpness=0.6:
-//
-//	aestheticEff = 0.35 + 0.40*(0.35/0.60) ≈ 0.5833
-//	sharpnessEff = 0.25 + 0.40*(0.25/0.60) ≈ 0.4167
-//	score        = 0.5833*0.8 + 0.4167*0.6 ≈ 0.7167
+// when FaceCount == 0.  Default weights, aesthetic=0.8, sharpness=0.6, composition=0.0:
+// noFacePool = 0.20+0.10 = 0.30, basePool = 0.25+0.20+0.25 = 0.70
+// aestheticEff  = 0.25 + 0.30*(0.25/0.70) ≈ 0.3571
+// sharpnessEff  = 0.20 + 0.30*(0.20/0.70) ≈ 0.2857
+// compositionEff= 0.25 + 0.30*(0.25/0.70) ≈ 0.3571
+// score = 0.3571*0.8 + 0.2857*0.6 + 0.3571*0.0 ≈ 0.4571
 func TestScoreWeights_Apply_NoFaces(t *testing.T) {
 	w := DefaultWeights()
 	cs := CompositeScore{
@@ -94,7 +99,7 @@ func TestScoreWeights_Apply_NoFaces(t *testing.T) {
 		FaceCount:      0,
 	}
 	got := w.Apply(cs)
-	want := 0.7167
+	want := 0.4571
 	if math.Abs(got-want) > 1e-3 {
 		t.Errorf("Apply no faces = %v, want ~%v", got, want)
 	}
@@ -109,6 +114,7 @@ func TestScoreWeights_Apply_ClampAbove1(t *testing.T) {
 		SharpnessScore: 2.0,
 		BestFaceSharp:  2.0,
 		EyeOpenness:    2.0,
+		VLMComposition: 2.0,
 		FaceCount:      1,
 	}
 	got := w.Apply(cs)

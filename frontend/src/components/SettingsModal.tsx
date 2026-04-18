@@ -5,9 +5,10 @@ import { app } from '../../wailsjs/go/models';
 
 interface SettingsModalProps {
     onClose: () => void;
+    setShowAIOnboarding?: (v: boolean) => void;
 }
 
-export function SettingsModal({ onClose }: SettingsModalProps) {
+export function SettingsModal({ onClose, setShowAIOnboarding }: SettingsModalProps) {
     const [config, setConfig] = useState<app.AppConfig | null>(null);
     const [saving, setSaving] = useState(false);
     const [mirrorStats, setMirrorStats] = useState<any>(null);
@@ -18,23 +19,64 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const [deletingAlbum, setDeletingAlbum] = useState<string | null>(null);
     const [downloadingModels, setDownloadingModels] = useState(false);
     const [downloadResult, setDownloadResult] = useState<string | null>(null);
-    const [weights, setWeights] = useState({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 });
+    const [weights, setWeights] = useState({ aesthetic: 0.25, sharpness: 0.20, face: 0.20, eyes: 0.10, composition: 0.25 });
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [vlmStatus, setVlmStatus] = useState<any>(null);
+    const [vlmLoading, setVlmLoading] = useState(false);
+    const [customInstructions, setCustomInstructions] = useState('');
+    const [confirmDeleteModel, setConfirmDeleteModel] = useState(false);
+    const [deletingModel, setDeletingModel] = useState(false);
+    const [aiStorage, setAiStorage] = useState<any>(null);
+    const [confirmClearAIData, setConfirmClearAIData] = useState(false);
+    const [clearingAIData, setClearingAIData] = useState(false);
 
     useEffect(() => {
-        GetAppConfig().then(setConfig).catch(console.error);
+        GetAppConfig().then(cfg => {
+            setConfig(cfg);
+            if ((cfg as any).vlmCustomInstructions !== undefined) {
+                setCustomInstructions((cfg as any).vlmCustomInstructions || '');
+            }
+        }).catch(console.error);
         loadMirrorStats();
         loadImportStats();
         GetAIWeights().then(w => {
             if (w) {
                 setWeights({
-                    aesthetic: w.aesthetic ?? 0.4,
-                    sharpness: w.sharpness ?? 0.3,
-                    face: w.face ?? 0.2,
-                    eyes: w.eyes ?? 0.1,
+                    aesthetic: w.aesthetic ?? 0.25,
+                    sharpness: w.sharpness ?? 0.20,
+                    face: w.face ?? 0.20,
+                    eyes: w.eyes ?? 0.10,
+                    composition: (w as any).composition ?? 0.25,
                 });
             }
         }).catch(e => console.error('[settings] failed to load AI weights:', e));
+        import('../../wailsjs/go/app/App').then((mod: any) => {
+            if (typeof mod.GetVLMDetailedStatus === 'function') {
+                mod.GetVLMDetailedStatus()
+                    .then((s: any) => {
+                        console.debug('[settings] VLM detailed status:', s);
+                        setVlmStatus(s);
+                    })
+                    .catch((e: any) => console.error('[settings] failed to load VLM status:', e));
+            } else if (typeof mod.GetVLMStatus === 'function') {
+                mod.GetVLMStatus()
+                    .then((s: any) => {
+                        console.debug('[settings] VLM status (fallback):', s);
+                        setVlmStatus(s);
+                    })
+                    .catch((e: any) => console.error('[settings] failed to load VLM status:', e));
+            } else {
+                console.debug('[settings] GetVLMDetailedStatus not available in this build');
+            }
+            if (typeof mod.GetAIStorageInfo === 'function') {
+                mod.GetAIStorageInfo()
+                    .then((info: any) => {
+                        console.debug('[settings] AI storage info:', info);
+                        setAiStorage(info);
+                    })
+                    .catch((e: any) => console.error('[settings] failed to load AI storage info:', e));
+            }
+        }).catch((e: any) => console.error('[settings] VLM import failed:', e));
     }, []);
 
     const loadMirrorStats = async () => {
@@ -143,13 +185,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         try {
             await SaveAppConfig(config);
             // Normalize weights so they sum to 1.0 before saving
-            const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes;
+            const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes + weights.composition;
             const normalized = total > 0
                 ? {
                     aesthetic: weights.aesthetic / total,
                     sharpness: weights.sharpness / total,
                     face: weights.face / total,
                     eyes: weights.eyes / total,
+                    composition: weights.composition / total,
                 }
                 : weights;
             await SetAIWeights(app.AIWeightsConfig.createFrom(normalized));
@@ -571,20 +614,21 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                                     <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Score Weights</span>
                                     <button
-                                        onClick={() => setWeights({ aesthetic: 0.35, sharpness: 0.25, face: 0.25, eyes: 0.15 })}
+                                        onClick={() => setWeights({ aesthetic: 0.25, sharpness: 0.20, face: 0.20, eyes: 0.10, composition: 0.25 })}
                                         style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.7rem', cursor: 'pointer' }}
                                     >
                                         Reset to Defaults
                                     </button>
                                 </div>
                                 {(() => {
-                                    const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes;
+                                    const total = weights.aesthetic + weights.sharpness + weights.face + weights.eyes + weights.composition;
                                     const pct = (v: number) => total > 0 ? Math.round(v / total * 100) : 0;
                                     const sliders: { key: keyof typeof weights; label: string; color: string }[] = [
                                         { key: 'aesthetic', label: 'Aesthetic', color: '#a78bfa' },
                                         { key: 'sharpness', label: 'Sharpness', color: '#4ade80' },
                                         { key: 'face', label: 'Face Quality', color: '#fbbf24' },
                                         { key: 'eyes', label: 'Eyes Open', color: '#60a5fa' },
+                                        { key: 'composition', label: 'Composition (AI)', color: '#f472b6' },
                                     ];
                                     return sliders.map(({ key, label, color }) => (
                                         <div key={key} style={{ marginBottom: 8 }}>
@@ -604,6 +648,325 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                                 <div style={{ fontSize: '0.65rem', color: '#555', marginTop: 4 }}>
                                     Weights are auto-normalized to 100%.
                                 </div>
+                            </div>
+
+                            {/* VLM Engine card */}
+                            <div style={{
+                                background: '#1a1a2e', borderRadius: 8, padding: 12,
+                                border: '1px solid #2a2a3e', marginTop: 12,
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>VLM Engine</span>
+                                    {vlmStatus && (
+                                        <span style={{
+                                            fontSize: '0.65rem', fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                                            background: vlmStatus.state === 'ready' ? 'rgba(74,222,128,0.15)' : vlmStatus.state === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(120,120,120,0.15)',
+                                            color: vlmStatus.state === 'ready' ? '#4ade80' : vlmStatus.state === 'error' ? '#ef4444' : '#888',
+                                            border: `1px solid ${vlmStatus.state === 'ready' ? 'rgba(74,222,128,0.3)' : vlmStatus.state === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(120,120,120,0.3)'}`,
+                                        }}>
+                                            {vlmStatus.state ?? 'unknown'}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {vlmStatus && vlmStatus.modelName && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                {vlmStatus.modelName} — {vlmStatus.backend} — {vlmStatus.hardwareTier} tier
+                                            </span>
+                                            {setShowAIOnboarding && (
+                                                <button
+                                                    style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.68rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                                                    onClick={() => setShowAIOnboarding(true)}
+                                                >
+                                                    Change Model
+                                                </button>
+                                            )}
+                                        </div>
+                                        {/* Stats row */}
+                                        <div style={{ fontSize: '0.68rem', color: '#666', marginTop: 4 }}>
+                                            Inferences: {vlmStatus.inferCount ?? 0} | RAM: {vlmStatus.ramUsageMB ?? 0} MB | Restarts: {vlmStatus.restartCount ?? 0}
+                                            {vlmStatus.state === 'ready' && vlmStatus.uptime ? ` | Up: ${vlmStatus.uptime}` : ''}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <button
+                                        className="settings-btn"
+                                        disabled={vlmLoading || vlmStatus?.state === 'ready'}
+                                        onClick={() => {
+                                            setVlmLoading(true);
+                                            import('../../wailsjs/go/app/App').then((mod: any) => {
+                                                if (typeof mod.StartVLMEngine !== 'function') {
+                                                    setVlmLoading(false);
+                                                    return;
+                                                }
+                                                mod.StartVLMEngine()
+                                                    .then(() => import('../../wailsjs/go/app/App'))
+                                                    .then((m: any) => typeof m.GetVLMDetailedStatus === 'function' ? m.GetVLMDetailedStatus() : (typeof m.GetVLMStatus === 'function' ? m.GetVLMStatus() : null))
+                                                    .then((s: any) => {
+                                                        console.debug('[settings] VLM started, status:', s);
+                                                        if (s) setVlmStatus(s);
+                                                    })
+                                                    .catch((e: any) => console.error('[settings] failed to start VLM:', e))
+                                                    .finally(() => setVlmLoading(false));
+                                            });
+                                        }}
+                                    >
+                                        {vlmLoading ? 'Starting...' : 'Start'}
+                                    </button>
+                                    <button
+                                        className="settings-btn"
+                                        disabled={vlmLoading || vlmStatus?.state !== 'ready'}
+                                        onClick={() => {
+                                            setVlmLoading(true);
+                                            import('../../wailsjs/go/app/App').then((mod: any) => {
+                                                if (typeof mod.StopVLMEngine !== 'function') {
+                                                    setVlmLoading(false);
+                                                    return;
+                                                }
+                                                mod.StopVLMEngine()
+                                                    .then(() => import('../../wailsjs/go/app/App'))
+                                                    .then((m: any) => typeof m.GetVLMDetailedStatus === 'function' ? m.GetVLMDetailedStatus() : (typeof m.GetVLMStatus === 'function' ? m.GetVLMStatus() : null))
+                                                    .then((s: any) => {
+                                                        console.debug('[settings] VLM stopped, status:', s);
+                                                        if (s) setVlmStatus(s);
+                                                    })
+                                                    .catch((e: any) => console.error('[settings] failed to stop VLM:', e))
+                                                    .finally(() => setVlmLoading(false));
+                                            });
+                                        }}
+                                    >
+                                        Stop
+                                    </button>
+                                </div>
+
+                                {vlmStatus && vlmStatus.modelName && (
+                                    <div style={{ marginTop: 8 }}>
+                                        {confirmDeleteModel ? (
+                                            <div style={{
+                                                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                                                borderRadius: 6, padding: '8px 10px', fontSize: '0.75rem',
+                                            }}>
+                                                <div style={{ color: 'var(--text-primary)', marginBottom: 8 }}>
+                                                    Delete the model and runtime files? This cannot be undone.
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    <button className="btn outline" style={{ fontSize: '0.75rem', padding: '3px 10px' }}
+                                                        onClick={() => setConfirmDeleteModel(false)}>
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        className="btn"
+                                                        style={{ fontSize: '0.75rem', padding: '3px 10px', backgroundColor: '#ef4444', borderColor: '#ef4444' }}
+                                                        disabled={deletingModel}
+                                                        onClick={() => {
+                                                            setDeletingModel(true);
+                                                            import('../../wailsjs/go/app/App').then((mod: any) => {
+                                                                if (typeof mod.DeleteVLMModel !== 'function') {
+                                                                    setDeletingModel(false);
+                                                                    setConfirmDeleteModel(false);
+                                                                    return;
+                                                                }
+                                                                mod.DeleteVLMModel()
+                                                                    .then(() => import('../../wailsjs/go/app/App'))
+                                                                    .then((m: any) => typeof m.GetVLMDetailedStatus === 'function' ? m.GetVLMDetailedStatus() : (typeof m.GetVLMStatus === 'function' ? m.GetVLMStatus() : null))
+                                                                    .then((s: any) => {
+                                                                        console.debug('[settings] VLM status after delete:', s);
+                                                                        setVlmStatus(s);
+                                                                        setAiStorage(null);
+                                                                        import('../../wailsjs/go/app/App').then((m: any) => {
+                                                                            if (typeof m.GetAIStorageInfo === 'function') {
+                                                                                m.GetAIStorageInfo().then((info: any) => setAiStorage(info)).catch(() => {});
+                                                                            }
+                                                                        });
+                                                                    })
+                                                                    .catch((e: any) => console.error('[settings] failed to delete VLM model:', e))
+                                                                    .finally(() => {
+                                                                        setDeletingModel(false);
+                                                                        setConfirmDeleteModel(false);
+                                                                    });
+                                                            });
+                                                        }}
+                                                    >
+                                                        {deletingModel ? 'Deleting...' : 'Delete'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                className="settings-btn"
+                                                style={{ fontSize: '0.7rem', color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.06)' }}
+                                                onClick={() => setConfirmDeleteModel(true)}
+                                            >
+                                                Delete Model
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={(config as any).vlmKeepRunning || false}
+                                        onChange={e => setConfig(app.AppConfig.createFrom({ ...config, vlmKeepRunning: e.target.checked } as any))}
+                                        style={{ accentColor: '#818cf8' }}
+                                    />
+                                    Keep AI Engine Running
+                                </label>
+
+                                {(!vlmStatus || !vlmStatus.modelName) && setShowAIOnboarding && (
+                                    <button
+                                        className="settings-btn"
+                                        style={{ marginTop: 10, width: '100%' }}
+                                        onClick={() => setShowAIOnboarding(true)}
+                                    >
+                                        Set Up AI Model
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Custom Instructions */}
+                            <div style={{ marginTop: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>Custom Instructions</span>
+                                    <span style={{ fontSize: '0.65rem', color: '#555' }}>{customInstructions.length}/500</span>
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+                                    Appended to every scoring request. Changes apply to new analyses only.
+                                </div>
+                                <textarea
+                                    value={customInstructions}
+                                    maxLength={500}
+                                    onChange={e => setCustomInstructions(e.target.value)}
+                                    onBlur={() => {
+                                        const updated = app.AppConfig.createFrom({ ...config, vlmCustomInstructions: customInstructions } as any);
+                                        SaveAppConfig(updated).catch(e => console.error('[settings] failed to save custom instructions:', e));
+                                    }}
+                                    placeholder="e.g. Prefer photos with natural lighting. Penalise motion blur."
+                                    style={{
+                                        width: '100%',
+                                        minHeight: 72,
+                                        resize: 'vertical',
+                                        background: '#0f0f1a',
+                                        border: '1px solid #2a2a3e',
+                                        borderRadius: 6,
+                                        color: 'var(--text-primary)',
+                                        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                                        fontSize: '0.75rem',
+                                        padding: '8px 10px',
+                                        lineHeight: 1.5,
+                                        boxSizing: 'border-box',
+                                    }}
+                                />
+                            </div>
+
+                            {/* AI Storage */}
+                            <div style={{
+                                background: '#1a1a2e', borderRadius: 8, padding: 12,
+                                border: '1px solid #2a2a3e', marginTop: 12,
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>
+                                        AI Storage{aiStorage ? `: ${aiStorage.totalMB ?? 0} MB` : ''}
+                                    </span>
+                                </div>
+
+                                {aiStorage ? (
+                                    <div style={{ marginBottom: 10 }}>
+                                        {/* Storage breakdown bar */}
+                                        {(() => {
+                                            const total = Math.max(aiStorage.totalMB || 1, 1);
+                                            const segments = [
+                                                { label: `Model (${aiStorage.modelSizeMB ?? 0} MB)`, value: aiStorage.modelSizeMB ?? 0, color: '#818cf8' },
+                                                { label: `Runtime (${aiStorage.runtimeSizeMB ?? 0} MB)`, value: aiStorage.runtimeSizeMB ?? 0, color: '#4ade80' },
+                                                { label: `Scores DB (${aiStorage.scoresDBSizeMB ?? 0} MB)`, value: aiStorage.scoresDBSizeMB ?? 0, color: '#fbbf24' },
+                                            ];
+                                            return (
+                                                <>
+                                                    <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8, background: '#0f0f1a' }}>
+                                                        {segments.map(s => (
+                                                            <div key={s.label} style={{
+                                                                width: `${Math.min(100, (s.value / total) * 100)}%`,
+                                                                background: s.color,
+                                                                transition: 'width 0.3s ease',
+                                                            }} />
+                                                        ))}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                                        {segments.map(s => (
+                                                            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block', flexShrink: 0 }} />
+                                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{s.label}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 10 }}>
+                                        No AI data on disk
+                                    </div>
+                                )}
+
+                                {confirmClearAIData ? (
+                                    <div style={{
+                                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                                        borderRadius: 6, padding: '8px 10px', fontSize: '0.75rem',
+                                    }}>
+                                        <div style={{ color: 'var(--text-primary)', marginBottom: 8 }}>
+                                            Clear all VLM scores and rankings? This cannot be undone.
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                            <button className="btn outline" style={{ fontSize: '0.75rem', padding: '3px 10px' }}
+                                                onClick={() => setConfirmClearAIData(false)}>
+                                                Cancel
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ fontSize: '0.75rem', padding: '3px 10px', backgroundColor: '#ef4444', borderColor: '#ef4444' }}
+                                                disabled={clearingAIData}
+                                                onClick={() => {
+                                                    setClearingAIData(true);
+                                                    import('../../wailsjs/go/app/App').then((mod: any) => {
+                                                        if (typeof mod.ClearAllVLMData !== 'function') {
+                                                            setClearingAIData(false);
+                                                            setConfirmClearAIData(false);
+                                                            return;
+                                                        }
+                                                        mod.ClearAllVLMData()
+                                                            .then(() => import('../../wailsjs/go/app/App'))
+                                                            .then((m: any) => typeof m.GetAIStorageInfo === 'function' ? m.GetAIStorageInfo() : null)
+                                                            .then((info: any) => {
+                                                                console.debug('[settings] AI storage after clear:', info);
+                                                                if (info) setAiStorage(info);
+                                                            })
+                                                            .catch((e: any) => console.error('[settings] failed to clear AI data:', e))
+                                                            .finally(() => {
+                                                                setClearingAIData(false);
+                                                                setConfirmClearAIData(false);
+                                                            });
+                                                    });
+                                                }}
+                                            >
+                                                {clearingAIData ? 'Clearing...' : 'Clear'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button
+                                        className="btn outline"
+                                        style={{ fontSize: '0.75rem', color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }}
+                                        onClick={() => setConfirmClearAIData(true)}
+                                    >
+                                        <Trash2 size={12} />
+                                        Clear AI Data
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}

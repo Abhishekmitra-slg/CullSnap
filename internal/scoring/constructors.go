@@ -31,16 +31,3 @@ func NewFaceEmbedderPlugin(cacheDir string) (*FaceEmbedderPlugin, error) {
 	logger.Log.Debug("scoring: created face embedder plugin", "cacheDir", cacheDir)
 	return p, nil
 }
-
-// NewAestheticPlugin creates an AestheticPlugin backed by a ModelManager
-// rooted at cacheDir.
-func NewAestheticPlugin(cacheDir string) (*AestheticPlugin, error) {
-	mm, err := NewModelManager(cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("aesthetic: model manager: %w", err)
-	}
-	p := &AestheticPlugin{modelManager: mm}
-	mm.RegisterAll(p.Models())
-	logger.Log.Debug("scoring: created aesthetic plugin", "cacheDir", cacheDir)
-	return p, nil
-}

@@ -16,6 +16,7 @@ import (
 	"cullsnap/internal/storage"
 	"cullsnap/internal/updater"
 	"cullsnap/internal/video"
+	"cullsnap/internal/vlm"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -88,6 +89,9 @@ type App struct {
 	analysisMu              sync.Mutex
 	analysisCancel          context.CancelFunc
 	aiEnabled               bool
+	vlmManager              *vlm.Manager
+	vlmEvents               chan vlm.ManagerEvent
+	vlmHWProfile            vlm.HardwareProfile // cached at startup, hardware doesn't change
 }
 
 // NewApp creates a new App application struct
@@ -182,9 +186,6 @@ func (a *App) Startup(ctx context.Context) {
 		if embedder, err := scoring.NewFaceEmbedderPlugin(cullsnapDir); err == nil {
 			a.registry.Register(embedder)
 		}
-		if aesthetic, err := scoring.NewAestheticPlugin(cullsnapDir); err == nil {
-			a.registry.Register(aesthetic)
-		}
 		a.registry.Register(&scoring.SharpnessPlugin{})
 
 		// Try init with existing runtime.
@@ -197,10 +198,31 @@ func (a *App) Startup(ctx context.Context) {
 		a.loadAIWeights()
 	}
 
+	// Initialize VLM manager (guard against double Startup from Wails WebView reload).
+	if a.vlmManager == nil {
+		a.vlmHWProfile = vlm.ProbeHardware()
+		a.vlmEvents = make(chan vlm.ManagerEvent, 32)
+		a.vlmManager = vlm.NewManager(vlm.DefaultManagerConfig(), a.vlmEvents)
+		go a.forwardVLMEvents()
+		logger.Log.Debug("app: VLM manager initialized", "tier", a.vlmHWProfile.Tier)
+	}
+
 	// Load AI scoring enabled state.
 	aiEnabledStr, _ := a.store.GetConfig("ai_scoring_enabled")
 	a.aiEnabled = aiEnabledStr == "true"
 	logger.Log.Info("app: AI scoring state loaded", "enabled", a.aiEnabled, "registryAvailable", a.registry.Available())
+}
+
+// Shutdown cleans up resources on app exit.
+func (a *App) Shutdown() {
+	// Stop VLM manager and close event channel so forwardVLMEvents goroutine exits.
+	if a.vlmManager != nil {
+		_ = a.vlmManager.Stop(context.Background())
+	}
+	if a.vlmEvents != nil {
+		close(a.vlmEvents)
+	}
+	logger.Log.Debug("app: shutdown complete")
 }
 
 func (a *App) loadOrInitConfig(ffmpegPath string) *AppConfig {

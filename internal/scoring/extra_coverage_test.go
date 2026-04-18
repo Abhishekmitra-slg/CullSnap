@@ -452,7 +452,7 @@ func TestPipeline_Execute_UnknownQualityMetric(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// constructors.go — NewFaceDetectorPlugin, NewFaceEmbedderPlugin, NewAestheticPlugin
+// constructors.go — NewFaceDetectorPlugin, NewFaceEmbedderPlugin
 // ──────────────────────────────────────────────────────────────────────────────
 
 // TestNewFaceDetectorPlugin_Valid verifies plugin is created and models are registered.
@@ -518,34 +518,6 @@ func TestNewFaceEmbedderPlugin_BadDir(t *testing.T) {
 	_, err := NewFaceEmbedderPlugin(filepath.Join(badPath, "sub"))
 	if err == nil {
 		t.Error("NewFaceEmbedderPlugin(bad dir) should return error")
-	}
-}
-
-// TestNewAestheticPlugin_Valid verifies plugin is created with models registered.
-func TestNewAestheticPlugin_Valid(t *testing.T) {
-	tmp := t.TempDir()
-	p, err := NewAestheticPlugin(tmp)
-	if err != nil {
-		t.Fatalf("NewAestheticPlugin: %v", err)
-	}
-	if p == nil {
-		t.Fatal("NewAestheticPlugin returned nil plugin")
-	}
-	if p.Name() != "aesthetic" {
-		t.Errorf("Name() = %q, want aesthetic", p.Name())
-	}
-}
-
-// TestNewAestheticPlugin_BadDir verifies error for unwritable path.
-func TestNewAestheticPlugin_BadDir(t *testing.T) {
-	tmp := t.TempDir()
-	badPath := filepath.Join(tmp, "notadir")
-	if err := os.WriteFile(badPath, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewAestheticPlugin(filepath.Join(badPath, "sub"))
-	if err == nil {
-		t.Error("NewAestheticPlugin(bad dir) should return error")
 	}
 }
 
@@ -641,60 +613,24 @@ func TestModelManager_DownloadAll_ProgressCallback(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// aesthetic.go — softmax edge cases, parseNIMAOutput (no ONNX, just logic tests)
-// ──────────────────────────────────────────────────────────────────────────────
-
-// TestSoftmax_AllEqual verifies that equal logits produce a uniform distribution.
-func TestSoftmax_AllEqual(t *testing.T) {
-	logits := []float32{1.0, 1.0, 1.0, 1.0}
-	probs := softmax(logits)
-	if len(probs) != 4 {
-		t.Fatalf("len(probs) = %d, want 4", len(probs))
-	}
-	for i, p := range probs {
-		if math.Abs(float64(p)-0.25) > 1e-5 {
-			t.Errorf("probs[%d] = %f, want 0.25", i, p)
-		}
-	}
-}
-
-// TestSoftmax_Empty verifies nil is returned for empty input.
-func TestSoftmax_Empty(t *testing.T) {
-	if got := softmax(nil); got != nil {
-		t.Errorf("softmax(nil) = %v, want nil", got)
-	}
-}
-
-// TestSoftmax_SumsToOne verifies the output is a valid probability distribution.
-func TestSoftmax_SumsToOne(t *testing.T) {
-	logits := []float32{2.0, 1.0, 0.1, -1.0, 3.0}
-	probs := softmax(logits)
-	var sum float64
-	for _, p := range probs {
-		sum += float64(p)
-	}
-	if math.Abs(sum-1.0) > 1e-5 {
-		t.Errorf("softmax sum = %f, want 1.0", sum)
-	}
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // weights.go — Apply edge case when Aesthetic+Sharpness are both zero
 // ──────────────────────────────────────────────────────────────────────────────
 
 // TestScoreWeights_Apply_NoFaces_BasePoolZero verifies the "split evenly" path
-// when Aesthetic and Sharpness weights are both zero and there are no faces.
+// when Aesthetic, Sharpness, and Composition weights are all zero and there are no faces.
+// noFacePool = 0.5+0.5 = 1.0; split evenly across 3 base components → each eff = 1/3.
+// score = (1/3)*0.8 + (1/3)*0.6 + (1/3)*0.0 ≈ 0.4667
 func TestScoreWeights_Apply_NoFaces_BasePoolZero(t *testing.T) {
-	w := ScoreWeights{Aesthetic: 0, Sharpness: 0, Face: 0.5, Eyes: 0.5}
+	w := ScoreWeights{Aesthetic: 0, Sharpness: 0, Face: 0.5, Eyes: 0.5, Composition: 0}
 	cs := CompositeScore{
 		FaceCount:      0,
 		AestheticScore: 0.8,
 		SharpnessScore: 0.6,
 	}
 	got := w.Apply(cs)
-	// aestheticEff = 0.5, sharpnessEff = 0.5 → 0.5*0.8 + 0.5*0.6 = 0.70
-	if math.Abs(got-0.70) > 1e-5 {
-		t.Errorf("Apply(basePoolZero) = %f, want 0.70", got)
+	want := (0.8 + 0.6 + 0.0) / 3.0
+	if math.Abs(got-want) > 1e-5 {
+		t.Errorf("Apply(basePoolZero) = %f, want %f", got, want)
 	}
 }
 

@@ -34,6 +34,7 @@ cullsnap-*.png
 # Planning docs, specs, design docs (local working documents only)
 .superpowers/
 docs/superpowers/
+docs/issues/
 
 # Security & Secrets
 .env
