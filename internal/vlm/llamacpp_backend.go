@@ -15,15 +15,16 @@ import (
 )
 
 const (
-	llamaCppBackendName   = "llamacpp"
-	llamaCppCtxSize       = 4096
-	llamaCppGPULayers     = 99
-	llamaCppReadyTimeout  = 60 * time.Second
-	llamaCppReadyPoll     = 500 * time.Millisecond
-	llamaCppStopGrace     = 5 * time.Second
-	llamaCppTokenBytesLen = 32
-	llamaCppMaxImages     = 5
-	llamaCppHost          = "127.0.0.1"
+	llamaCppBackendName     = "llamacpp"
+	llamaCppCtxSize         = 4096
+	llamaCppGPULayers       = 99
+	llamaCppReadyTimeout    = 60 * time.Second
+	llamaCppReadyPoll       = 500 * time.Millisecond
+	llamaCppStopGrace       = 5 * time.Second
+	llamaCppTokenBytesLen   = 32
+	llamaCppMaxImages       = 5
+	llamaCppHost            = "127.0.0.1"
+	llamaCppMaxStartRetries = 3
 )
 
 var llamaCppDefaultTokenBudgets = []int{70, 140, 280, 560, 1120}
@@ -86,6 +87,9 @@ func (b *LlamaCppBackend) ModelInfo() ModelInfo {
 }
 
 // Start launches the llama-server subprocess and waits for it to be ready.
+// Wraps startOnceLocked in a bounded retry loop so a rare TOCTOU port
+// collision between findFreePort() and subprocess bind cannot strand the
+// caller on a 60s waitForReady timeout.
 func (b *LlamaCppBackend) Start(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -113,16 +117,45 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("vlm: llamacpp: model not found at %q: %w", b.modelPath, err)
 	}
 
+	var lastErr error
+	for attempt := 1; attempt <= llamaCppMaxStartRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err, retriable := b.startOnceLocked(ctx)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retriable {
+			return err
+		}
+		if logger.Log != nil {
+			logger.Log.Warn("vlm: llamacpp: start attempt failed, retrying",
+				slog.Int("attempt", attempt),
+				slog.Int("maxAttempts", llamaCppMaxStartRetries),
+				slog.Any("err", err),
+			)
+		}
+	}
+	return fmt.Errorf("vlm: llamacpp: failed after %d start attempts: %w", llamaCppMaxStartRetries, lastErr)
+}
+
+// startOnceLocked performs a single launch attempt. Must be called with b.mu held.
+// The bool return indicates whether the caller should retry: true for failures
+// after cmd.Start() succeeded (covers port TOCTOU, transient subprocess crashes),
+// false for pre-exec failures (port alloc, token gen, pipe setup, cmd.Start).
+func (b *LlamaCppBackend) startOnceLocked(ctx context.Context) (error, bool) {
 	// Find a free port.
 	port, err := findFreePort()
 	if err != nil {
-		return fmt.Errorf("vlm: llamacpp: find free port: %w", err)
+		return fmt.Errorf("vlm: llamacpp: find free port: %w", err), false
 	}
 
 	// Generate a session token.
 	token, err := generateSessionToken()
 	if err != nil {
-		return fmt.Errorf("vlm: llamacpp: generate session token: %w", err)
+		return fmt.Errorf("vlm: llamacpp: generate session token: %w", err), false
 	}
 
 	args := []string{
@@ -150,12 +183,12 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 	stderrPipe, pipeErr := cmd.StderrPipe()
 	if pipeErr != nil {
 		cancelStderr()
-		return fmt.Errorf("vlm: llamacpp: create stderr pipe: %w", pipeErr)
+		return fmt.Errorf("vlm: llamacpp: create stderr pipe: %w", pipeErr), false
 	}
 
 	if startErr := cmd.Start(); startErr != nil {
 		cancelStderr()
-		return fmt.Errorf("vlm: llamacpp: start process: %w", startErr)
+		return fmt.Errorf("vlm: llamacpp: start process: %w", startErr), false
 	}
 
 	// Capture stderr into a bounded ring for crash diagnostics, while still logging live.
@@ -212,7 +245,9 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 		b.cancelStderr = nil
 		b.procDone = nil
 		b.stderrBuf = nil
-		return fmt.Errorf("vlm: llamacpp: server did not become ready: %w", err)
+		// Caller context cancellation is terminal — do not retry on the caller's behalf.
+		retriable := ctx.Err() == nil
+		return fmt.Errorf("vlm: llamacpp: server did not become ready: %w", err), retriable
 	}
 
 	b.client = NewClient(baseURL, token, b.modelEntry.Name)
@@ -224,7 +259,7 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 		)
 	}
 
-	return nil
+	return nil, false
 }
 
 // waitForReady polls /health until the server responds OK, the deadline expires,

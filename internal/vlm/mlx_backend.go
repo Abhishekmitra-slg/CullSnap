@@ -20,6 +20,7 @@ const (
 	mlxReadyPollInterval = 1 * time.Second
 	mlxReadyDeadline     = 120 * time.Second
 	mlxTokenBudgetBase   = 70
+	mlxMaxStartRetries   = 3
 )
 
 // mlxTokenBudgets is the standard token-budget ladder for VLM calls.
@@ -81,6 +82,9 @@ func (b *MLXBackend) ModelInfo() ModelInfo {
 
 // Start verifies prerequisites, allocates a port, and launches the mlx_vlm.server
 // subprocess. It blocks until the server is ready or the context deadline is reached.
+// Wraps startOnceLocked in a bounded retry loop so a rare TOCTOU port collision
+// between findFreePort() and subprocess bind cannot strand the caller on a 120s
+// waitForReady timeout.
 func (b *MLXBackend) Start(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -103,9 +107,37 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("vlm: mlx: model not found at %q (%w)", b.modelPath, err)
 	}
 
+	var lastErr error
+	for attempt := 1; attempt <= mlxMaxStartRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err, retriable := b.startOnceLocked(ctx, python3)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retriable {
+			return err
+		}
+		if logger.Log != nil {
+			logger.Log.Warn("vlm: mlx: start attempt failed, retrying",
+				slog.Int("attempt", attempt),
+				slog.Int("maxAttempts", mlxMaxStartRetries),
+				slog.Any("err", err),
+			)
+		}
+	}
+	return fmt.Errorf("vlm: mlx: failed after %d start attempts: %w", mlxMaxStartRetries, lastErr)
+}
+
+// startOnceLocked performs a single launch attempt. Must be called with b.mu held.
+// Returns retriable=true only for waitForReady failures (which cover port TOCTOU and
+// transient subprocess crashes); pipe/exec failures are not retried.
+func (b *MLXBackend) startOnceLocked(ctx context.Context, python3 string) (error, bool) {
 	port, err := findFreePort()
 	if err != nil {
-		return fmt.Errorf("vlm: mlx: find free port: %w", err)
+		return fmt.Errorf("vlm: mlx: find free port: %w", err), false
 	}
 	b.port = port
 
@@ -148,18 +180,18 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 	// debugging) and retain a bounded tail for crash diagnostics.
 	stdoutPipe, soutErr := cmd.StdoutPipe()
 	if soutErr != nil {
-		return fmt.Errorf("vlm: mlx: stdout pipe: %w", soutErr)
+		return fmt.Errorf("vlm: mlx: stdout pipe: %w", soutErr), false
 	}
 	stderrPipe, serrErr := cmd.StderrPipe()
 	if serrErr != nil {
-		return fmt.Errorf("vlm: mlx: stderr pipe: %w", serrErr)
+		return fmt.Errorf("vlm: mlx: stderr pipe: %w", serrErr), false
 	}
 	stderrBuf := newBoundedBuffer(8192)
 	stderrCtx, cancelStderr := context.WithCancel(context.Background())
 
 	if startErr := cmd.Start(); startErr != nil {
 		cancelStderr()
-		return fmt.Errorf("vlm: mlx: start subprocess: %w", startErr)
+		return fmt.Errorf("vlm: mlx: start subprocess: %w", startErr), false
 	}
 
 	// Drain both pipes; tee into os.Stderr and into the ring.
@@ -216,13 +248,15 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 		b.cancelStderr = nil
 		b.procDone = nil
 		b.stderrBuf = nil
-		return fmt.Errorf("vlm: mlx: server did not become ready: %w", readyErr)
+		// Caller context cancellation is terminal — do not retry on the caller's behalf.
+		retriable := ctx.Err() == nil
+		return fmt.Errorf("vlm: mlx: server did not become ready: %w", readyErr), retriable
 	}
 
 	if logger.Log != nil {
 		logger.Log.Debug("vlm: mlx: server ready", slog.Int("port", port))
 	}
-	return nil
+	return nil, false
 }
 
 // waitForReady polls GET /v1/models every second until the server responds with
