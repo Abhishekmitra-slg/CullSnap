@@ -110,10 +110,23 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 	b.port = port
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	// MLX server has no auth token.
+	// Upstream mlx_vlm.server exposes no --api-key flag and performs no
+	// Authorization header checks (verified against Blaizzy/mlx-vlm main, 2026-04-18).
+	// Unlike llama-server (llamacpp_backend.go:123), we cannot generate and enforce
+	// a session token here. Mitigations in place:
+	//   1. Server binds to 127.0.0.1 only (see --host below), not reachable off-host.
+	//   2. ModelEntry.Available is false for MLX entries pending #128 — users do
+	//      not reach this code path in the shipping build.
+	// Residual risk: any local process running as the same user can issue
+	// requests to the MLX server port while it is running. Tracked as #115.
+	// Upstream contribution to add --api-key support would remove this gap.
 	b.client = NewClient(baseURL, "", b.modelEntry.Name)
 
 	if logger.Log != nil {
+		logger.Log.Warn("vlm: mlx: starting server WITHOUT api-key auth; upstream mlx_vlm.server lacks --api-key support (issue #115)",
+			slog.Int("port", port),
+			slog.String("bind", "127.0.0.1"),
+		)
 		logger.Log.Debug("vlm: mlx: launching server",
 			slog.String("python3", python3),
 			slog.String("model", b.modelPath),
