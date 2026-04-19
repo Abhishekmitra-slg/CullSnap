@@ -105,10 +105,51 @@ func (c *Client) FetchTree(ctx context.Context, repo, revision string) ([]TreeEn
 		out = append(out, e)
 	}
 	commit := resp.Header.Get("X-Repo-Commit")
+	if commit == "" {
+		// HF tree endpoint stopped returning X-Repo-Commit around 2026-Q1.
+		// Fall back to /api/models/<repo>/revision/<rev> which carries `sha`.
+		commit, err = c.fetchRevisionSHA(ctx, repo, revision)
+		if err != nil {
+			return nil, "", fmt.Errorf("hfclient: resolve commit: %w", err)
+		}
+	}
 	if logger.Log != nil {
 		logger.Log.Debug("hfclient: tree fetched", "repo", repo, "commit", commit, "files", len(out))
 	}
 	return out, commit, nil
+}
+
+// fetchRevisionSHA calls /api/models/<repo>/revision/<revision> and returns the
+// resolved commit SHA from the JSON `sha` field.
+func (c *Client) fetchRevisionSHA(ctx context.Context, repo, revision string) (string, error) {
+	url := fmt.Sprintf("%s/api/models/%s/revision/%s", c.baseURL, repo, revision)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("hfclient: revision request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("hfclient: revision %q@%q: status %d: %s", repo, revision, resp.StatusCode, string(body))
+	}
+	var payload struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("hfclient: revision decode: %w", err)
+	}
+	if payload.SHA == "" {
+		return "", fmt.Errorf("hfclient: revision %q@%q: empty sha", repo, revision)
+	}
+	return payload.SHA, nil
 }
 
 // ResolveURL returns the resolve URL for a given file at a commit.

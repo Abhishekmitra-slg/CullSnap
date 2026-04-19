@@ -57,6 +57,33 @@ func TestFetchTreeRejectsBadPath(t *testing.T) {
 	}
 }
 
+func TestFetchTreeFallbackToRevisionSHA(t *testing.T) {
+	// HF tree endpoint dropped X-Repo-Commit around 2026-Q1; client must fall back
+	// to /api/models/<repo>/revision/<rev> and parse the `sha` field.
+	wantSHA := "abcdef0123456789abcdef0123456789abcdef01"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/models/foo/bar/tree/main":
+			// No X-Repo-Commit header.
+			_, _ = w.Write([]byte(`[]`)) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
+		case "/api/models/foo/bar/revision/main":
+			_, _ = w.Write([]byte(`{"sha":"` + wantSHA + `"}`)) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	c := New("")
+	c.baseURL = srv.URL
+	_, commit, err := c.FetchTree(context.Background(), "foo/bar", "main")
+	if err != nil {
+		t.Fatalf("FetchTree: %v", err)
+	}
+	if commit != wantSHA {
+		t.Fatalf("commit: got %q want %q", commit, wantSHA)
+	}
+}
+
 func TestFetchTreeAuth(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer testtok" {
