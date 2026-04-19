@@ -1145,47 +1145,76 @@ func (s *SQLiteStore) GetVLMRankingsForFolder(folderPath string) ([]VLMRankingGr
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	groupRows, err := s.db.Query(
-		`SELECT folder_path, group_label, photo_count, explanation, model_name, prompt_version
-		 FROM vlm_ranking_groups WHERE folder_path = ?`, folderPath,
+	// Single LEFT JOIN instead of the previous 1+N query pattern. The old
+	// shape issued one "list groups" query followed by a "list rankings"
+	// query per group, all while holding s.mu.RLock — with one write
+	// transaction blocked for the whole fan-out. This version fetches the
+	// flattened group×ranking tuple set once and aggregates in-memory.
+	//
+	// ORDER BY group_label keeps rows for a given group contiguous so the
+	// map-less aggregator below can preserve insertion order without a
+	// second pass. Within a group, ORDER BY rank ASC matches the previous
+	// per-group sort. SQLite orders NULLs first by default, which places
+	// the synthetic NULL row for an empty group (zero rankings) at the
+	// top of its group block — we skip it via photoPath.Valid.
+	rows, err := s.db.Query(
+		`SELECT g.folder_path, g.group_label, g.photo_count, g.explanation, g.model_name, g.prompt_version,
+		        r.photo_path, r.rank, r.relative_score, r.notes, r.tokens_used
+		   FROM vlm_ranking_groups g
+		   LEFT JOIN vlm_rankings r
+		     ON g.folder_path = r.folder_path AND g.group_label = r.group_label
+		  WHERE g.folder_path = ?
+		  ORDER BY g.group_label, r.rank ASC`,
+		folderPath,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get VLM ranking groups: %w", err)
+		return nil, fmt.Errorf("failed to query VLM rankings: %w", err)
 	}
-	defer func() { _ = groupRows.Close() }()
+	defer func() { _ = rows.Close() }()
 
+	// groupIndex maps group_label -> index in groups so we can append new
+	// ranking rows without a second lookup pass. Contiguous-by-group
+	// ordering means the map never grows beyond the distinct group count.
+	groupIndex := make(map[string]int)
 	var groups []VLMRankingGroupRow
-	for groupRows.Next() {
-		var g VLMRankingGroupRow
-		if err := groupRows.Scan(&g.FolderPath, &g.GroupLabel, &g.PhotoCount, &g.Explanation, &g.ModelName, &g.PromptVersion); err != nil {
-			return nil, fmt.Errorf("failed to scan VLM ranking group: %w", err)
-		}
-		groups = append(groups, g)
-	}
-	if err := groupRows.Err(); err != nil {
-		return nil, fmt.Errorf("VLM ranking groups iteration error: %w", err)
-	}
 
-	for i, g := range groups {
-		rankRows, err := s.db.Query(
-			`SELECT photo_path, rank, relative_score, notes, tokens_used
-			 FROM vlm_rankings WHERE folder_path = ? AND group_label = ? ORDER BY rank ASC`,
-			g.FolderPath, g.GroupLabel,
+	for rows.Next() {
+		var g VLMRankingGroupRow
+		var (
+			photoPath  sql.NullString
+			rank       sql.NullInt64
+			relScore   sql.NullFloat64
+			notes      sql.NullString
+			tokensUsed sql.NullInt64
 		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get VLM rankings for group %s: %w", g.GroupLabel, err)
+		if err := rows.Scan(
+			&g.FolderPath, &g.GroupLabel, &g.PhotoCount, &g.Explanation, &g.ModelName, &g.PromptVersion,
+			&photoPath, &rank, &relScore, &notes, &tokensUsed,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan VLM ranking row: %w", err)
 		}
-		var rankings []VLMRankingRow
-		for rankRows.Next() {
-			var r VLMRankingRow
-			if err := rankRows.Scan(&r.PhotoPath, &r.Rank, &r.RelativeScore, &r.Notes, &r.TokensUsed); err != nil {
-				_ = rankRows.Close()
-				return nil, fmt.Errorf("failed to scan VLM ranking row: %w", err)
-			}
-			rankings = append(rankings, r)
+
+		idx, ok := groupIndex[g.GroupLabel]
+		if !ok {
+			idx = len(groups)
+			groupIndex[g.GroupLabel] = idx
+			groups = append(groups, g)
 		}
-		_ = rankRows.Close()
-		groups[i].Rankings = rankings
+		// A group with zero rankings still produces one row (NULL ranking
+		// columns) from the LEFT JOIN. Skip those so empty groups end up
+		// with a nil Rankings slice instead of a phantom zero-value row.
+		if photoPath.Valid {
+			groups[idx].Rankings = append(groups[idx].Rankings, VLMRankingRow{
+				PhotoPath:     photoPath.String,
+				Rank:          int(rank.Int64),
+				RelativeScore: relScore.Float64,
+				Notes:         notes.String,
+				TokensUsed:    int(tokensUsed.Int64),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("VLM rankings iteration error: %w", err)
 	}
 
 	return groups, nil
