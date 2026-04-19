@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"cullsnap/internal/logger"
@@ -133,12 +135,16 @@ func (p *Provisioner) ensureUVFromInfo(ctx context.Context, info UVDownloadInfo,
 		return "", fmt.Errorf("vlm/runtime: uv SHA-256 mismatch: got %s want %s", got, info.SHA256)
 	}
 
-	// Note: production uv ships as a tarball; ensureUVFromInfo here treats
-	// info.URL as a direct binary URL for testability. Real EnsureUV path
-	// wraps a tarball-extraction helper around this. Implement in a
-	// follow-up task if URL ends with ".tar.gz".
-	if err := os.Rename(partial, target); err != nil {
-		return "", err
+	if strings.HasSuffix(info.URL, ".tar.gz") || strings.HasSuffix(info.URL, ".tgz") {
+		if err := extractUVFromTarball(partial, target); err != nil {
+			_ = os.Remove(partial)
+			return "", err
+		}
+		_ = os.Remove(partial)
+	} else {
+		if err := os.Rename(partial, target); err != nil {
+			return "", err
+		}
 	}
 	if err := os.Chmod(target, 0o755); err != nil {
 		return "", err
@@ -148,4 +154,42 @@ func (p *Provisioner) ensureUVFromInfo(ctx context.Context, info UVDownloadInfo,
 		logger.Log.Debug("vlm/runtime: uv installed", "path", target)
 	}
 	return target, nil
+}
+
+// extractUVFromTarball extracts the inner "uv" binary from the .tar.gz at
+// tarballPath into outPath. The tarball contains a single directory with a
+// single "uv" file.
+func extractUVFromTarball(tarballPath, outPath string) error {
+	f, err := os.Open(tarballPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip: %w", err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return fmt.Errorf("tarball missing uv binary")
+		}
+		if err != nil {
+			return fmt.Errorf("tar: %w", err)
+		}
+		if filepath.Base(hdr.Name) != "uv" || hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		outF, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(outF, tr); err != nil { //nolint:gosec // size bounded by sha-verified tarball
+			_ = outF.Close()
+			return err
+		}
+		return outF.Close()
+	}
 }
