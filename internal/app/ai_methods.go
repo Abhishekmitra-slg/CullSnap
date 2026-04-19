@@ -957,11 +957,19 @@ func (a *App) DownloadVLMModel(modelName string) error {
 	return nil
 }
 
-// provisionLlamaServer downloads the llama-server binary if not already present.
+// provisionLlamaServer downloads and extracts the llama-server runtime if the
+// on-disk state is not already usable.
+//
+// The llama.cpp release ships the binary plus its shared libraries inside a
+// zip under "build/bin/". We download that zip to a dedicated staging path
+// (never the binary path — a previous version of this function wrote the zip
+// to the binary path, and would-be exec of the zip failed silently at runtime),
+// verify its SHA256, extract the allow-listed runtime files, and delete the zip.
+// See vlm.ExtractLlamaServerZip for the allowlist.
 func (a *App) provisionLlamaServer(cullsnapDir string) error {
 	binaryPath := vlm.LlamaServerBinaryPath(cullsnapDir)
-	if _, err := os.Stat(binaryPath); err == nil {
-		logger.Log.Debug("app: llama-server already provisioned", "path", binaryPath)
+	if vlm.LlamaServerRuntimeReady(cullsnapDir) {
+		logger.Log.Debug("app: llama-server runtime already present", "path", binaryPath)
 		return nil
 	}
 
@@ -981,16 +989,39 @@ func (a *App) provisionLlamaServer(cullsnapDir string) error {
 		return fmt.Errorf("no llama-server SHA256 registered for %s/%s — refusing to download unverified binary", stdruntime.GOOS, stdruntime.GOARCH)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
-		return err
+	binDir := filepath.Dir(binaryPath)
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return fmt.Errorf("create llama-server bin dir: %w", err)
 	}
 
-	_, err := vlm.DownloadFileResumable(a.ctx, url, binaryPath, expectedSHA, nil)
-	if err != nil {
-		return err
+	// Legacy installs wrote the zip straight to binaryPath. Remove that so the
+	// new flow can cleanly write the extracted binary to the same location
+	// without a hash-mismatch loop inside DownloadFileResumable.
+	if isZip, _ := vlm.IsLegacyZipAtBinaryPath(binaryPath); isZip {
+		logger.Log.Warn("app: removing legacy zip-as-binary before re-provisioning", "path", binaryPath)
+		if err := os.Remove(binaryPath); err != nil {
+			return fmt.Errorf("remove legacy zip-as-binary: %w", err)
+		}
 	}
 
-	return os.Chmod(binaryPath, 0o755)
+	zipPath := vlm.LlamaServerZipPath(cullsnapDir)
+	if _, err := vlm.DownloadFileResumable(a.ctx, url, zipPath, expectedSHA, nil); err != nil {
+		return fmt.Errorf("download llama-server zip: %w", err)
+	}
+
+	if _, err := vlm.ExtractLlamaServerZip(zipPath, binDir); err != nil {
+		return fmt.Errorf("extract llama-server zip: %w", err)
+	}
+
+	if err := os.Remove(zipPath); err != nil && !os.IsNotExist(err) {
+		logger.Log.Warn("app: could not remove llama-server zip after extract",
+			"path", zipPath, "err", err)
+	}
+
+	if _, err := os.Stat(binaryPath); err != nil {
+		return fmt.Errorf("llama-server binary missing after extract: %w", err)
+	}
+	return nil
 }
 
 // mustMarshalJSON marshals v to JSON, returning "[]" on error.
