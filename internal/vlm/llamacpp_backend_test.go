@@ -3,6 +3,7 @@ package vlm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -332,7 +333,8 @@ func TestLlamaCppBackendRankPhotosParseFail(t *testing.T) {
 
 // TestLlamaCppBackendStartDetectsImmediateCrash verifies that when the subprocess
 // exits immediately (e.g. bad binary, model incompatibility), Start returns within
-// a few seconds rather than waiting the full 60s waitForReady timeout.
+// a few seconds rather than waiting the full 60s waitForReady timeout, even with
+// the retry loop trying llamaCppMaxStartRetries times.
 func TestLlamaCppBackendStartDetectsImmediateCrash(t *testing.T) {
 	falseBin := ""
 	for _, candidate := range []string{"/usr/bin/false", "/bin/false"} {
@@ -367,12 +369,73 @@ func TestLlamaCppBackendStartDetectsImmediateCrash(t *testing.T) {
 	if err == nil {
 		t.Fatal("Start() should fail when subprocess exits immediately")
 	}
+	// Even with llamaCppMaxStartRetries crash-detection cycles, each attempt
+	// terminates as soon as procDone closes, so total wallclock stays small.
 	if elapsed > 5*time.Second {
 		t.Errorf("Start() took %v detecting crash; expected <5s (regression in procDone detection)", elapsed)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "crashed") && !strings.Contains(msg, "exited") {
 		t.Errorf("error should indicate subprocess crash/exit, got: %v", err)
+	}
+}
+
+// TestLlamaCppBackendStartRetriesOnReadyFailure verifies that waitForReady
+// failures are retried llamaCppMaxStartRetries times before surfacing, so a
+// TOCTOU port collision (or other transient startup error) does not leave the
+// caller stuck on a single 60s timeout.
+func TestLlamaCppBackendStartRetriesOnReadyFailure(t *testing.T) {
+	falseBin := ""
+	for _, candidate := range []string{"/usr/bin/false", "/bin/false"} {
+		if _, err := os.Stat(candidate); err == nil {
+			falseBin = candidate
+			break
+		}
+	}
+	if falseBin == "" {
+		t.Skip("no `false` binary available on this platform")
+	}
+
+	tmpModel := filepath.Join(t.TempDir(), "fake.gguf")
+	if err := os.WriteFile(tmpModel, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write fake model: %v", err)
+	}
+
+	b := NewLlamaCppBackend(falseBin, tmpModel, ModelEntry{
+		Name: "retry-test", Variant: "q", Backend: "llamacpp",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := b.Start(ctx)
+	if err == nil {
+		t.Fatal("Start() should fail when every attempt crashes")
+	}
+	want := fmt.Sprintf("failed after %d start attempts", llamaCppMaxStartRetries)
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error should mention retry exhaustion %q, got: %v", want, err)
+	}
+}
+
+// TestLlamaCppBackendStartNonRetriableErrorsSkipRetries verifies that pre-exec
+// failures (missing binary, missing model) return immediately without wrapping
+// in the "failed after N start attempts" envelope — the retry loop is reserved
+// for transient post-exec failures.
+func TestLlamaCppBackendStartNonRetriableErrorsSkipRetries(t *testing.T) {
+	// Missing binary: stat fails before the retry loop even begins.
+	b := NewLlamaCppBackend("/nonexistent/llama-server", "/nonexistent/model.gguf", ModelEntry{
+		Name: "missing-test", Variant: "q", Backend: "llamacpp",
+	})
+	err := b.Start(context.Background())
+	if err == nil {
+		t.Fatal("Start() with missing binary should error")
+	}
+	if strings.Contains(err.Error(), "failed after") {
+		t.Errorf("missing-binary error should not be wrapped in retry envelope, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "binary not found") {
+		t.Errorf("error should mention missing binary, got: %v", err)
 	}
 }
 

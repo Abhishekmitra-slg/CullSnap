@@ -4,6 +4,7 @@ package vlm
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,5 +62,46 @@ func TestMLXBackendStartDetectsImmediateCrash(t *testing.T) {
 	// The stderr tail captured from the fake python should surface in the error.
 	if !strings.Contains(msg, "mlx_vlm import failed") {
 		t.Logf("warning: stderr tail missing from error (may be a timing edge) — got: %v", err)
+	}
+}
+
+// TestMLXBackendStartRetriesOnReadyFailure verifies that waitForReady failures
+// are retried mlxMaxStartRetries times before surfacing, so a TOCTOU port
+// collision or transient subprocess crash does not leave the caller stuck on a
+// single 120s timeout.
+func TestMLXBackendStartRetriesOnReadyFailure(t *testing.T) {
+	tmp := t.TempDir()
+
+	venv := filepath.Join(tmp, "venv")
+	binDir := filepath.Join(venv, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	fakePython := filepath.Join(binDir, "python3")
+	script := "#!/bin/sh\nexit 1\n"
+	if err := os.WriteFile(fakePython, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake python3: %v", err)
+	}
+
+	modelDir := filepath.Join(tmp, "model")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatalf("mkdir model: %v", err)
+	}
+
+	b := NewMLXBackend(venv, modelDir, ModelEntry{
+		Name: "mlx-retry-test", Variant: "4bit", Backend: "mlx",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	err := b.Start(ctx)
+	if err == nil {
+		_ = b.Stop(context.Background())
+		t.Fatal("Start() should fail when every attempt crashes")
+	}
+	want := fmt.Sprintf("failed after %d start attempts", mlxMaxStartRetries)
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error should mention retry exhaustion %q, got: %v", want, err)
 	}
 }
