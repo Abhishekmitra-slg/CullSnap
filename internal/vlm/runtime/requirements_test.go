@@ -4,12 +4,16 @@ import (
 	"context"
 	"embed"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestInstallRequirementsInvokesUV(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash required for fake-uv shim")
+	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
 	_ = os.MkdirAll(bin, 0o755)

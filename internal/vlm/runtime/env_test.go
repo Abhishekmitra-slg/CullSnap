@@ -27,3 +27,25 @@ func TestSanitizedEnvAllowList(t *testing.T) {
 		t.Fatal("LANG override missing")
 	}
 }
+
+func TestSanitizedEnvEmptyVenv(t *testing.T) {
+	env := sanitizedEnv("", map[string]string{
+		"PATH": "/system/bin",
+		"HOME": "/home/x",
+	})
+	joined := strings.Join(env, "\x00")
+	// VIRTUAL_ENV must be present (empty value) so uv knows it is not inside a venv.
+	if !strings.Contains(joined, "VIRTUAL_ENV=") {
+		t.Fatal("VIRTUAL_ENV entry missing")
+	}
+	// PATH must not be prefixed with "/bin:" when venvPath is empty.
+	for _, entry := range env {
+		if entry == "PATH=/bin:/system/bin" {
+			t.Fatalf("spurious /bin: prefix in PATH: %s", entry)
+		}
+	}
+	// PATH must equal the inherited value without any venv prefix.
+	if !strings.Contains(joined, "PATH=/system/bin") {
+		t.Fatalf("PATH not inherited correctly: %s", joined)
+	}
+}

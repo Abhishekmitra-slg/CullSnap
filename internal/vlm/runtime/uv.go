@@ -167,17 +167,17 @@ func extractUVFromTarball(tarballPath, outPath string) error {
 	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return fmt.Errorf("gzip: %w", err)
+		return fmt.Errorf("vlm/runtime: gzip: %w", err)
 	}
 	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			return fmt.Errorf("tarball missing uv binary")
+			return fmt.Errorf("vlm/runtime: tarball missing uv binary")
 		}
 		if err != nil {
-			return fmt.Errorf("tar: %w", err)
+			return fmt.Errorf("vlm/runtime: tar: %w", err)
 		}
 		if filepath.Base(hdr.Name) != "uv" || hdr.Typeflag != tar.TypeReg {
 			continue
@@ -186,7 +186,8 @@ func extractUVFromTarball(tarballPath, outPath string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(outF, tr); err != nil { //nolint:gosec // size bounded by sha-verified tarball
+		const maxUVBytes = 50 << 20 // 50 MiB — uv is a small CLI; guards against zip-bomb
+		if _, err := io.CopyN(outF, tr, maxUVBytes); err != nil && err != io.EOF {
 			_ = outF.Close()
 			return err
 		}
