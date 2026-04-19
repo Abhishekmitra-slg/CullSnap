@@ -204,6 +204,13 @@ func (a *App) Startup(ctx context.Context) {
 		a.vlmEvents = make(chan vlm.ManagerEvent, 32)
 		a.vlmManager = vlm.NewManager(vlm.DefaultManagerConfig(), a.vlmEvents)
 		go a.forwardVLMEvents()
+		// Hydrate the manager's custom-instructions cache so the very first
+		// inference call after launch already carries the user's prompt suffix.
+		// Re-sanitize on load — the value on disk was sanitized when written, but
+		// running it through sanitize() again is a cheap defence against a tampered DB.
+		if raw, _ := a.store.GetConfig(vlm.ConfigKeyCustomInstructions); raw != "" {
+			a.vlmManager.SetCustomInstructions(vlm.SanitizeCustomInstructions(raw))
+		}
 		logger.Log.Debug("app: VLM manager initialized", "tier", a.vlmHWProfile.Tier)
 	}
 

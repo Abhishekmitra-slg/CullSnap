@@ -33,10 +33,17 @@ export function SettingsModal({ onClose, setShowAIOnboarding }: SettingsModalPro
     useEffect(() => {
         GetAppConfig().then(cfg => {
             setConfig(cfg);
-            if ((cfg as any).vlmCustomInstructions !== undefined) {
-                setCustomInstructions((cfg as any).vlmCustomInstructions || '');
-            }
         }).catch(console.error);
+        // Custom instructions live in the VLM-specific KV (not AppConfig) so the
+        // value survives an AppConfig reset and so changes can flow into the VLM
+        // manager without bouncing through SaveAppConfig.
+        import('../../wailsjs/go/app/App').then((mod: any) => {
+            if (typeof mod.GetVLMCustomInstructions === 'function') {
+                mod.GetVLMCustomInstructions()
+                    .then((v: string) => setCustomInstructions(v || ''))
+                    .catch((e: any) => console.error('[settings] failed to load VLM custom instructions:', e));
+            }
+        }).catch(() => {});
         loadMirrorStats();
         loadImportStats();
         GetAIWeights().then(w => {
@@ -842,8 +849,19 @@ export function SettingsModal({ onClose, setShowAIOnboarding }: SettingsModalPro
                                     maxLength={500}
                                     onChange={e => setCustomInstructions(e.target.value)}
                                     onBlur={() => {
-                                        const updated = app.AppConfig.createFrom({ ...config, vlmCustomInstructions: customInstructions } as any);
-                                        SaveAppConfig(updated).catch(e => console.error('[settings] failed to save custom instructions:', e));
+                                        // Send straight to the VLM setter so the manager picks up the change
+                                        // for the next analysis without waiting for SaveAppConfig. The setter
+                                        // returns the sanitized string so we can reflect any rejected lines.
+                                        import('../../wailsjs/go/app/App').then((mod: any) => {
+                                            if (typeof mod.SetVLMCustomInstructions !== 'function') return;
+                                            mod.SetVLMCustomInstructions(customInstructions)
+                                                .then((sanitized: string) => {
+                                                    if (sanitized !== customInstructions) {
+                                                        setCustomInstructions(sanitized);
+                                                    }
+                                                })
+                                                .catch((e: any) => console.error('[settings] failed to save custom instructions:', e));
+                                        }).catch(() => {});
                                     }}
                                     placeholder="e.g. Prefer photos with natural lighting. Penalise motion blur."
                                     style={{

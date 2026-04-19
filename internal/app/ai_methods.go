@@ -637,14 +637,33 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 	logger.Log.Info("app: VLM Stage 4 starting", "photos", len(vlmPhotos))
 
 	modelInfo := a.vlmManager.ProviderModelInfo()
+	// Snapshot custom instructions + hash once per run so the cache key, the
+	// LLM input, and the saved row all agree even if the user edits the
+	// suffix mid-analysis.
+	customInstructions := a.vlmManager.CustomInstructions()
+	customHash := vlm.HashCustomInstructions(customInstructions)
 	stage4Start := time.Now()
 	var totalTokens int
 	var scoredCount int
+	var cacheHits int
 
 	for i := range vlmPhotos {
 		photo := &vlmPhotos[i]
 		if ctx.Err() != nil {
 			return
+		}
+
+		// Cache hit: previous score with matching prompt version AND custom
+		// instructions hash means the LLM would produce the same result —
+		// skip the call to save tokens.
+		if cached, _ := a.store.GetVLMScore(photo.Path); cached != nil &&
+			cached.PromptVersion == vlm.PromptVersion &&
+			cached.CustomInstructionsHash == customHash {
+			cacheHits++
+			wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
+				Step: "describe", Current: i + 1, Total: len(vlmPhotos), PhotoPath: photo.Path,
+			})
+			continue
 		}
 
 		// Get ONNX scores for context injection.
@@ -657,10 +676,11 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 		}
 
 		req := vlm.ScoreRequest{
-			PhotoPath:   photo.Path,
-			FaceCount:   faceCount,
-			Sharpness:   sharpness,
-			TokenBudget: 280,
+			PhotoPath:          photo.Path,
+			FaceCount:          faceCount,
+			Sharpness:          sharpness,
+			TokenBudget:        280,
+			CustomInstructions: customInstructions,
 		}
 
 		score, err := a.vlmManager.ScorePhoto(ctx, req)
@@ -674,20 +694,21 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 
 		// Save to DB.
 		a.store.SaveVLMScore(storage.VLMScoreRow{ //nolint:errcheck // best-effort persistence
-			PhotoPath:     photo.Path,
-			FolderPath:    folderPath,
-			Aesthetic:     score.Aesthetic,
-			Composition:   score.Composition,
-			Expression:    score.Expression,
-			TechnicalQual: score.TechnicalQual,
-			SceneType:     score.SceneType,
-			Issues:        mustMarshalJSON(score.Issues),
-			Explanation:   score.Explanation,
-			TokensUsed:    score.TokensUsed,
-			ModelName:     modelInfo.Name,
-			ModelVariant:  modelInfo.Variant,
-			Backend:       modelInfo.Backend,
-			PromptVersion: vlm.PromptVersion,
+			PhotoPath:              photo.Path,
+			FolderPath:             folderPath,
+			Aesthetic:              score.Aesthetic,
+			Composition:            score.Composition,
+			Expression:             score.Expression,
+			TechnicalQual:          score.TechnicalQual,
+			SceneType:              score.SceneType,
+			Issues:                 mustMarshalJSON(score.Issues),
+			Explanation:            score.Explanation,
+			TokensUsed:             score.TokensUsed,
+			ModelName:              modelInfo.Name,
+			ModelVariant:           modelInfo.Variant,
+			Backend:                modelInfo.Backend,
+			PromptVersion:          vlm.PromptVersion,
+			CustomInstructionsHash: customHash,
 		})
 
 		// Emit per-photo result.
@@ -705,7 +726,12 @@ func (a *App) runVLMStage4(ctx context.Context, folderPath string, photos []mode
 
 	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "describe", Total: len(vlmPhotos)})
 	stage4Elapsed := time.Since(stage4Start)
-	logger.Log.Info("app: VLM Stage 4 complete", "photos", len(vlmPhotos), "elapsed", stage4Elapsed)
+	logger.Log.Info("app: VLM Stage 4 complete",
+		"photos", len(vlmPhotos),
+		"scored", scoredCount,
+		"cacheHits", cacheHits,
+		"elapsed", stage4Elapsed,
+	)
 
 	// Persist calibration data for future time estimates.
 	if len(vlmPhotos) > 0 {
@@ -737,7 +763,20 @@ func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.Exec
 	wailsRuntime.EventsEmit(a.ctx, "ai:step-started", AIStepEvent{Step: "rank", Total: len(clusters)})
 	logger.Log.Info("app: VLM Stage 5 starting", "groups", len(clusters))
 
-	var stage5Tokens, stage5Groups int
+	// Snapshot custom instructions + hash once per run; same reasoning as Stage 4.
+	customInstructions := a.vlmManager.CustomInstructions()
+	customHash := vlm.HashCustomInstructions(customInstructions)
+
+	// Pre-load existing rankings into a label->row map so the per-cluster cache
+	// check is a hash lookup, not an extra query each iteration.
+	cachedRankings := make(map[string]storage.VLMRankingGroupRow)
+	if existing, errLoad := a.store.GetVLMRankingsForFolder(folderPath); errLoad == nil {
+		for _, g := range existing {
+			cachedRankings[g.GroupLabel] = g
+		}
+	}
+
+	var stage5Tokens, stage5Groups, stage5CacheHits int
 
 	for i, cluster := range clusters {
 		if ctx.Err() != nil {
@@ -745,6 +784,18 @@ func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.Exec
 		}
 		if cluster.PhotoCount < 2 || cluster.PhotoCount > 5 {
 			continue // Only rank groups of 2-5 photos.
+		}
+
+		// Cache hit: cluster already ranked under the current prompt version
+		// and custom-instructions hash — skip the LLM call.
+		if cached, ok := cachedRankings[cluster.Label]; ok &&
+			cached.PromptVersion == vlm.PromptVersion &&
+			cached.CustomInstructionsHash == customHash {
+			stage5CacheHits++
+			wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
+				Step: "rank", Current: i + 1, Total: len(clusters),
+			})
+			continue
 		}
 
 		detections, _ := a.store.GetFaceDetectionsForCluster(cluster.ID)
@@ -776,9 +827,10 @@ func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.Exec
 		}
 
 		req := vlm.RankRequest{
-			PhotoPaths:  paths,
-			TokenBudget: 280,
-			PhotoScores: photoScores,
+			PhotoPaths:         paths,
+			TokenBudget:        280,
+			PhotoScores:        photoScores,
+			CustomInstructions: customInstructions,
 		}
 
 		result, err := a.vlmManager.RankPhotos(ctx, req)
@@ -802,13 +854,14 @@ func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.Exec
 			}
 		}
 		_ = a.store.SaveVLMRanking(storage.VLMRankingGroupRow{ //nolint:errcheck // best-effort persistence
-			FolderPath:    folderPath,
-			GroupLabel:    cluster.Label,
-			PhotoCount:    len(rankings),
-			Explanation:   result.Explanation,
-			ModelName:     modelInfo.Name,
-			PromptVersion: vlm.PromptVersion,
-			Rankings:      rankings,
+			FolderPath:             folderPath,
+			GroupLabel:             cluster.Label,
+			PhotoCount:             len(rankings),
+			Explanation:            result.Explanation,
+			ModelName:              modelInfo.Name,
+			PromptVersion:          vlm.PromptVersion,
+			CustomInstructionsHash: customHash,
+			Rankings:               rankings,
 		})
 
 		wailsRuntime.EventsEmit(a.ctx, "ai:step-progress", AIStepEvent{
@@ -817,7 +870,11 @@ func (a *App) runVLMStage5(ctx context.Context, folderPath string, plan vlm.Exec
 	}
 
 	wailsRuntime.EventsEmit(a.ctx, "ai:step-completed", AIStepEvent{Step: "rank", Total: len(clusters)})
-	logger.Log.Info("app: VLM Stage 5 complete", "groups", stage5Groups, "tokens", stage5Tokens)
+	logger.Log.Info("app: VLM Stage 5 complete",
+		"groups", stage5Groups,
+		"cacheHits", stage5CacheHits,
+		"tokens", stage5Tokens,
+	)
 
 	// Record token usage.
 	if stage5Groups > 0 {
@@ -1311,9 +1368,11 @@ func (a *App) DeleteVLMModel() error {
 	return nil
 }
 
-// GetStaleVLMStatus checks if any folders have outdated VLM scores.
+// GetStaleVLMStatus checks if any folders have outdated VLM scores against
+// the current prompt version OR the current custom-instructions hash.
 func (a *App) GetStaleVLMStatus() VLMStaleStatus {
-	folders, err := a.store.GetStaleVLMFolders(vlm.PromptVersion)
+	currentHash := vlm.HashCustomInstructions(a.GetVLMCustomInstructions())
+	folders, err := a.store.GetStaleVLMFolders(vlm.PromptVersion, currentHash)
 	if err != nil {
 		logger.Log.Warn("app: failed to check stale VLM folders", "error", err)
 		return VLMStaleStatus{CurrentPrompt: vlm.PromptVersion}
@@ -1328,4 +1387,32 @@ func (a *App) GetStaleVLMStatus() VLMStaleStatus {
 // GetTokenUsageSummary returns aggregated VLM token usage statistics.
 func (a *App) GetTokenUsageSummary() ([]storage.TokenUsageSummary, error) {
 	return a.store.GetTokenUsageSummary()
+}
+
+// GetVLMCustomInstructions returns the persisted custom instructions for the
+// VLM system prompt. Empty string when none have been set.
+func (a *App) GetVLMCustomInstructions() string {
+	v, _ := a.store.GetConfig(vlm.ConfigKeyCustomInstructions)
+	return v
+}
+
+// SetVLMCustomInstructions sanitizes the raw user input, persists it to the
+// config KV, and pushes the cleaned value into the manager so subsequent
+// inferences pick it up immediately. Returns the sanitized value so the UI can
+// reflect any rejected/truncated content. The next analysis run will detect a
+// hash mismatch on cached scores and re-score affected photos.
+func (a *App) SetVLMCustomInstructions(raw string) (string, error) {
+	sanitized := vlm.SanitizeCustomInstructions(raw)
+	if err := a.store.SetConfig(vlm.ConfigKeyCustomInstructions, sanitized); err != nil {
+		logger.Log.Error("app: failed to persist VLM custom instructions", "error", err)
+		return sanitized, fmt.Errorf("persist custom instructions: %w", err)
+	}
+	if a.vlmManager != nil {
+		a.vlmManager.SetCustomInstructions(sanitized)
+	}
+	logger.Log.Info("app: VLM custom instructions updated",
+		"length", len(sanitized),
+		"truncated", len([]rune(raw)) > vlm.MaxCustomInstructionsLen,
+	)
+	return sanitized, nil
 }

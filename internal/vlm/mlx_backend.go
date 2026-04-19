@@ -383,7 +383,7 @@ func (b *MLXBackend) ScorePhoto(ctx context.Context, req ScoreRequest) (*VLMScor
 		)
 	}
 
-	systemPrompt := SystemPrompt("")
+	systemPrompt := SystemPrompt(req.CustomInstructions)
 	userPrompt := Stage4Prompt(Stage4Input{
 		Context:        req.Context,
 		FaceCount:      req.FaceCount,
@@ -442,7 +442,7 @@ func (b *MLXBackend) RankPhotos(ctx context.Context, req RankRequest) (*RankingR
 		photos[i] = Stage5Photo(pc)
 	}
 
-	systemPrompt := SystemPrompt("")
+	systemPrompt := SystemPrompt(req.CustomInstructions)
 	userPrompt := Stage5Prompt(Stage5Input{
 		Photos:  photos,
 		UseCase: req.UseCase,

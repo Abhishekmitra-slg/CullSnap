@@ -144,6 +144,7 @@ func (s *SQLiteStore) initSchema() error {
 			model_variant TEXT NOT NULL DEFAULT '',
 			backend TEXT NOT NULL DEFAULT '',
 			prompt_version INTEGER NOT NULL DEFAULT 0,
+			custom_instructions_hash TEXT NOT NULL DEFAULT '',
 			scored_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE TABLE IF NOT EXISTS vlm_rankings (
@@ -157,6 +158,7 @@ func (s *SQLiteStore) initSchema() error {
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			model_name TEXT NOT NULL DEFAULT '',
 			prompt_version INTEGER NOT NULL DEFAULT 0,
+			custom_instructions_hash TEXT NOT NULL DEFAULT '',
 			ranked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(folder_path, group_label, photo_path)
 		);`,
@@ -168,6 +170,7 @@ func (s *SQLiteStore) initSchema() error {
 			explanation TEXT NOT NULL DEFAULT '',
 			model_name TEXT NOT NULL DEFAULT '',
 			prompt_version INTEGER NOT NULL DEFAULT 0,
+			custom_instructions_hash TEXT NOT NULL DEFAULT '',
 			ranked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(folder_path, group_label)
 		);`,
@@ -200,6 +203,12 @@ func (s *SQLiteStore) initSchema() error {
 		"ALTER TABLE ai_scores ADD COLUMN best_face_sharpness REAL NOT NULL DEFAULT 0",
 		"ALTER TABLE ai_scores ADD COLUMN eye_openness REAL NOT NULL DEFAULT 0",
 		"ALTER TABLE face_clusters ADD COLUMN centroid BLOB",
+		// custom_instructions_hash columns for VLM cache invalidation (#114).
+		// Default '' matches the sentinel returned by vlm.HashCustomInstructions("")
+		// so legacy rows remain valid when the user has no custom instructions set.
+		"ALTER TABLE vlm_scores ADD COLUMN custom_instructions_hash TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE vlm_rankings ADD COLUMN custom_instructions_hash TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE vlm_ranking_groups ADD COLUMN custom_instructions_hash TEXT NOT NULL DEFAULT ''",
 	}
 	for _, stmt := range alterStatements {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -557,21 +566,22 @@ type FaceCluster struct {
 
 // VLMScoreRow stores a single VLM scoring result.
 type VLMScoreRow struct {
-	PhotoPath     string  `json:"photoPath"`
-	FolderPath    string  `json:"folderPath"`
-	Aesthetic     float64 `json:"aesthetic"`
-	Composition   float64 `json:"composition"`
-	Expression    float64 `json:"expression"`
-	TechnicalQual float64 `json:"technicalQuality"`
-	SceneType     string  `json:"sceneType"`
-	Issues        string  `json:"issues"` // JSON array string
-	Explanation   string  `json:"explanation"`
-	TokensUsed    int     `json:"tokensUsed"`
-	ModelName     string  `json:"modelName"`
-	ModelVariant  string  `json:"modelVariant"`
-	Backend       string  `json:"backend"`
-	PromptVersion int     `json:"promptVersion"`
-	ScoredAt      string  `json:"scoredAt"`
+	PhotoPath              string  `json:"photoPath"`
+	FolderPath             string  `json:"folderPath"`
+	Aesthetic              float64 `json:"aesthetic"`
+	Composition            float64 `json:"composition"`
+	Expression             float64 `json:"expression"`
+	TechnicalQual          float64 `json:"technicalQuality"`
+	SceneType              string  `json:"sceneType"`
+	Issues                 string  `json:"issues"` // JSON array string
+	Explanation            string  `json:"explanation"`
+	TokensUsed             int     `json:"tokensUsed"`
+	ModelName              string  `json:"modelName"`
+	ModelVariant           string  `json:"modelVariant"`
+	Backend                string  `json:"backend"`
+	PromptVersion          int     `json:"promptVersion"`
+	CustomInstructionsHash string  `json:"customInstructionsHash"`
+	ScoredAt               string  `json:"scoredAt"`
 }
 
 // VLMRankingRow stores a single photo's rank within a ranking group.
@@ -585,13 +595,14 @@ type VLMRankingRow struct {
 
 // VLMRankingGroupRow stores a ranking group with its ranked photos.
 type VLMRankingGroupRow struct {
-	FolderPath    string          `json:"folderPath"`
-	GroupLabel    string          `json:"groupLabel"`
-	PhotoCount    int             `json:"photoCount"`
-	Explanation   string          `json:"explanation"`
-	ModelName     string          `json:"modelName"`
-	PromptVersion int             `json:"promptVersion"`
-	Rankings      []VLMRankingRow `json:"rankings"`
+	FolderPath             string          `json:"folderPath"`
+	GroupLabel             string          `json:"groupLabel"`
+	PhotoCount             int             `json:"photoCount"`
+	Explanation            string          `json:"explanation"`
+	ModelName              string          `json:"modelName"`
+	PromptVersion          int             `json:"promptVersion"`
+	CustomInstructionsHash string          `json:"customInstructionsHash"`
+	Rankings               []VLMRankingRow `json:"rankings"`
 }
 
 // TokenUsageRow records token consumption for a batch of VLM calls.
@@ -954,11 +965,12 @@ func (s *SQLiteStore) SaveVLMScore(score VLMScoreRow) error {
 		`INSERT OR REPLACE INTO vlm_scores
 		 (photo_path, folder_path, aesthetic, composition, expression, technical_quality,
 		  scene_type, issues, explanation, tokens_used, model_name, model_variant,
-		  backend, prompt_version, scored_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  backend, prompt_version, custom_instructions_hash, scored_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		score.PhotoPath, score.FolderPath, score.Aesthetic, score.Composition, score.Expression,
 		score.TechnicalQual, score.SceneType, score.Issues, score.Explanation, score.TokensUsed,
-		score.ModelName, score.ModelVariant, score.Backend, score.PromptVersion, score.ScoredAt,
+		score.ModelName, score.ModelVariant, score.Backend, score.PromptVersion,
+		score.CustomInstructionsHash, score.ScoredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save VLM score: %w", err)
@@ -967,6 +979,9 @@ func (s *SQLiteStore) SaveVLMScore(score VLMScoreRow) error {
 }
 
 // GetVLMScore retrieves the VLM score for a single photo, or nil if not scored.
+// Callers that need cache-hit semantics must compare the returned row's
+// PromptVersion and CustomInstructionsHash against the current values — stale
+// rows are returned unchanged so the UI can still display historic scores.
 func (s *SQLiteStore) GetVLMScore(photoPath string) (*VLMScoreRow, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -975,12 +990,13 @@ func (s *SQLiteStore) GetVLMScore(photoPath string) (*VLMScoreRow, error) {
 	err := s.db.QueryRow(
 		`SELECT photo_path, folder_path, aesthetic, composition, expression, technical_quality,
 		        scene_type, issues, explanation, tokens_used, model_name, model_variant,
-		        backend, prompt_version, scored_at
+		        backend, prompt_version, custom_instructions_hash, scored_at
 		 FROM vlm_scores WHERE photo_path = ?`, photoPath,
 	).Scan(
 		&row.PhotoPath, &row.FolderPath, &row.Aesthetic, &row.Composition, &row.Expression,
 		&row.TechnicalQual, &row.SceneType, &row.Issues, &row.Explanation, &row.TokensUsed,
-		&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion, &row.ScoredAt,
+		&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion,
+		&row.CustomInstructionsHash, &row.ScoredAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -999,7 +1015,7 @@ func (s *SQLiteStore) GetVLMScoresForFolder(folderPath string) ([]VLMScoreRow, e
 	rows, err := s.db.Query(
 		`SELECT photo_path, folder_path, aesthetic, composition, expression, technical_quality,
 		        scene_type, issues, explanation, tokens_used, model_name, model_variant,
-		        backend, prompt_version, scored_at
+		        backend, prompt_version, custom_instructions_hash, scored_at
 		 FROM vlm_scores WHERE folder_path = ?`, folderPath,
 	)
 	if err != nil {
@@ -1013,7 +1029,8 @@ func (s *SQLiteStore) GetVLMScoresForFolder(folderPath string) ([]VLMScoreRow, e
 		if err := rows.Scan(
 			&row.PhotoPath, &row.FolderPath, &row.Aesthetic, &row.Composition, &row.Expression,
 			&row.TechnicalQual, &row.SceneType, &row.Issues, &row.Explanation, &row.TokensUsed,
-			&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion, &row.ScoredAt,
+			&row.ModelName, &row.ModelVariant, &row.Backend, &row.PromptVersion,
+			&row.CustomInstructionsHash, &row.ScoredAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan VLM score: %w", err)
 		}
@@ -1078,13 +1095,19 @@ func (s *SQLiteStore) ClearAllVLMData() error {
 	return nil
 }
 
-// GetStaleVLMFolders returns distinct folder paths where the prompt_version is older than currentPromptVersion.
-func (s *SQLiteStore) GetStaleVLMFolders(currentPromptVersion int) ([]string, error) {
+// GetStaleVLMFolders returns distinct folder paths that hold VLM scores which
+// are stale against the current prompt version or the current custom-instructions
+// hash. A folder is stale when ANY of its cached scores used an older
+// prompt_version OR a different custom_instructions_hash. Callers display this
+// to prompt a re-run.
+func (s *SQLiteStore) GetStaleVLMFolders(currentPromptVersion int, currentHash string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	rows, err := s.db.Query(
-		`SELECT DISTINCT folder_path FROM vlm_scores WHERE prompt_version < ?`, currentPromptVersion,
+		`SELECT DISTINCT folder_path FROM vlm_scores
+		  WHERE prompt_version < ? OR custom_instructions_hash != ?`,
+		currentPromptVersion, currentHash,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stale VLM folders: %w", err)
@@ -1115,10 +1138,10 @@ func (s *SQLiteStore) SaveVLMRanking(group VLMRankingGroupRow) error {
 
 	_, err = tx.Exec(
 		`INSERT OR REPLACE INTO vlm_ranking_groups
-		 (folder_path, group_label, photo_count, explanation, model_name, prompt_version)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		 (folder_path, group_label, photo_count, explanation, model_name, prompt_version, custom_instructions_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		group.FolderPath, group.GroupLabel, group.PhotoCount,
-		group.Explanation, group.ModelName, group.PromptVersion,
+		group.Explanation, group.ModelName, group.PromptVersion, group.CustomInstructionsHash,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save VLM ranking group: %w", err)
@@ -1127,10 +1150,11 @@ func (s *SQLiteStore) SaveVLMRanking(group VLMRankingGroupRow) error {
 	for _, r := range group.Rankings {
 		_, err = tx.Exec(
 			`INSERT OR REPLACE INTO vlm_rankings
-			 (folder_path, group_label, photo_path, rank, relative_score, notes, tokens_used, model_name, prompt_version)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (folder_path, group_label, photo_path, rank, relative_score, notes, tokens_used, model_name, prompt_version, custom_instructions_hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			group.FolderPath, group.GroupLabel, r.PhotoPath, r.Rank,
 			r.RelativeScore, r.Notes, r.TokensUsed, group.ModelName, group.PromptVersion,
+			group.CustomInstructionsHash,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save VLM ranking row: %w", err)
@@ -1159,6 +1183,7 @@ func (s *SQLiteStore) GetVLMRankingsForFolder(folderPath string) ([]VLMRankingGr
 	// top of its group block — we skip it via photoPath.Valid.
 	rows, err := s.db.Query(
 		`SELECT g.folder_path, g.group_label, g.photo_count, g.explanation, g.model_name, g.prompt_version,
+		        g.custom_instructions_hash,
 		        r.photo_path, r.rank, r.relative_score, r.notes, r.tokens_used
 		   FROM vlm_ranking_groups g
 		   LEFT JOIN vlm_rankings r
@@ -1189,6 +1214,7 @@ func (s *SQLiteStore) GetVLMRankingsForFolder(folderPath string) ([]VLMRankingGr
 		)
 		if err := rows.Scan(
 			&g.FolderPath, &g.GroupLabel, &g.PhotoCount, &g.Explanation, &g.ModelName, &g.PromptVersion,
+			&g.CustomInstructionsHash,
 			&photoPath, &rank, &relScore, &notes, &tokensUsed,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan VLM ranking row: %w", err)

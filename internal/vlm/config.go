@@ -1,6 +1,8 @@
 package vlm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 )
@@ -45,6 +47,8 @@ func DefaultManagerConfig() ManagerConfig {
 // to prevent prompt injection attempts.
 var sanitizePrefixes = []string{
 	"System:",
+	"Assistant:",
+	"User:",
 	"Respond with:",
 	"{",
 	"}",
@@ -84,4 +88,20 @@ func SanitizeCustomInstructions(input string) string {
 	}
 
 	return result
+}
+
+// HashCustomInstructions returns a short deterministic hash used to key cached
+// VLM results against the user's current custom instructions. Empty input
+// returns an empty string sentinel ("no custom instructions").
+//
+// The hash is a hex prefix of SHA-256; 16 characters (64 bits) is plenty to
+// avoid collisions across a single user's edits while staying compact in DB.
+// Callers must pass ALREADY-SANITIZED input so the hash never depends on
+// later sanitizer rule changes rewriting what the user typed.
+func HashCustomInstructions(sanitized string) string {
+	if sanitized == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(sanitized))
+	return hex.EncodeToString(sum[:8])
 }

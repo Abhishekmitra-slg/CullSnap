@@ -68,11 +68,34 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class AIStorageInfo {
+	    modelSizeMB: number;
+	    runtimeSizeMB: number;
+	    scoresDBSizeMB: number;
+	    totalMB: number;
+	    modelName: string;
+	    runtimeName: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIStorageInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.modelSizeMB = source["modelSizeMB"];
+	        this.runtimeSizeMB = source["runtimeSizeMB"];
+	        this.scoresDBSizeMB = source["scoresDBSizeMB"];
+	        this.totalMB = source["totalMB"];
+	        this.modelName = source["modelName"];
+	        this.runtimeName = source["runtimeName"];
+	    }
+	}
 	export class AIWeightsConfig {
 	    aesthetic: number;
 	    sharpness: number;
 	    face: number;
 	    eyes: number;
+	    composition: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIWeightsConfig(source);
@@ -84,6 +107,7 @@ export namespace app {
 	        this.sharpness = source["sharpness"];
 	        this.face = source["face"];
 	        this.eyes = source["eyes"];
+	        this.composition = source["composition"];
 	    }
 	}
 	export class Contributor {
@@ -369,6 +393,73 @@ export namespace app {
 	        this.aperture = source["aperture"];
 	        this.shutter = source["shutter"];
 	        this.dateTaken = source["dateTaken"];
+	    }
+	}
+	
+	export class VLMDetailedStatus {
+	    state: string;
+	    modelName: string;
+	    backend: string;
+	    uptime: string;
+	    available: boolean;
+	    hardwareTier: string;
+	    restartCount: number;
+	    inferCount: number;
+	    ramUsageMB: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMDetailedStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.modelName = source["modelName"];
+	        this.backend = source["backend"];
+	        this.uptime = source["uptime"];
+	        this.available = source["available"];
+	        this.hardwareTier = source["hardwareTier"];
+	        this.restartCount = source["restartCount"];
+	        this.inferCount = source["inferCount"];
+	        this.ramUsageMB = source["ramUsageMB"];
+	    }
+	}
+	export class VLMStaleStatus {
+	    stale: boolean;
+	    staleFolders: string[];
+	    currentPrompt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMStaleStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stale = source["stale"];
+	        this.staleFolders = source["staleFolders"];
+	        this.currentPrompt = source["currentPrompt"];
+	    }
+	}
+	export class VLMStatus {
+	    state: string;
+	    modelName: string;
+	    backend: string;
+	    uptime: string;
+	    available: boolean;
+	    hardwareTier: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.modelName = source["modelName"];
+	        this.backend = source["backend"];
+	        this.uptime = source["uptime"];
+	        this.available = source["available"];
+	        this.hardwareTier = source["hardwareTier"];
 	    }
 	}
 
@@ -795,6 +886,133 @@ export namespace storage {
 	        this.expression = source["expression"];
 	        this.confidence = source["confidence"];
 	        this.embedding = source["embedding"];
+	    }
+	}
+	export class TokenUsageSummary {
+	    provider: string;
+	    totalInput: number;
+	    totalOutput: number;
+	    totalPhotos: number;
+	    sessionCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TokenUsageSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.totalInput = source["totalInput"];
+	        this.totalOutput = source["totalOutput"];
+	        this.totalPhotos = source["totalPhotos"];
+	        this.sessionCount = source["sessionCount"];
+	    }
+	}
+	export class VLMRankingRow {
+	    photoPath: string;
+	    rank: number;
+	    relativeScore: number;
+	    notes: string;
+	    tokensUsed: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMRankingRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.photoPath = source["photoPath"];
+	        this.rank = source["rank"];
+	        this.relativeScore = source["relativeScore"];
+	        this.notes = source["notes"];
+	        this.tokensUsed = source["tokensUsed"];
+	    }
+	}
+	export class VLMRankingGroupRow {
+	    folderPath: string;
+	    groupLabel: string;
+	    photoCount: number;
+	    explanation: string;
+	    modelName: string;
+	    promptVersion: number;
+	    customInstructionsHash: string;
+	    rankings: VLMRankingRow[];
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMRankingGroupRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.folderPath = source["folderPath"];
+	        this.groupLabel = source["groupLabel"];
+	        this.photoCount = source["photoCount"];
+	        this.explanation = source["explanation"];
+	        this.modelName = source["modelName"];
+	        this.promptVersion = source["promptVersion"];
+	        this.customInstructionsHash = source["customInstructionsHash"];
+	        this.rankings = this.convertValues(source["rankings"], VLMRankingRow);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class VLMScoreRow {
+	    photoPath: string;
+	    folderPath: string;
+	    aesthetic: number;
+	    composition: number;
+	    expression: number;
+	    technicalQuality: number;
+	    sceneType: string;
+	    issues: string;
+	    explanation: string;
+	    tokensUsed: number;
+	    modelName: string;
+	    modelVariant: string;
+	    backend: string;
+	    promptVersion: number;
+	    customInstructionsHash: string;
+	    scoredAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VLMScoreRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.photoPath = source["photoPath"];
+	        this.folderPath = source["folderPath"];
+	        this.aesthetic = source["aesthetic"];
+	        this.composition = source["composition"];
+	        this.expression = source["expression"];
+	        this.technicalQuality = source["technicalQuality"];
+	        this.sceneType = source["sceneType"];
+	        this.issues = source["issues"];
+	        this.explanation = source["explanation"];
+	        this.tokensUsed = source["tokensUsed"];
+	        this.modelName = source["modelName"];
+	        this.modelVariant = source["modelVariant"];
+	        this.backend = source["backend"];
+	        this.promptVersion = source["promptVersion"];
+	        this.customInstructionsHash = source["customInstructionsHash"];
+	        this.scoredAt = source["scoredAt"];
 	    }
 	}
 
