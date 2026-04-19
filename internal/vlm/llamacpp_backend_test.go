@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeChatResponse encodes a chatResponse with the given content and token count onto
@@ -325,6 +327,52 @@ func TestLlamaCppBackendRankPhotosParseFail(t *testing.T) {
 	_, err := be.RankPhotos(context.Background(), RankRequest{PhotoPaths: []string{a}})
 	if err == nil || !strings.Contains(err.Error(), "parse ranking") {
 		t.Fatalf("RankPhotos() should fail parse, got: %v", err)
+	}
+}
+
+// TestLlamaCppBackendStartDetectsImmediateCrash verifies that when the subprocess
+// exits immediately (e.g. bad binary, model incompatibility), Start returns within
+// a few seconds rather than waiting the full 60s waitForReady timeout.
+func TestLlamaCppBackendStartDetectsImmediateCrash(t *testing.T) {
+	falseBin := ""
+	for _, candidate := range []string{"/usr/bin/false", "/bin/false"} {
+		if _, err := os.Stat(candidate); err == nil {
+			falseBin = candidate
+			break
+		}
+	}
+	if falseBin == "" {
+		t.Skip("no `false` binary available on this platform")
+	}
+
+	// Use a real file as the "model" so the model-exists check passes.
+	tmpModel := filepath.Join(t.TempDir(), "fake.gguf")
+	if err := os.WriteFile(tmpModel, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write fake model: %v", err)
+	}
+
+	b := NewLlamaCppBackend(falseBin, tmpModel, ModelEntry{
+		Name: "crash-test", Variant: "q", Backend: "llamacpp",
+	})
+
+	// Cap the test runtime independently of waitForReady's internal timeout so
+	// that a regression in crash detection does not hang the whole suite.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := b.Start(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Start() should fail when subprocess exits immediately")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Start() took %v detecting crash; expected <5s (regression in procDone detection)", elapsed)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "crashed") && !strings.Contains(msg, "exited") {
+		t.Errorf("error should indicate subprocess crash/exit, got: %v", err)
 	}
 }
 

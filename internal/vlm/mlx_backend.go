@@ -6,6 +6,7 @@ import (
 	"context"
 	"cullsnap/internal/logger"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,13 +27,18 @@ var mlxTokenBudgets = []int{70, 140, 280, 560, 1120}
 
 // MLXBackend launches and manages an mlx_vlm.server subprocess on Apple Silicon.
 type MLXBackend struct {
-	mu         sync.Mutex
-	venvPath   string
-	modelPath  string
-	modelEntry ModelEntry
-	cmd        *exec.Cmd
-	port       int
-	client     *Client
+	mu           sync.Mutex
+	venvPath     string
+	modelPath    string
+	modelEntry   ModelEntry
+	cmd          *exec.Cmd
+	port         int
+	client       *Client
+	stderrBuf    *boundedBuffer
+	cancelStderr context.CancelFunc
+	// procDone is closed once cmd.Wait() returns; waitErr holds the exit error.
+	procDone chan struct{}
+	waitErr  error
 }
 
 // NewMLXBackend returns an MLXBackend configured for the given venv and model path.
@@ -124,21 +130,79 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 		"--host", "127.0.0.1",
 		"--port", fmt.Sprintf("%d", port),
 	)
-	cmd.Stdout = os.Stderr // route subprocess output to parent stderr for debugging
-	cmd.Stderr = os.Stderr
-	b.cmd = cmd
+
+	// Pipe stdout+stderr so we can both mirror them to our stderr (for live
+	// debugging) and retain a bounded tail for crash diagnostics.
+	stdoutPipe, soutErr := cmd.StdoutPipe()
+	if soutErr != nil {
+		return fmt.Errorf("vlm: mlx: stdout pipe: %w", soutErr)
+	}
+	stderrPipe, serrErr := cmd.StderrPipe()
+	if serrErr != nil {
+		return fmt.Errorf("vlm: mlx: stderr pipe: %w", serrErr)
+	}
+	stderrBuf := newBoundedBuffer(8192)
+	stderrCtx, cancelStderr := context.WithCancel(context.Background())
 
 	if startErr := cmd.Start(); startErr != nil {
+		cancelStderr()
 		return fmt.Errorf("vlm: mlx: start subprocess: %w", startErr)
 	}
+
+	// Drain both pipes; tee into os.Stderr and into the ring.
+	drain := func(r io.Reader, tag string) {
+		buf := make([]byte, 4096)
+		for {
+			select {
+			case <-stderrCtx.Done():
+				return
+			default:
+			}
+			n, readErr := r.Read(buf)
+			if n > 0 {
+				_, _ = stderrBuf.Write(buf[:n])
+				_, _ = os.Stderr.Write(buf[:n])
+				if logger.Log != nil {
+					logger.Log.Debug("vlm: mlx: subprocess output", slog.String("stream", tag), slog.String("output", string(buf[:n])))
+				}
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}
+	go drain(stdoutPipe, "stdout")
+	go drain(stderrPipe, "stderr")
+
+	// Initialize all backend state BEFORE spawning the Wait goroutine to avoid
+	// racing on b.waitErr if the subprocess exits immediately.
+	procDone := make(chan struct{})
+	b.cmd = cmd
+	b.port = port
+	b.stderrBuf = stderrBuf
+	b.cancelStderr = cancelStderr
+	b.procDone = procDone
+	b.waitErr = nil
+
+	go func() {
+		err := cmd.Wait()
+		b.waitErr = err
+		close(procDone)
+	}()
 
 	if logger.Log != nil {
 		logger.Log.Debug("vlm: mlx: subprocess started, waiting for ready", slog.Int("pid", cmd.Process.Pid))
 	}
 
 	if readyErr := b.waitForReady(ctx, baseURL); readyErr != nil {
-		// Attempt cleanup on failure.
+		// Attempt cleanup on failure. If the process already exited, Kill is a harmless no-op.
 		_ = cmd.Process.Kill()
+		<-procDone
+		cancelStderr()
+		b.cmd = nil
+		b.cancelStderr = nil
+		b.procDone = nil
+		b.stderrBuf = nil
 		return fmt.Errorf("vlm: mlx: server did not become ready: %w", readyErr)
 	}
 
@@ -149,11 +213,29 @@ func (b *MLXBackend) Start(ctx context.Context) error {
 }
 
 // waitForReady polls GET /v1/models every second until the server responds with
-// HTTP 200 or the 120-second deadline expires.
+// HTTP 200, the 120-second deadline expires, or the subprocess exits early.
 func (b *MLXBackend) waitForReady(ctx context.Context, baseURL string) error {
+	procDone := b.procDone
+	stderrBuf := b.stderrBuf
+
 	deadline := time.Now().Add(mlxReadyDeadline)
 	hc := &http.Client{Timeout: 5 * time.Second}
 	modelsURL := baseURL + "/v1/models"
+
+	crashErr := func() error {
+		exit := "process exited"
+		if b.waitErr != nil {
+			exit = b.waitErr.Error()
+		}
+		tail := ""
+		if stderrBuf != nil {
+			tail = stderrBuf.String()
+		}
+		if tail != "" {
+			return fmt.Errorf("mlx server crashed during startup: %s\nstderr: %s", exit, tail)
+		}
+		return fmt.Errorf("mlx server crashed during startup: %s", exit)
+	}
 
 	for {
 		if time.Now().After(deadline) {
@@ -163,6 +245,8 @@ func (b *MLXBackend) waitForReady(ctx context.Context, baseURL string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-procDone:
+			return crashErr()
 		default:
 		}
 
@@ -185,48 +269,49 @@ func (b *MLXBackend) waitForReady(ctx context.Context, baseURL string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-procDone:
+			return crashErr()
 		case <-time.After(mlxReadyPollInterval):
 		}
 	}
 }
 
 // Stop sends SIGINT to the server subprocess, waits for it to exit, and falls
-// back to SIGKILL if the process has not terminated within 5 seconds.
+// back to SIGKILL if the process has not terminated within 5 seconds. Coordination
+// uses the shared procDone channel populated by the Wait goroutine in Start.
 func (b *MLXBackend) Stop(_ context.Context) error {
 	b.mu.Lock()
-	if b.cmd == nil || b.cmd.Process == nil {
+	cmd := b.cmd
+	procDone := b.procDone
+	cancelStderr := b.cancelStderr
+	if cmd == nil || cmd.Process == nil {
+		b.mu.Unlock()
 		if logger.Log != nil {
 			logger.Log.Debug("vlm: mlx: Stop called but no running process")
 		}
-		b.mu.Unlock()
 		return nil
 	}
+	proc := cmd.Process
+	b.cmd = nil
+	b.client = nil
+	b.cancelStderr = nil
+	b.procDone = nil
+	b.stderrBuf = nil
+	b.mu.Unlock()
 
 	if logger.Log != nil {
-		logger.Log.Debug("vlm: mlx: sending SIGINT to server", slog.Int("pid", b.cmd.Process.Pid))
+		logger.Log.Debug("vlm: mlx: sending SIGINT to server", slog.Int("pid", proc.Pid))
 	}
-
-	proc := b.cmd.Process
-	cmd := b.cmd
-	b.mu.Unlock()
 
 	if err := proc.Signal(os.Interrupt); err != nil {
 		if logger.Log != nil {
 			logger.Log.Warn("vlm: mlx: SIGINT failed, sending SIGKILL", slog.String("err", err.Error()))
 		}
 		_ = proc.Kill()
-		b.mu.Lock()
-		b.cmd = nil
-		b.client = nil
-		b.mu.Unlock()
-		return nil
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-
 	select {
-	case <-done:
+	case <-procDone:
 		if logger.Log != nil {
 			logger.Log.Debug("vlm: mlx: server exited cleanly")
 		}
@@ -235,12 +320,12 @@ func (b *MLXBackend) Stop(_ context.Context) error {
 			logger.Log.Warn("vlm: mlx: server did not exit within 5s, killing")
 		}
 		_ = proc.Kill()
+		<-procDone
 	}
 
-	b.mu.Lock()
-	b.cmd = nil
-	b.client = nil
-	b.mu.Unlock()
+	if cancelStderr != nil {
+		cancelStderr()
+	}
 	return nil
 }
 
