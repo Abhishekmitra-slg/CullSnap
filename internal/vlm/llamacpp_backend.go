@@ -39,6 +39,11 @@ type LlamaCppBackend struct {
 	token        string
 	client       *Client
 	cancelStderr context.CancelFunc
+	stderrBuf    *boundedBuffer
+	// procDone is closed once cmd.Wait() returns; waitErr holds the exit error.
+	// Shared between waitForReady (fast crash detection) and Stop (exit coordination).
+	procDone chan struct{}
+	waitErr  error
 }
 
 // NewLlamaCppBackend creates a new LlamaCppBackend with the given binary and model paths.
@@ -153,7 +158,8 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("vlm: llamacpp: start process: %w", startErr)
 	}
 
-	// Drain stderr in background to prevent blocking.
+	// Capture stderr into a bounded ring for crash diagnostics, while still logging live.
+	stderrBuf := newBoundedBuffer(8192)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -163,8 +169,11 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 			default:
 			}
 			n, readErr := stderrPipe.Read(buf)
-			if n > 0 && logger.Log != nil {
-				logger.Log.Debug("vlm: llamacpp: server stderr", slog.String("output", string(buf[:n])))
+			if n > 0 {
+				_, _ = stderrBuf.Write(buf[:n])
+				if logger.Log != nil {
+					logger.Log.Debug("vlm: llamacpp: server stderr", slog.String("output", string(buf[:n])))
+				}
 			}
 			if readErr != nil {
 				return
@@ -172,19 +181,37 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 		}
 	}()
 
+	// Initialize all backend state BEFORE spawning the Wait goroutine so that
+	// the goroutine's write to b.waitErr (for fast-exiting processes like bad
+	// binaries) does not race with our initialization. After close(procDone)
+	// the Go memory model synchronizes later reads of b.waitErr with that write.
+	procDone := make(chan struct{})
 	b.cmd = cmd
 	b.port = port
 	b.token = token
 	b.cancelStderr = cancelStderr
+	b.stderrBuf = stderrBuf
+	b.procDone = procDone
+	b.waitErr = nil
+
+	go func() {
+		err := cmd.Wait()
+		b.waitErr = err
+		close(procDone)
+	}()
 
 	baseURL := fmt.Sprintf("http://%s:%d", llamaCppHost, port)
 
 	// Wait for the server to be ready.
 	if err := b.waitForReady(ctx, baseURL); err != nil {
 		cancelStderr()
+		// If the process is still alive, kill it; otherwise Kill is a harmless no-op.
 		_ = cmd.Process.Kill()
+		<-procDone // ensure Wait goroutine has returned before clearing state
 		b.cmd = nil
 		b.cancelStderr = nil
+		b.procDone = nil
+		b.stderrBuf = nil
 		return fmt.Errorf("vlm: llamacpp: server did not become ready: %w", err)
 	}
 
@@ -200,8 +227,13 @@ func (b *LlamaCppBackend) Start(ctx context.Context) error {
 	return nil
 }
 
-// waitForReady polls the /health endpoint until the server responds OK or the deadline passes.
+// waitForReady polls /health until the server responds OK, the deadline expires,
+// or the subprocess exits early (crash). Early exit is detected via procDone and
+// reported with captured stderr so the user gets actionable diagnostics.
 func (b *LlamaCppBackend) waitForReady(ctx context.Context, baseURL string) error {
+	procDone := b.procDone
+	stderrBuf := b.stderrBuf
+
 	deadline := time.Now().Add(llamaCppReadyTimeout)
 	healthURL := baseURL + "/health"
 
@@ -209,6 +241,23 @@ func (b *LlamaCppBackend) waitForReady(ctx context.Context, baseURL string) erro
 
 	if logger.Log != nil {
 		logger.Log.Debug("vlm: llamacpp: waiting for server ready", slog.String("url", healthURL))
+	}
+
+	crashErr := func() error {
+		// Safe to read b.waitErr without mutex — receive on procDone
+		// happens-after the close, which happens-after the write.
+		exit := "process exited"
+		if b.waitErr != nil {
+			exit = b.waitErr.Error()
+		}
+		tail := ""
+		if stderrBuf != nil {
+			tail = stderrBuf.String()
+		}
+		if tail != "" {
+			return fmt.Errorf("llama-server crashed during startup: %s\nstderr: %s", exit, tail)
+		}
+		return fmt.Errorf("llama-server crashed during startup: %s", exit)
 	}
 
 	for {
@@ -219,6 +268,8 @@ func (b *LlamaCppBackend) waitForReady(ctx context.Context, baseURL string) erro
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-procDone:
+			return crashErr()
 		default:
 		}
 
@@ -246,19 +297,25 @@ func (b *LlamaCppBackend) waitForReady(ctx context.Context, baseURL string) erro
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-procDone:
+			return crashErr()
 		case <-time.After(llamaCppReadyPoll):
 		}
 	}
 }
 
 // Stop signals the llama-server process to terminate and waits for it to exit.
+// Uses the shared procDone channel populated by the Wait goroutine spawned in Start.
 func (b *LlamaCppBackend) Stop(ctx context.Context) error {
 	b.mu.Lock()
 	cmd := b.cmd
 	cancelStderr := b.cancelStderr
+	procDone := b.procDone
 	b.cmd = nil
 	b.client = nil
 	b.cancelStderr = nil
+	b.procDone = nil
+	b.stderrBuf = nil
 	b.mu.Unlock()
 
 	if cmd == nil || cmd.Process == nil {
@@ -279,19 +336,13 @@ func (b *LlamaCppBackend) Stop(ctx context.Context) error {
 		_ = cmd.Process.Kill()
 	}
 
-	// Wait for process to exit with a grace period.
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
 	select {
-	case err := <-done:
+	case <-procDone:
 		if cancelStderr != nil {
 			cancelStderr()
 		}
 		if logger.Log != nil {
-			logger.Log.Debug("vlm: llamacpp: server exited", slog.Any("err", err))
+			logger.Log.Debug("vlm: llamacpp: server exited", slog.Any("err", b.waitErr))
 		}
 		return nil
 	case <-time.After(llamaCppStopGrace):
@@ -299,14 +350,14 @@ func (b *LlamaCppBackend) Stop(ctx context.Context) error {
 			logger.Log.Debug("vlm: llamacpp: grace period elapsed, killing process")
 		}
 		_ = cmd.Process.Kill()
-		<-done
+		<-procDone
 		if cancelStderr != nil {
 			cancelStderr()
 		}
 		return nil
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
-		<-done
+		<-procDone
 		if cancelStderr != nil {
 			cancelStderr()
 		}
