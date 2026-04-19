@@ -18,10 +18,6 @@ export function CancelDeduplicate() {
   return window['go']['app']['App']['CancelDeduplicate']();
 }
 
-export function ClearAIData(arg1) {
-  return window['go']['app']['App']['ClearAIData'](arg1);
-}
-
 export function CancelImport(arg1) {
   return window['go']['app']['App']['CancelImport'](arg1);
 }
@@ -42,8 +38,16 @@ export function CheckForUpdate() {
   return window['go']['app']['App']['CheckForUpdate']();
 }
 
+export function ClearAIData(arg1) {
+  return window['go']['app']['App']['ClearAIData'](arg1);
+}
+
 export function ClearAllCache() {
   return window['go']['app']['App']['ClearAllCache']();
+}
+
+export function ClearAllVLMData() {
+  return window['go']['app']['App']['ClearAllVLMData']();
 }
 
 export function ClearCloudMirror(arg1, arg2) {
@@ -54,8 +58,16 @@ export function ClearImportCache(arg1) {
   return window['go']['app']['App']['ClearImportCache'](arg1);
 }
 
+export function ClearVLMData(arg1) {
+  return window['go']['app']['App']['ClearVLMData'](arg1);
+}
+
 export function DeleteCachedAlbum(arg1, arg2) {
   return window['go']['app']['App']['DeleteCachedAlbum'](arg1, arg2);
+}
+
+export function DeleteVLMModel() {
+  return window['go']['app']['App']['DeleteVLMModel']();
 }
 
 export function DisconnectCloudSource(arg1) {
@@ -70,6 +82,10 @@ export function DownloadUpdate() {
   return window['go']['app']['App']['DownloadUpdate']();
 }
 
+export function DownloadVLMModel(arg1) {
+  return window['go']['app']['App']['DownloadVLMModel'](arg1);
+}
+
 export function ExportPhotos(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportPhotos'](arg1, arg2, arg3);
 }
@@ -80,6 +96,10 @@ export function GetAIResults(arg1) {
 
 export function GetAIScoringStatus() {
   return window['go']['app']['App']['GetAIScoringStatus']();
+}
+
+export function GetAIStorageInfo() {
+  return window['go']['app']['App']['GetAIStorageInfo']();
 }
 
 export function GetAIWeights() {
@@ -144,6 +164,34 @@ export function GetRecentFolders() {
 
 export function GetSelections(arg1) {
   return window['go']['app']['App']['GetSelections'](arg1);
+}
+
+export function GetStaleVLMStatus() {
+  return window['go']['app']['App']['GetStaleVLMStatus']();
+}
+
+export function GetTokenUsageSummary() {
+  return window['go']['app']['App']['GetTokenUsageSummary']();
+}
+
+export function GetVLMCustomInstructions() {
+  return window['go']['app']['App']['GetVLMCustomInstructions']();
+}
+
+export function GetVLMDetailedStatus() {
+  return window['go']['app']['App']['GetVLMDetailedStatus']();
+}
+
+export function GetVLMRankingsForFolder(arg1) {
+  return window['go']['app']['App']['GetVLMRankingsForFolder'](arg1);
+}
+
+export function GetVLMScoresForPhoto(arg1) {
+  return window['go']['app']['App']['GetVLMScoresForPhoto'](arg1);
+}
+
+export function GetVLMStatus() {
+  return window['go']['app']['App']['GetVLMStatus']();
 }
 
 export function HideFaceCluster(arg1, arg2) {
@@ -234,12 +282,28 @@ export function SetPhotoRating(arg1, arg2) {
   return window['go']['app']['App']['SetPhotoRating'](arg1, arg2);
 }
 
+export function SetVLMCustomInstructions(arg1) {
+  return window['go']['app']['App']['SetVLMCustomInstructions'](arg1);
+}
+
 export function ShouldShowWhatsNew() {
   return window['go']['app']['App']['ShouldShowWhatsNew']();
 }
 
+export function Shutdown() {
+  return window['go']['app']['App']['Shutdown']();
+}
+
+export function StartVLMEngine() {
+  return window['go']['app']['App']['StartVLMEngine']();
+}
+
 export function Startup(arg1) {
   return window['go']['app']['App']['Startup'](arg1);
+}
+
+export function StopVLMEngine() {
+  return window['go']['app']['App']['StopVLMEngine']();
 }
 
 export function ToggleSelection(arg1, arg2, arg3) {

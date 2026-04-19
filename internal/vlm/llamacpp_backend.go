@@ -423,7 +423,7 @@ func (b *LlamaCppBackend) ScorePhoto(ctx context.Context, req ScoreRequest) (*VL
 		)
 	}
 
-	systemPrompt := SystemPrompt("")
+	systemPrompt := SystemPrompt(req.CustomInstructions)
 	userPrompt := Stage4Prompt(Stage4Input{
 		Context:        req.Context,
 		FaceCount:      req.FaceCount,
@@ -483,7 +483,7 @@ func (b *LlamaCppBackend) RankPhotos(ctx context.Context, req RankRequest) (*Ran
 		photos = append(photos, Stage5Photo(pc))
 	}
 
-	systemPrompt := SystemPrompt("")
+	systemPrompt := SystemPrompt(req.CustomInstructions)
 	userPrompt := Stage5Prompt(Stage5Input{
 		Photos:  photos,
 		UseCase: req.UseCase,

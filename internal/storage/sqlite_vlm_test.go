@@ -320,7 +320,7 @@ func TestGetStaleVLMFolders(t *testing.T) {
 		t.Fatalf("SaveVLMScore(old) failed: %v", err)
 	}
 
-	// Folder with prompt_version=2 (current).
+	// Folder with prompt_version=2 (current) AND empty hash — fresh.
 	if err := store.SaveVLMScore(VLMScoreRow{
 		PhotoPath:     "/photos/new/photo.jpg",
 		FolderPath:    "/photos/new",
@@ -330,15 +330,37 @@ func TestGetStaleVLMFolders(t *testing.T) {
 		t.Fatalf("SaveVLMScore(new) failed: %v", err)
 	}
 
-	stale, err := store.GetStaleVLMFolders(2)
+	// Folder with current prompt_version but mismatched custom-instructions hash.
+	if err := store.SaveVLMScore(VLMScoreRow{
+		PhotoPath:              "/photos/customised/photo.jpg",
+		FolderPath:             "/photos/customised",
+		PromptVersion:          2,
+		CustomInstructionsHash: "abc123def4567890",
+		ScoredAt:               "2026-04-09T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveVLMScore(customised) failed: %v", err)
+	}
+
+	// Current hash is empty — folders with mismatching hash OR older version are stale.
+	stale, err := store.GetStaleVLMFolders(2, "")
 	if err != nil {
 		t.Fatalf("GetStaleVLMFolders failed: %v", err)
 	}
-	if len(stale) != 1 {
-		t.Fatalf("expected 1 stale folder, got %d: %v", len(stale), stale)
+	if len(stale) != 2 {
+		t.Fatalf("expected 2 stale folders, got %d: %v", len(stale), stale)
 	}
-	if stale[0] != "/photos/old" {
-		t.Errorf("stale folder = %q, want \"/photos/old\"", stale[0])
+	wantStale := map[string]bool{"/photos/old": false, "/photos/customised": false}
+	for _, f := range stale {
+		if _, ok := wantStale[f]; !ok {
+			t.Errorf("unexpected stale folder %q", f)
+			continue
+		}
+		wantStale[f] = true
+	}
+	for f, found := range wantStale {
+		if !found {
+			t.Errorf("expected %q in stale set, missing", f)
+		}
 	}
 }
 

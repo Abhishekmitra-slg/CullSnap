@@ -71,19 +71,20 @@ type ManagerStatus struct {
 // Manager controls the lifecycle of a VLMProvider: starting, stopping, idle
 // timeout, health monitoring, and crash recovery.
 type Manager struct {
-	mu           sync.Mutex
-	state        ManagerState
-	provider     VLMProvider
-	config       ManagerConfig
-	idleTimer    *time.Timer
-	restartCount int
-	lastCrash    time.Time
-	events       chan ManagerEvent
-	startedAt    time.Time
-	lastInfer    time.Time
-	inferCount   int
-	stopHealth   context.CancelFunc
-	healthCtx    context.Context // context for health loop + crash recovery
+	mu                 sync.Mutex
+	state              ManagerState
+	provider           VLMProvider
+	config             ManagerConfig
+	idleTimer          *time.Timer
+	restartCount       int
+	lastCrash          time.Time
+	events             chan ManagerEvent
+	startedAt          time.Time
+	lastInfer          time.Time
+	inferCount         int
+	stopHealth         context.CancelFunc
+	healthCtx          context.Context // context for health loop + crash recovery
+	customInstructions string          // sanitized user prompt suffix, sourced from app config
 }
 
 // NewManager creates a Manager in StateOff. events may be nil; if non-nil,
@@ -133,6 +134,30 @@ func (m *Manager) UpdateConfig(cfg ManagerConfig) {
 			slog.Duration("idleTimeout", cfg.IdleTimeout),
 		)
 	}
+}
+
+// SetCustomInstructions caches the sanitized custom-instruction suffix that
+// backends append to the system prompt on every inference. The caller must
+// pass an already-sanitized string; the manager does NOT re-sanitize so the
+// cached hash stays stable across sanitizer rule changes.
+func (m *Manager) SetCustomInstructions(sanitized string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.customInstructions = sanitized
+	if logger.Log != nil {
+		logger.Log.Debug("vlm: manager: custom instructions updated",
+			slog.Int("length", len(sanitized)),
+		)
+	}
+}
+
+// CustomInstructions returns the currently cached suffix. Backends call this
+// once per inference rather than reading from storage to keep the hot path
+// off the SQLite mutex.
+func (m *Manager) CustomInstructions() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.customInstructions
 }
 
 // EnsureRunning guarantees the provider is running. It is safe to call
@@ -492,6 +517,8 @@ func (m *Manager) Status() ManagerStatus {
 }
 
 // ScorePhoto ensures the provider is running and delegates to provider.ScorePhoto.
+// The cached custom-instruction suffix is stamped onto the request so backends
+// don't need access to app config.
 func (m *Manager) ScorePhoto(ctx context.Context, req ScoreRequest) (*VLMScore, error) {
 	if err := m.EnsureRunning(ctx); err != nil {
 		return nil, err
@@ -505,6 +532,9 @@ func (m *Manager) ScorePhoto(ctx context.Context, req ScoreRequest) (*VLMScore, 
 
 	m.mu.Lock()
 	p := m.provider
+	if req.CustomInstructions == "" {
+		req.CustomInstructions = m.customInstructions
+	}
 	m.mu.Unlock()
 
 	if p == nil {
@@ -525,6 +555,8 @@ func (m *Manager) ScorePhoto(ctx context.Context, req ScoreRequest) (*VLMScore, 
 }
 
 // RankPhotos ensures the provider is running and delegates to provider.RankPhotos.
+// The cached custom-instruction suffix is stamped onto the request so backends
+// don't need access to app config.
 func (m *Manager) RankPhotos(ctx context.Context, req RankRequest) (*RankingResult, error) {
 	if err := m.EnsureRunning(ctx); err != nil {
 		return nil, err
@@ -538,6 +570,9 @@ func (m *Manager) RankPhotos(ctx context.Context, req RankRequest) (*RankingResu
 
 	m.mu.Lock()
 	p := m.provider
+	if req.CustomInstructions == "" {
+		req.CustomInstructions = m.customInstructions
+	}
 	m.mu.Unlock()
 
 	if p == nil {

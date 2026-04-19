@@ -50,6 +50,10 @@ type ScoreRequest struct {
 	Metadata    map[string]string // EXIF hints: focal length, ISO, etc.
 	FaceCount   int               // From ONNX Stage 1 — injected as context
 	Sharpness   float64           // From ONNX Stage 1 — injected as context
+	// CustomInstructions is the sanitized user-supplied prompt suffix appended
+	// to the system prompt. Pipelines populate this from the manager so backends
+	// stay decoupled from app config.
+	CustomInstructions string
 }
 
 // VLMScore is the structured output from a VLM individual scoring call.
@@ -95,6 +99,8 @@ type RankRequest struct {
 	TokenBudget int      // Higher budget for comparison (560-1120 tokens/image)
 	// Per-photo ONNX context injected by pipeline.
 	PhotoScores []PhotoContext
+	// CustomInstructions: see ScoreRequest.CustomInstructions.
+	CustomInstructions string
 }
 
 // PhotoContext carries ONNX-derived scores for a single photo in a ranking batch.

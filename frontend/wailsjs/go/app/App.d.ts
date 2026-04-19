@@ -4,6 +4,7 @@ import {app} from '../models';
 import {device} from '../models';
 import {model} from '../models';
 import {cloudsource} from '../models';
+import {storage} from '../models';
 import {context} from '../models';
 
 export function AcknowledgeWhatsNew():Promise<void>;
@@ -13,8 +14,6 @@ export function AuthenticateCloudSource(arg1:string):Promise<void>;
 export function CancelAIAnalysis():Promise<void>;
 
 export function CancelDeduplicate():Promise<void>;
-
-export function ClearAIData(arg1:string):Promise<void>;
 
 export function CancelImport(arg1:string):Promise<void>;
 
@@ -26,13 +25,21 @@ export function CheckDeviceDependencies():Promise<device.DependencyStatus>;
 
 export function CheckForUpdate():Promise<void>;
 
+export function ClearAIData(arg1:string):Promise<void>;
+
 export function ClearAllCache():Promise<void>;
+
+export function ClearAllVLMData():Promise<void>;
 
 export function ClearCloudMirror(arg1:string,arg2:string):Promise<void>;
 
 export function ClearImportCache(arg1:string):Promise<void>;
 
+export function ClearVLMData(arg1:string):Promise<void>;
+
 export function DeleteCachedAlbum(arg1:string,arg2:string):Promise<void>;
+
+export function DeleteVLMModel():Promise<void>;
 
 export function DisconnectCloudSource(arg1:string):Promise<void>;
 
@@ -40,11 +47,15 @@ export function DownloadAIModels():Promise<void>;
 
 export function DownloadUpdate():Promise<void>;
 
+export function DownloadVLMModel(arg1:string):Promise<void>;
+
 export function ExportPhotos(arg1:Array<model.Photo>,arg2:string,arg3:string):Promise<number>;
 
 export function GetAIResults(arg1:string):Promise<app.AIResults>;
 
 export function GetAIScoringStatus():Promise<app.AIScoringStatus>;
+
+export function GetAIStorageInfo():Promise<app.AIStorageInfo>;
 
 export function GetAIWeights():Promise<app.AIWeightsConfig>;
 
@@ -77,6 +88,20 @@ export function GetRatingsForDirectory(arg1:string):Promise<Record<string, numbe
 export function GetRecentFolders():Promise<Array<string>>;
 
 export function GetSelections(arg1:string):Promise<Record<string, boolean>>;
+
+export function GetStaleVLMStatus():Promise<app.VLMStaleStatus>;
+
+export function GetTokenUsageSummary():Promise<Array<storage.TokenUsageSummary>>;
+
+export function GetVLMCustomInstructions():Promise<string>;
+
+export function GetVLMDetailedStatus():Promise<app.VLMDetailedStatus>;
+
+export function GetVLMRankingsForFolder(arg1:string):Promise<Array<storage.VLMRankingGroupRow>>;
+
+export function GetVLMScoresForPhoto(arg1:string):Promise<storage.VLMScoreRow>;
+
+export function GetVLMStatus():Promise<app.VLMStatus>;
 
 export function HideFaceCluster(arg1:number,arg2:boolean):Promise<void>;
 
@@ -122,8 +147,16 @@ export function SetAIWeights(arg1:app.AIWeightsConfig):Promise<void>;
 
 export function SetPhotoRating(arg1:string,arg2:number):Promise<void>;
 
+export function SetVLMCustomInstructions(arg1:string):Promise<string>;
+
 export function ShouldShowWhatsNew():Promise<boolean>;
 
+export function Shutdown():Promise<void>;
+
+export function StartVLMEngine():Promise<void>;
+
 export function Startup(arg1:context.Context):Promise<void>;
+
+export function StopVLMEngine():Promise<void>;
 
 export function ToggleSelection(arg1:string,arg2:string,arg3:boolean):Promise<void>;
