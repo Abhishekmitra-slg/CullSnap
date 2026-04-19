@@ -391,6 +391,136 @@ func TestSaveAndGetVLMRanking(t *testing.T) {
 	}
 }
 
+// TestGetVLMRankingsForFolderMultipleGroups asserts that several ranking
+// groups with different photo counts and rank orderings round-trip through
+// the rewritten LEFT JOIN query. Previously each group was fetched in its
+// own follow-up query — this test is the contract that the aggregator
+// behind the single JOIN produces the same shape.
+func TestGetVLMRankingsForFolderMultipleGroups(t *testing.T) {
+	store := newTestStore(t)
+
+	folder := "/photos/event"
+
+	// Group 1: three ranked photos, out-of-insertion order to exercise
+	// the ORDER BY r.rank clause.
+	group1 := VLMRankingGroupRow{
+		FolderPath: folder, GroupLabel: "cluster-A", PhotoCount: 3,
+		Explanation: "primary cluster", ModelName: "gemma-4", PromptVersion: 1,
+		Rankings: []VLMRankingRow{
+			{PhotoPath: folder + "/a3.jpg", Rank: 3, RelativeScore: 0.6, TokensUsed: 40},
+			{PhotoPath: folder + "/a1.jpg", Rank: 1, RelativeScore: 0.9, Notes: "sharpest", TokensUsed: 50},
+			{PhotoPath: folder + "/a2.jpg", Rank: 2, RelativeScore: 0.75, TokensUsed: 45},
+		},
+	}
+	// Group 2: two ranked photos in a different cluster, same folder.
+	group2 := VLMRankingGroupRow{
+		FolderPath: folder, GroupLabel: "cluster-B", PhotoCount: 2,
+		Explanation: "secondary cluster", ModelName: "gemma-4", PromptVersion: 1,
+		Rankings: []VLMRankingRow{
+			{PhotoPath: folder + "/b1.jpg", Rank: 1, RelativeScore: 0.85, Notes: "clean", TokensUsed: 40},
+			{PhotoPath: folder + "/b2.jpg", Rank: 2, RelativeScore: 0.70, TokensUsed: 40},
+		},
+	}
+	// Group in a different folder — must not appear in results.
+	other := VLMRankingGroupRow{
+		FolderPath: "/photos/other", GroupLabel: "cluster-X", PhotoCount: 1,
+		Explanation: "noise", ModelName: "gemma-4", PromptVersion: 1,
+		Rankings: []VLMRankingRow{
+			{PhotoPath: "/photos/other/x1.jpg", Rank: 1, RelativeScore: 0.5, TokensUsed: 30},
+		},
+	}
+
+	for _, g := range []VLMRankingGroupRow{group1, group2, other} {
+		if err := store.SaveVLMRanking(g); err != nil {
+			t.Fatalf("SaveVLMRanking %s: %v", g.GroupLabel, err)
+		}
+	}
+
+	got, err := store.GetVLMRankingsForFolder(folder)
+	if err != nil {
+		t.Fatalf("GetVLMRankingsForFolder: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 groups, got %d (%v)", len(got), got)
+	}
+
+	byLabel := map[string]VLMRankingGroupRow{}
+	for _, g := range got {
+		byLabel[g.GroupLabel] = g
+	}
+
+	a := byLabel["cluster-A"]
+	if len(a.Rankings) != 3 {
+		t.Fatalf("cluster-A: expected 3 rankings, got %d", len(a.Rankings))
+	}
+	for i, want := range []int{1, 2, 3} {
+		if a.Rankings[i].Rank != want {
+			t.Errorf("cluster-A rankings[%d].Rank = %d, want %d (ORDER BY rank lost)",
+				i, a.Rankings[i].Rank, want)
+		}
+	}
+	if a.Rankings[0].Notes != "sharpest" {
+		t.Errorf("cluster-A rankings[0].Notes = %q, want \"sharpest\"", a.Rankings[0].Notes)
+	}
+
+	b := byLabel["cluster-B"]
+	if len(b.Rankings) != 2 {
+		t.Fatalf("cluster-B: expected 2 rankings, got %d", len(b.Rankings))
+	}
+	if b.Rankings[0].PhotoPath != folder+"/b1.jpg" {
+		t.Errorf("cluster-B rankings[0].PhotoPath = %q, want %q",
+			b.Rankings[0].PhotoPath, folder+"/b1.jpg")
+	}
+}
+
+// TestGetVLMRankingsForFolderEmptyGroup covers the LEFT JOIN edge case: a
+// group row with no matching ranking rows produces one tuple with NULL
+// ranking columns. The aggregator must leave Rankings nil rather than
+// appending a phantom zero-valued VLMRankingRow.
+func TestGetVLMRankingsForFolderEmptyGroup(t *testing.T) {
+	store := newTestStore(t)
+
+	folder := "/photos/empty-group"
+	// Insert the group row directly without any ranking rows so the
+	// LEFT JOIN has to synthesize NULLs on the right side.
+	store.mu.Lock()
+	_, err := store.db.Exec(
+		`INSERT INTO vlm_ranking_groups (folder_path, group_label, photo_count, explanation, model_name, prompt_version)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		folder, "orphan", 0, "seeded for edge-case test", "gemma-4", 1,
+	)
+	store.mu.Unlock()
+	if err != nil {
+		t.Fatalf("seed orphan group: %v", err)
+	}
+
+	got, err := store.GetVLMRankingsForFolder(folder)
+	if err != nil {
+		t.Fatalf("GetVLMRankingsForFolder: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(got))
+	}
+	if len(got[0].Rankings) != 0 {
+		t.Errorf("empty group produced %d rankings, want 0 (LEFT JOIN NULL leaked)",
+			len(got[0].Rankings))
+	}
+}
+
+// TestGetVLMRankingsForFolderNoGroups asserts an empty result for a folder
+// with no ranking groups at all — not an error, just a zero-length slice.
+func TestGetVLMRankingsForFolderNoGroups(t *testing.T) {
+	store := newTestStore(t)
+
+	got, err := store.GetVLMRankingsForFolder("/no/such/folder")
+	if err != nil {
+		t.Fatalf("GetVLMRankingsForFolder: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 groups, got %d", len(got))
+	}
+}
+
 func TestRecordTokenUsage(t *testing.T) {
 	store := newTestStore(t)
 
