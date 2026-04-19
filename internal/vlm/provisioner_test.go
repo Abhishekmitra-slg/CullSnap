@@ -185,6 +185,111 @@ func TestDownloadFileResumablePlaceholderSkipsSHA(t *testing.T) {
 	}
 }
 
+// TestShouldSkipHashVerification pins down the sentinel classification used by
+// DownloadFileResumable: empty + PLACEHOLDER_ + UNRELEASED_ skip verification;
+// anything else is treated as a real hash and must be verified.
+func TestShouldSkipHashVerification(t *testing.T) {
+	skips := []string{"", "PLACEHOLDER_TBD", "PLACEHOLDER_SHA256_E4B_GGUF", UnreleasedMLXSentinel}
+	for _, s := range skips {
+		if !shouldSkipHashVerification(s) {
+			t.Errorf("shouldSkipHashVerification(%q) = false, want true", s)
+		}
+	}
+	realish := []string{
+		strings.Repeat("a", 64),
+		"deadbeef",
+		"placeholder_lowercase_does_not_match", // prefix check is case-sensitive
+	}
+	for _, s := range realish {
+		if shouldSkipHashVerification(s) {
+			t.Errorf("shouldSkipHashVerification(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestDownloadFileResumableReverifiesCachedFileHashMatch confirms that when a
+// real SHA256 is supplied and the cached file on disk matches, we reuse it
+// without issuing a network request.
+func TestDownloadFileResumableReverifiesCachedFileHashMatch(t *testing.T) {
+	payload := []byte("cached content hash must match")
+	sum := sha256.Sum256(payload)
+	wantSHA := hex.EncodeToString(sum[:])
+
+	dest := filepath.Join(t.TempDir(), "cached.bin")
+	if err := os.WriteFile(dest, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Server must NOT be hit — if DownloadFileResumable tries to fetch, the
+	// test fails loudly.
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("DownloadFileResumable hit the network despite valid cached file")
+	}))
+	defer srv.Close()
+
+	result, err := DownloadFileResumable(context.Background(), srv.URL, dest, wantSHA, nil)
+	if err != nil {
+		t.Fatalf("DownloadFileResumable err = %v", err)
+	}
+	if result.SizeBytes != int64(len(payload)) {
+		t.Errorf("SizeBytes = %d, want %d", result.SizeBytes, len(payload))
+	}
+}
+
+// TestDownloadFileResumableReverifiesCachedFileHashMismatch confirms that when
+// the cached file's hash doesn't match (corruption, post-upgrade version bump,
+// tampering), it is discarded and re-downloaded from the source.
+func TestDownloadFileResumableReverifiesCachedFileHashMismatch(t *testing.T) {
+	fresh := []byte("fresh payload from server")
+	sum := sha256.Sum256(fresh)
+	wantSHA := hex.EncodeToString(sum[:])
+
+	dest := filepath.Join(t.TempDir(), "cached.bin")
+	// Seed with stale bytes whose hash will not match wantSHA.
+	if err := os.WriteFile(dest, []byte("stale cached payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		writeRawBytes(w, fresh)
+	}))
+	defer srv.Close()
+
+	_, err := DownloadFileResumable(context.Background(), srv.URL, dest, wantSHA, nil)
+	if err != nil {
+		t.Fatalf("DownloadFileResumable err = %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("expected exactly one server hit after cache mismatch, got %d", hits)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, fresh) {
+		t.Errorf("file content = %q, want %q (cache was not replaced)", got, fresh)
+	}
+}
+
+// TestDownloadFileResumableUnreleasedSentinelSkipsSHA confirms the MLX
+// sentinel is treated the same as a PLACEHOLDER_ value: verification is
+// skipped rather than erroring, matching the documented behavior for
+// entries whose download path is not yet wired up.
+func TestDownloadFileResumableUnreleasedSentinelSkipsSHA(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeRawBytes(w, []byte("unverified"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "unreleased.bin")
+	_, err := DownloadFileResumable(context.Background(), srv.URL, dest, UnreleasedMLXSentinel, nil)
+	if err != nil {
+		t.Fatalf("UNRELEASED_ sentinel should skip verification, got err = %v", err)
+	}
+}
+
 // TestDownloadFileResumableHTTPError verifies non-200/206 responses surface an error.
 func TestDownloadFileResumableHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

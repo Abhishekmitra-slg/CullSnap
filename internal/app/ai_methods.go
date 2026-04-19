@@ -882,16 +882,23 @@ func (a *App) DownloadVLMModel(modelName string) error {
 	backend := vlm.RecommendBackend(hwProfile)
 
 	entry, ok := vlm.LookupModel(modelName, backend)
-	if !ok {
-		// Try the other backend.
+	// Fall back to the other backend when (a) no entry matches the recommended
+	// backend, or (b) the matching entry is marked unavailable (e.g. MLX until
+	// the download pipeline redesign lands).
+	if !ok || !entry.Available {
+		other := "mlx"
 		if backend == "mlx" {
-			backend = "llamacpp"
-		} else {
-			backend = "mlx"
+			other = "llamacpp"
 		}
+		logger.Log.Debug("app: VLM backend unavailable, trying fallback",
+			"requested", backend, "fallback", other, "found", ok, "available", entry.Available)
+		backend = other
 		entry, ok = vlm.LookupModel(modelName, backend)
 		if !ok {
 			return fmt.Errorf("model %q not found in registry", modelName)
+		}
+		if !entry.Available {
+			return fmt.Errorf("model %q has no available backend (both llamacpp and mlx entries are marked unavailable)", modelName)
 		}
 	}
 
@@ -967,11 +974,18 @@ func (a *App) provisionLlamaServer(cullsnapDir string) error {
 		return fmt.Errorf("no llama-server download URL for %s/%s", stdruntime.GOOS, stdruntime.GOARCH)
 	}
 
+	// A missing SHA256 entry for a supported platform is a registry bug, not a
+	// reason to silently skip integrity verification. Refuse to provision.
+	expectedSHA := vlm.LlamaServerSHA256()
+	if expectedSHA == "" {
+		return fmt.Errorf("no llama-server SHA256 registered for %s/%s — refusing to download unverified binary", stdruntime.GOOS, stdruntime.GOARCH)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
 		return err
 	}
 
-	_, err := vlm.DownloadFileResumable(a.ctx, url, binaryPath, "", nil)
+	_, err := vlm.DownloadFileResumable(a.ctx, url, binaryPath, expectedSHA, nil)
 	if err != nil {
 		return err
 	}

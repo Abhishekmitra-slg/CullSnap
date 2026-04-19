@@ -90,8 +90,33 @@ type DownloadResult struct {
 	Duration  time.Duration
 }
 
+// shouldSkipHashVerification reports whether the given expectedSHA256 value is
+// a documented stub that callers have explicitly opted out of verifying.
+// Empty strings are treated as stubs for callers that pre-date the Available
+// flag; new callers must supply a real hash or fail loud. Sentinel values
+// ("PLACEHOLDER_*", "UNRELEASED_*") mark entries whose download pipeline is
+// not yet wired up and should never be reached in practice.
+func shouldSkipHashVerification(expectedSHA256 string) bool {
+	if expectedSHA256 == "" {
+		return true
+	}
+	if strings.HasPrefix(expectedSHA256, "PLACEHOLDER_") {
+		return true
+	}
+	if strings.HasPrefix(expectedSHA256, "UNRELEASED_") {
+		return true
+	}
+	return false
+}
+
 // DownloadFileResumable downloads url to destPath, resuming from a .partial file if present.
-// SHA256 verification is skipped when expectedSHA256 is empty or starts with "PLACEHOLDER_".
+//
+// SHA256 verification behavior:
+//   - Real hex digest: downloaded bytes and any already-present destPath are verified;
+//     mismatches trigger a re-download (existing file) or hard error (fresh download).
+//   - Empty / "PLACEHOLDER_*" / "UNRELEASED_*": verification is skipped. These are
+//     documented stubs — production callers must pass a real hash.
+//
 // progressFn is called with (downloaded, total) after each chunk; total may be -1 if unknown.
 func DownloadFileResumable(
 	ctx context.Context,
@@ -107,15 +132,41 @@ func DownloadFileResumable(
 		return nil, fmt.Errorf("vlm: mkdir for download dest: %w", err)
 	}
 
-	// If the final file already exists, return immediately without re-downloading.
+	skipVerify := shouldSkipHashVerification(expectedSHA256)
+
+	// If the final file already exists, verify its SHA256 before trusting it.
+	// A cached file with a hash mismatch (post-upgrade hash change, on-disk
+	// corruption, supply-chain tampering) must be re-downloaded, not reused.
 	if info, err := os.Stat(destPath); err == nil {
-		if logger.Log != nil {
-			logger.Log.Debug("vlm: provisioner: file already exists, skipping download",
-				"path", destPath,
-				"size", info.Size(),
-			)
+		if skipVerify {
+			if logger.Log != nil {
+				logger.Log.Debug("vlm: provisioner: file already exists, no hash configured — skipping re-verify",
+					"path", destPath, "size", info.Size())
+			}
+			return &DownloadResult{Path: destPath, SizeBytes: info.Size()}, nil
 		}
-		return &DownloadResult{Path: destPath, SizeBytes: info.Size()}, nil
+		got, hashErr := fileSHA256(destPath)
+		if hashErr != nil {
+			return nil, fmt.Errorf("vlm: re-verify sha256 on cached file: %w", hashErr)
+		}
+		if strings.EqualFold(got, expectedSHA256) {
+			if logger.Log != nil {
+				logger.Log.Debug("vlm: provisioner: cached file SHA256 verified",
+					"path", destPath, "size", info.Size())
+			}
+			return &DownloadResult{Path: destPath, SizeBytes: info.Size()}, nil
+		}
+		if logger.Log != nil {
+			logger.Log.Warn("vlm: provisioner: cached file SHA256 mismatch, re-downloading",
+				"path", destPath, "got", got, "want", expectedSHA256)
+		}
+		if removeErr := os.Remove(destPath); removeErr != nil {
+			return nil, fmt.Errorf("vlm: remove stale cached file: %w", removeErr)
+		}
+		// Also discard any stale partial so we restart from byte 0.
+		if removeErr := os.Remove(destPath + ".partial"); removeErr != nil && !os.IsNotExist(removeErr) {
+			return nil, fmt.Errorf("vlm: remove stale partial after hash mismatch: %w", removeErr)
+		}
 	}
 
 	partialPath := destPath + ".partial"
@@ -216,8 +267,7 @@ func DownloadFileResumable(
 		return nil, fmt.Errorf("vlm: close partial file: %w", err)
 	}
 
-	// SHA256 verification (skip for empty or placeholder checksums).
-	skipVerify := expectedSHA256 == "" || strings.HasPrefix(expectedSHA256, "PLACEHOLDER_")
+	// SHA256 verification (skip only for documented stub values; see shouldSkipHashVerification).
 	if !skipVerify {
 		if logger.Log != nil {
 			logger.Log.Debug("vlm: provisioner: verifying SHA256", "path", partialPath)
