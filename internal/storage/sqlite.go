@@ -872,30 +872,37 @@ func (s *SQLiteStore) HideFaceCluster(clusterID int64, hidden bool) error {
 	return nil
 }
 
-// DeleteAIDataForFolder removes all AI scores, face detections, and face clusters for a folder.
+// DeleteAIDataForFolder removes every trace of AI analysis for a folder —
+// ONNX outputs (face detections, face clusters, ai_scores) and VLM outputs
+// (vlm_scores, vlm_rankings, vlm_ranking_groups). The six DELETEs run inside
+// a single transaction so a failure partway through cannot leave users with
+// e.g. cleared face data but stale VLM explanations still showing in the UI.
+//
+// Calls deleteVLMDataForFolderLocked for the VLM half rather than the public
+// DeleteVLMDataForFolder to avoid re-entering s.mu (which would deadlock).
 func (s *SQLiteStore) DeleteAIDataForFolder(folderPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Delete detections for photos in this folder
-	_, err := s.db.Exec(`DELETE FROM face_detections WHERE photo_path LIKE ?`, folderPath+"/%")
+	tx, err := s.db.Begin()
 	if err != nil {
+		return fmt.Errorf("begin AI data delete tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // no-op after Commit
+
+	if _, err := tx.Exec(`DELETE FROM face_detections WHERE photo_path LIKE ?`, folderPath+"/%"); err != nil {
 		return fmt.Errorf("failed to delete face detections: %w", err)
 	}
-
-	// Delete clusters for this folder
-	_, err = s.db.Exec(`DELETE FROM face_clusters WHERE folder_path = ?`, folderPath)
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM face_clusters WHERE folder_path = ?`, folderPath); err != nil {
 		return fmt.Errorf("failed to delete face clusters: %w", err)
 	}
-
-	// Delete scores for photos in this folder
-	_, err = s.db.Exec(`DELETE FROM ai_scores WHERE photo_path LIKE ?`, folderPath+"/%")
-	if err != nil {
+	if _, err := tx.Exec(`DELETE FROM ai_scores WHERE photo_path LIKE ?`, folderPath+"/%"); err != nil {
 		return fmt.Errorf("failed to delete AI scores: %w", err)
 	}
-
-	return nil
+	if err := deleteVLMDataForFolderTx(tx, folderPath); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteFaceClustersForFolder removes face clusters for a folder and resets
@@ -1016,17 +1023,37 @@ func (s *SQLiteStore) GetVLMScoresForFolder(folderPath string) ([]VLMScoreRow, e
 }
 
 // DeleteVLMDataForFolder removes all VLM scores, rankings, and ranking groups for a folder.
+//
+// The three DELETEs share a transaction so a partial failure cannot leave
+// the folder with ranking rows whose parent scores were already removed.
 func (s *SQLiteStore) DeleteVLMDataForFolder(folderPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := s.db.Exec(`DELETE FROM vlm_scores WHERE folder_path = ?`, folderPath); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin VLM data delete tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // no-op after Commit
+
+	if err := deleteVLMDataForFolderTx(tx, folderPath); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// deleteVLMDataForFolderTx issues the three VLM DELETEs on an existing
+// transaction. Callers are responsible for holding s.mu (if applicable) and
+// for Commit/Rollback. Shared by DeleteVLMDataForFolder and
+// DeleteAIDataForFolder to keep the delete list in one place.
+func deleteVLMDataForFolderTx(tx *sql.Tx, folderPath string) error {
+	if _, err := tx.Exec(`DELETE FROM vlm_scores WHERE folder_path = ?`, folderPath); err != nil {
 		return fmt.Errorf("failed to delete VLM scores: %w", err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM vlm_rankings WHERE folder_path = ?`, folderPath); err != nil {
+	if _, err := tx.Exec(`DELETE FROM vlm_rankings WHERE folder_path = ?`, folderPath); err != nil {
 		return fmt.Errorf("failed to delete VLM rankings: %w", err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM vlm_ranking_groups WHERE folder_path = ?`, folderPath); err != nil {
+	if _, err := tx.Exec(`DELETE FROM vlm_ranking_groups WHERE folder_path = ?`, folderPath); err != nil {
 		return fmt.Errorf("failed to delete VLM ranking groups: %w", err)
 	}
 	return nil

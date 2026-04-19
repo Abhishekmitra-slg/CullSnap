@@ -147,6 +147,133 @@ func TestGetVLMScoreNotFound(t *testing.T) {
 	}
 }
 
+// TestDeleteAIDataForFolderClearsVLM is the regression test for #116:
+// "Clear AI Data" (which calls DeleteAIDataForFolder) must wipe every AI
+// artifact for a folder, including VLM scores, rankings, and ranking groups.
+// Before this test was added, VLM data survived the clear and the UI
+// continued showing stale explanations after re-analysis.
+func TestDeleteAIDataForFolderClearsVLM(t *testing.T) {
+	store := newTestStore(t)
+
+	folder := "/photos/vacation"
+	keepFolder := "/photos/other"
+
+	// --- Seed every table DeleteAIDataForFolder should touch. ---
+	if err := store.SaveAIScore(&AIScore{
+		PhotoPath: folder + "/a.jpg", OverallScore: 0.9, FaceCount: 1, Provider: "Local ONNX",
+	}); err != nil {
+		t.Fatalf("SaveAIScore target: %v", err)
+	}
+	if err := store.SaveAIScore(&AIScore{
+		PhotoPath: keepFolder + "/x.jpg", OverallScore: 0.5, FaceCount: 0, Provider: "Local ONNX",
+	}); err != nil {
+		t.Fatalf("SaveAIScore other: %v", err)
+	}
+
+	if _, err := store.SaveFaceDetection(&FaceDetection{
+		PhotoPath: folder + "/a.jpg", BboxX: 0, BboxY: 0, BboxW: 10, BboxH: 10, Confidence: 0.99,
+	}); err != nil {
+		t.Fatalf("SaveFaceDetection target: %v", err)
+	}
+	if _, err := store.SaveFaceDetection(&FaceDetection{
+		PhotoPath: keepFolder + "/x.jpg", BboxX: 0, BboxY: 0, BboxW: 10, BboxH: 10, Confidence: 0.99,
+	}); err != nil {
+		t.Fatalf("SaveFaceDetection other: %v", err)
+	}
+
+	if _, err := store.SaveFaceCluster(&FaceCluster{
+		FolderPath: folder, Label: "Person 1", PhotoCount: 1,
+	}); err != nil {
+		t.Fatalf("SaveFaceCluster target: %v", err)
+	}
+	if _, err := store.SaveFaceCluster(&FaceCluster{
+		FolderPath: keepFolder, Label: "Person A", PhotoCount: 1,
+	}); err != nil {
+		t.Fatalf("SaveFaceCluster other: %v", err)
+	}
+
+	if err := store.SaveVLMScore(VLMScoreRow{
+		PhotoPath: folder + "/a.jpg", FolderPath: folder,
+		Aesthetic: 0.8, PromptVersion: 1, ScoredAt: "2026-04-09T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveVLMScore target: %v", err)
+	}
+	if err := store.SaveVLMScore(VLMScoreRow{
+		PhotoPath: keepFolder + "/x.jpg", FolderPath: keepFolder,
+		Aesthetic: 0.5, PromptVersion: 1, ScoredAt: "2026-04-09T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("SaveVLMScore other: %v", err)
+	}
+
+	if err := store.SaveVLMRanking(VLMRankingGroupRow{
+		FolderPath: folder, GroupLabel: "burst-1", PhotoCount: 2,
+		Explanation: "target", ModelName: "gemma-4", PromptVersion: 1,
+		Rankings: []VLMRankingRow{
+			{PhotoPath: folder + "/a.jpg", Rank: 1, RelativeScore: 0.9, TokensUsed: 50},
+		},
+	}); err != nil {
+		t.Fatalf("SaveVLMRanking target: %v", err)
+	}
+	if err := store.SaveVLMRanking(VLMRankingGroupRow{
+		FolderPath: keepFolder, GroupLabel: "burst-2", PhotoCount: 1,
+		Explanation: "other", ModelName: "gemma-4", PromptVersion: 1,
+		Rankings: []VLMRankingRow{
+			{PhotoPath: keepFolder + "/x.jpg", Rank: 1, RelativeScore: 0.8, TokensUsed: 50},
+		},
+	}); err != nil {
+		t.Fatalf("SaveVLMRanking other: %v", err)
+	}
+
+	// --- Execute the clear. ---
+	if err := store.DeleteAIDataForFolder(folder); err != nil {
+		t.Fatalf("DeleteAIDataForFolder: %v", err)
+	}
+
+	// --- Target folder: every AI+VLM artifact must be gone. ---
+	if scores, err := store.GetAIScoresForFolder(folder); err != nil {
+		t.Fatalf("GetAIScoresForFolder target: %v", err)
+	} else if len(scores) != 0 {
+		t.Errorf("ai_scores for target folder: got %d, want 0", len(scores))
+	}
+	if dets, err := store.GetFaceDetections(folder + "/a.jpg"); err != nil {
+		t.Fatalf("GetFaceDetections target: %v", err)
+	} else if len(dets) != 0 {
+		t.Errorf("face_detections for target photo: got %d, want 0", len(dets))
+	}
+	if clusters, err := store.GetFaceClusters(folder); err != nil {
+		t.Fatalf("GetFaceClusters target: %v", err)
+	} else if len(clusters) != 0 {
+		t.Errorf("face_clusters for target folder: got %d, want 0", len(clusters))
+	}
+	if vlm, err := store.GetVLMScoresForFolder(folder); err != nil {
+		t.Fatalf("GetVLMScoresForFolder target: %v", err)
+	} else if len(vlm) != 0 {
+		t.Errorf("vlm_scores for target folder: got %d, want 0 — #116 regression", len(vlm))
+	}
+	if rankings, err := store.GetVLMRankingsForFolder(folder); err != nil {
+		t.Fatalf("GetVLMRankingsForFolder target: %v", err)
+	} else if len(rankings) != 0 {
+		t.Errorf("vlm_rankings for target folder: got %d, want 0 — #116 regression", len(rankings))
+	}
+
+	// --- Other folder: nothing may have been collateral damage. ---
+	if scores, err := store.GetAIScoresForFolder(keepFolder); err != nil {
+		t.Fatalf("GetAIScoresForFolder other: %v", err)
+	} else if len(scores) != 1 {
+		t.Errorf("ai_scores for other folder: got %d, want 1 (collateral damage)", len(scores))
+	}
+	if vlm, err := store.GetVLMScoresForFolder(keepFolder); err != nil {
+		t.Fatalf("GetVLMScoresForFolder other: %v", err)
+	} else if len(vlm) != 1 {
+		t.Errorf("vlm_scores for other folder: got %d, want 1 (collateral damage)", len(vlm))
+	}
+	if rankings, err := store.GetVLMRankingsForFolder(keepFolder); err != nil {
+		t.Fatalf("GetVLMRankingsForFolder other: %v", err)
+	} else if len(rankings) != 1 {
+		t.Errorf("vlm_rankings for other folder: got %d, want 1 (collateral damage)", len(rankings))
+	}
+}
+
 func TestDeleteVLMDataForFolder(t *testing.T) {
 	store := newTestStore(t)
 
