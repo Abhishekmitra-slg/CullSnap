@@ -407,7 +407,7 @@ func main() {
 	appMenu.Items[2].SubMenu.Items[2].Click = func(_ *menu.CallbackData) { wailsRuntime.EventsEmit(appCtx, "menu:ai-panel") }
 
 	err = wails.Run(&options.App{
-		Menu: appMenu,
+		Menu:             appMenu,
 		Title:            "CullSnap",
 		Width:            1200,
 		Height:           800,
@@ -458,15 +458,15 @@ func buildAppMenu() *menu.Menu {
 
 	// File menu
 	fileMenu := appMenu.AddSubmenu("File")
-	fileMenu.AddText("Open Folder...", keys.CmdOrCtrl("o"), nil)     // [0] — wired later
-	fileMenu.AddSeparator()                                           // [1]
+	fileMenu.AddText("Open Folder...", keys.CmdOrCtrl("o"), nil) // [0] — wired later
+	fileMenu.AddSeparator()                                      // [1]
 	fileMenu.AddText("Close Window", keys.CmdOrCtrl("w"), func(_ *menu.CallbackData) {})
 
 	// View menu
 	viewMenu := appMenu.AddSubmenu("View")
-	viewMenu.AddText("Settings", keys.CmdOrCtrl(","), nil)            // [0] — wired later
-	viewMenu.AddSeparator()                                           // [1]
-	viewMenu.AddText("Toggle AI Panel", keys.CmdOrCtrl("i"), nil)    // [2] — wired later
+	viewMenu.AddText("Settings", keys.CmdOrCtrl(","), nil)        // [0] — wired later
+	viewMenu.AddSeparator()                                       // [1]
+	viewMenu.AddText("Toggle AI Panel", keys.CmdOrCtrl("i"), nil) // [2] — wired later
 
 	// Edit menu
 	appMenu.Append(menu.EditMenu())
