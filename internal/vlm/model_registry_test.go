@@ -10,6 +10,12 @@ import (
 // hexSHA256Pattern matches a 64-character lowercase hex SHA256 digest.
 var hexSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// manifestCommitSHARE matches a 40-character lowercase hex git commit SHA.
+var manifestCommitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// manifestSHA1RE matches a 40-character lowercase hex git blob SHA-1.
+var manifestSHA1RE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
 func TestRegistryLookup(t *testing.T) {
 	m, ok := LookupModel("gemma-4-e4b-it", "llamacpp", "")
 	if !ok {
@@ -208,6 +214,56 @@ func TestAllManifestsHaveRequiredFields(t *testing.T) {
 		}
 		if m.RAMUsage <= 0 {
 			t.Errorf("manifest %s/%s has RAMUsage=%d, want >0", m.Name, m.Variant, m.RAMUsage)
+		}
+	}
+}
+
+// TestEveryManifestValid iterates builtinManifests and asserts per-manifest
+// integrity: MLX manifests must have a valid 40-hex commit_sha and at least one
+// per_file entry with valid hashes; llamacpp manifests must have a real SHA-256
+// and a non-empty download URL.
+func TestEveryManifestValid(t *testing.T) {
+	for _, m := range builtinManifests {
+		m := m
+		t.Run(m.Name+"."+m.Variant, func(t *testing.T) {
+			switch m.Backend {
+			case "mlx":
+				if !manifestCommitSHARE.MatchString(m.CommitSHA) {
+					t.Fatalf("bad commit_sha: %q", m.CommitSHA)
+				}
+				if len(m.PerFile) == 0 {
+					t.Fatal("empty per_file")
+				}
+				for _, fe := range m.PerFile {
+					if fe.Path == "" {
+						t.Fatal("per_file entry has empty path")
+					}
+					if fe.IsLFS && !hexSHA256Pattern.MatchString(fe.SHA256) {
+						t.Fatalf("file %q: bad SHA-256: %q", fe.Path, fe.SHA256)
+					}
+					if !fe.IsLFS && !manifestSHA1RE.MatchString(fe.SHA1) {
+						t.Fatalf("file %q: bad git SHA-1: %q", fe.Path, fe.SHA1)
+					}
+				}
+			case "llamacpp":
+				if !hexSHA256Pattern.MatchString(m.SHA256) {
+					t.Fatalf("bad sha256: %q", m.SHA256)
+				}
+				if m.URL == "" {
+					t.Fatal("empty url")
+				}
+			}
+		})
+	}
+}
+
+// TestNoSentinelHashes asserts that no manifest carries the old
+// UNRELEASED_MLX_PENDING_DOWNLOAD_REDESIGN sentinel hash which was used as a
+// placeholder before real digest data was computed.
+func TestNoSentinelHashes(t *testing.T) {
+	for _, m := range builtinManifests {
+		if m.SHA256 == "UNRELEASED_MLX_PENDING_DOWNLOAD_REDESIGN" {
+			t.Fatalf("manifest %s.%s carries unreleased sentinel", m.Name, m.Variant)
 		}
 	}
 }
