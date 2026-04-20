@@ -34,7 +34,7 @@ type LlamaCppBackend struct {
 	mu           sync.Mutex
 	binaryPath   string
 	modelPath    string
-	modelEntry   ModelEntry
+	modelEntry   ModelManifest
 	cmd          *exec.Cmd
 	port         int
 	token        string
@@ -48,7 +48,7 @@ type LlamaCppBackend struct {
 }
 
 // NewLlamaCppBackend creates a new LlamaCppBackend with the given binary and model paths.
-func NewLlamaCppBackend(binaryPath, modelPath string, entry ModelEntry) *LlamaCppBackend {
+func NewLlamaCppBackend(binaryPath, modelPath string, entry ModelManifest) *LlamaCppBackend {
 	if logger.Log != nil {
 		logger.Log.Debug("vlm: llamacpp: creating backend",
 			slog.String("binaryPath", binaryPath),

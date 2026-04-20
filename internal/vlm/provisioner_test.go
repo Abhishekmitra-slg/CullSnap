@@ -171,8 +171,11 @@ func TestDownloadFileResumableBadSHA(t *testing.T) {
 	}
 }
 
-// TestDownloadFileResumablePlaceholderSkipsSHA verifies PLACEHOLDER_ prefix skips verification.
-func TestDownloadFileResumablePlaceholderSkipsSHA(t *testing.T) {
+// TestDownloadFileResumablePlaceholderFailsVerification verifies that PLACEHOLDER_
+// strings are no longer treated as skip-sentinels; they are now passed as-is to
+// SHA256 comparison and trigger a mismatch error, which is the correct behavior
+// now that only empty SHA256 opts out of verification.
+func TestDownloadFileResumablePlaceholderFailsVerification(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeRawBytes(w, []byte("whatever"))
 	}))
@@ -180,16 +183,17 @@ func TestDownloadFileResumablePlaceholderSkipsSHA(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "placeholder.bin")
 	_, err := DownloadFileResumable(context.Background(), srv.URL, dest, "PLACEHOLDER_TBD", nil)
-	if err != nil {
-		t.Fatalf("placeholder SHA should skip verification, got err = %v", err)
+	if err == nil {
+		t.Fatal("expected SHA256 mismatch error for PLACEHOLDER_ string, got nil")
 	}
 }
 
 // TestShouldSkipHashVerification pins down the sentinel classification used by
-// DownloadFileResumable: empty + PLACEHOLDER_ + UNRELEASED_ skip verification;
-// anything else is treated as a real hash and must be verified.
+// DownloadFileResumable: only an empty string skips verification; everything
+// else (including old sentinel prefixes that may appear in strings) is treated
+// as a real hash and must be verified.
 func TestShouldSkipHashVerification(t *testing.T) {
-	skips := []string{"", "PLACEHOLDER_TBD", "PLACEHOLDER_SHA256_E4B_GGUF", UnreleasedMLXSentinel}
+	skips := []string{""}
 	for _, s := range skips {
 		if !shouldSkipHashVerification(s) {
 			t.Errorf("shouldSkipHashVerification(%q) = false, want true", s)
@@ -198,7 +202,9 @@ func TestShouldSkipHashVerification(t *testing.T) {
 	realish := []string{
 		strings.Repeat("a", 64),
 		"deadbeef",
-		"placeholder_lowercase_does_not_match", // prefix check is case-sensitive
+		"PLACEHOLDER_TBD",
+		"UNRELEASED_MLX_PENDING_DOWNLOAD_REDESIGN",
+		"placeholder_lowercase_does_not_match",
 	}
 	for _, s := range realish {
 		if shouldSkipHashVerification(s) {
@@ -277,16 +283,16 @@ func TestDownloadFileResumableReverifiesCachedFileHashMismatch(t *testing.T) {
 // sentinel is treated the same as a PLACEHOLDER_ value: verification is
 // skipped rather than erroring, matching the documented behavior for
 // entries whose download path is not yet wired up.
-func TestDownloadFileResumableUnreleasedSentinelSkipsSHA(t *testing.T) {
+func TestDownloadFileResumableEmptyHashSkipsSHA(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeRawBytes(w, []byte("unverified"))
 	}))
 	defer srv.Close()
 
-	dest := filepath.Join(t.TempDir(), "unreleased.bin")
-	_, err := DownloadFileResumable(context.Background(), srv.URL, dest, UnreleasedMLXSentinel, nil)
+	dest := filepath.Join(t.TempDir(), "noverify.bin")
+	_, err := DownloadFileResumable(context.Background(), srv.URL, dest, "", nil)
 	if err != nil {
-		t.Fatalf("UNRELEASED_ sentinel should skip verification, got err = %v", err)
+		t.Fatalf("empty SHA256 should skip verification, got err = %v", err)
 	}
 }
 

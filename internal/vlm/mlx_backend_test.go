@@ -36,7 +36,7 @@ func TestMLXBackendStartDetectsImmediateCrash(t *testing.T) {
 		t.Fatalf("mkdir model: %v", err)
 	}
 
-	b := NewMLXBackend(venv, modelDir, ModelEntry{
+	b := NewMLXBackend(venv, modelDir, ModelManifest{
 		Name: "mlx-crash-test", Variant: "4bit", Backend: "mlx",
 	})
 
@@ -88,7 +88,7 @@ func TestMLXBackendStartRetriesOnReadyFailure(t *testing.T) {
 		t.Fatalf("mkdir model: %v", err)
 	}
 
-	b := NewMLXBackend(venv, modelDir, ModelEntry{
+	b := NewMLXBackend(venv, modelDir, ModelManifest{
 		Name: "mlx-retry-test", Variant: "4bit", Backend: "mlx",
 	})
 

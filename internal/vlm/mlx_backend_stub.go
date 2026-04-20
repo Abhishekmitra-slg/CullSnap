@@ -13,7 +13,7 @@ var errMLXNotAvailable = errors.New("MLX not available on this platform")
 type MLXBackend struct{}
 
 // NewMLXBackend returns a stub MLXBackend; arguments are intentionally ignored.
-func NewMLXBackend(_, _ string, _ ModelEntry) *MLXBackend {
+func NewMLXBackend(_, _ string, _ ModelManifest) *MLXBackend {
 	return &MLXBackend{}
 }
 

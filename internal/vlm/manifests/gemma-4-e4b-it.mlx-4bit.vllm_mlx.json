@@ -1,0 +1,78 @@
+{
+  "name": "gemma-4-e4b-it",
+  "variant": "mlx-4bit",
+  "format": "mlx",
+  "engine": "vllm_mlx",
+  "backend": "mlx",
+  "repo": "mlx-community/gemma-4-E4B-it-4bit",
+  "commit_sha": "cc3b666c01c20395e0dcebd53854504c7d9821f9",
+  "allow_patterns": [
+    "*.json",
+    "*.safetensors*",
+    "*.jinja",
+    "*.model",
+    "tokenizer.model"
+  ],
+  "per_file": [
+    {
+      "Path": "chat_template.jinja",
+      "Size": 16317,
+      "SHA256": "",
+      "SHA1": "07e50e69a8c445f2c31a089b828e85b2a93942bf",
+      "IsLFS": false
+    },
+    {
+      "Path": "config.json",
+      "Size": 6229,
+      "SHA256": "",
+      "SHA1": "2bd71833987fcf744af815e744ae2b83b1302a6b",
+      "IsLFS": false
+    },
+    {
+      "Path": "generation_config.json",
+      "Size": 208,
+      "SHA256": "",
+      "SHA1": "e605bb4523b1462ea9d9a3810b9e3ecf7ab7b1f6",
+      "IsLFS": false
+    },
+    {
+      "Path": "model.safetensors",
+      "Size": 5217361182,
+      "SHA256": "339409bd18494955556e1fde6ccc15faaa9f707b911b74791fe290b9d722beed",
+      "SHA1": "f80840c3227fb1d3ad72d545d2feb83a335bd19b",
+      "IsLFS": true
+    },
+    {
+      "Path": "model.safetensors.index.json",
+      "Size": 251749,
+      "SHA256": "",
+      "SHA1": "81d2aa1f2fa2c75294118af3c79c2f905d61e6d8",
+      "IsLFS": false
+    },
+    {
+      "Path": "processor_config.json",
+      "Size": 902,
+      "SHA256": "",
+      "SHA1": "13e92a44d19566f334d7450e7898935e16e16f3d",
+      "IsLFS": false
+    },
+    {
+      "Path": "tokenizer.json",
+      "Size": 32169626,
+      "SHA256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+      "SHA1": "1ff9f3e3439a939b971f9919e821bf87e835a503",
+      "IsLFS": true
+    },
+    {
+      "Path": "tokenizer_config.json",
+      "Size": 2095,
+      "SHA256": "",
+      "SHA1": "375b25dc8be85705251e41be1c25310d24932051",
+      "IsLFS": false
+    }
+  ],
+  "size_bytes": 5249808308,
+  "ram_usage": 5500000000,
+  "min_tier": 2,
+  "available": true
+}

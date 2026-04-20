@@ -31,7 +31,7 @@ type MLXBackend struct {
 	mu           sync.Mutex
 	venvPath     string
 	modelPath    string
-	modelEntry   ModelEntry
+	modelEntry   ModelManifest
 	cmd          *exec.Cmd
 	port         int
 	client       *Client
@@ -45,7 +45,7 @@ type MLXBackend struct {
 // NewMLXBackend returns an MLXBackend configured for the given venv and model path.
 // venvPath is typically ~/.cullsnap/mlx-venv/ and modelPath points to the downloaded
 // MLX model directory under ~/.cullsnap/models/.
-func NewMLXBackend(venvPath, modelPath string, entry ModelEntry) *MLXBackend {
+func NewMLXBackend(venvPath, modelPath string, entry ModelManifest) *MLXBackend {
 	if logger.Log != nil {
 		logger.Log.Debug("vlm: mlx: NewMLXBackend",
 			slog.String("venvPath", venvPath),
@@ -147,7 +147,7 @@ func (b *MLXBackend) startOnceLocked(ctx context.Context, python3 string) (error
 	// Unlike llama-server (llamacpp_backend.go:123), we cannot generate and enforce
 	// a session token here. Mitigations in place:
 	//   1. Server binds to 127.0.0.1 only (see --host below), not reachable off-host.
-	//   2. ModelEntry.Available is false for MLX entries pending #128 — users do
+	//   2. ModelManifest.Available drives user-facing selection — users do
 	//      not reach this code path in the shipping build.
 	// Residual risk: any local process running as the same user can issue
 	// requests to the MLX server port while it is running. Tracked as #115.

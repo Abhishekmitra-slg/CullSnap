@@ -1,0 +1,13 @@
+{
+  "name": "gemma-4-e2b-it",
+  "variant": "Q4_K_M",
+  "format": "gguf",
+  "backend": "llamacpp",
+  "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+  "sha256": "ac0069ebccd39925d836f24a88c0f0c858d20578c29b21ab7cedce66ee576845",
+  "filename": "gemma-4-e2b-it-Q4_K_M.gguf",
+  "size_bytes": 3106735776,
+  "ram_usage": 3500000000,
+  "min_tier": 1,
+  "available": true
+}
