@@ -938,10 +938,18 @@ func (a *App) DownloadVLMModel(modelName string) error {
 	hwProfile := a.vlmHWProfile
 	backend := vlm.RecommendBackend(hwProfile)
 
-	entry, ok := vlm.LookupModel(modelName, backend)
+	// resolveEngine returns the default engine for a given backend: mlx_vlm for
+	// the mlx backend, empty string for llamacpp (gguf uses no engine field).
+	resolveEngine := func(b string) vlm.ServerEngine {
+		if b == "mlx" {
+			return vlm.EngineMLXVLM
+		}
+		return ""
+	}
+
+	entry, ok := vlm.LookupModel(modelName, backend, resolveEngine(backend))
 	// Fall back to the other backend when (a) no entry matches the recommended
-	// backend, or (b) the matching entry is marked unavailable (e.g. MLX until
-	// the download pipeline redesign lands).
+	// backend, or (b) the matching entry is marked unavailable.
 	if !ok || !entry.Available {
 		other := "mlx"
 		if backend == "mlx" {
@@ -950,7 +958,7 @@ func (a *App) DownloadVLMModel(modelName string) error {
 		logger.Log.Debug("app: VLM backend unavailable, trying fallback",
 			"requested", backend, "fallback", other, "found", ok, "available", entry.Available)
 		backend = other
-		entry, ok = vlm.LookupModel(modelName, backend)
+		entry, ok = vlm.LookupModel(modelName, backend, resolveEngine(backend))
 		if !ok {
 			return fmt.Errorf("model %q not found in registry", modelName)
 		}

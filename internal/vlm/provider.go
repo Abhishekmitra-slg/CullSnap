@@ -13,6 +13,7 @@ const (
 	TierBasic                       // 8-12GB RAM — E2B only
 	TierCapable                     // 16GB+ RAM, Apple M-series or discrete GPU — E4B
 	TierPower                       // 32GB+, M-series Pro/Max/Ultra — E4B full precision
+	TierMaximum                     // Registry ceiling tier; used by manifest --min-tier maximum
 )
 
 // String returns a human-readable name for the hardware tier.
@@ -26,6 +27,8 @@ func (t HardwareTier) String() string {
 		return "capable"
 	case TierPower:
 		return "power"
+	case TierMaximum:
+		return "maximum"
 	default:
 		return "unknown"
 	}

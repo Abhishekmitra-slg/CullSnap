@@ -10,8 +10,14 @@ import (
 // hexSHA256Pattern matches a 64-character lowercase hex SHA256 digest.
 var hexSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// manifestCommitSHARE matches a 40-character lowercase hex git commit SHA.
+var manifestCommitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// manifestSHA1RE matches a 40-character lowercase hex git blob SHA-1.
+var manifestSHA1RE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
 func TestRegistryLookup(t *testing.T) {
-	m, ok := LookupModel("gemma-4-e4b-it", "llamacpp")
+	m, ok := LookupModel("gemma-4-e4b-it", "llamacpp", "")
 	if !ok {
 		t.Fatal("expected to find gemma-4-e4b-it/llamacpp but got false")
 	}
@@ -27,23 +33,33 @@ func TestRegistryLookup(t *testing.T) {
 }
 
 func TestRegistryLookupMLX(t *testing.T) {
-	m, ok := LookupModel("gemma-4-e4b-it", "mlx")
+	m, ok := LookupModel("gemma-4-e4b-it", "mlx", EngineMLXVLM)
 	if !ok {
-		t.Fatal("expected to find gemma-4-e4b-it/mlx but got false")
+		t.Fatal("expected to find gemma-4-e4b-it/mlx/mlx_vlm but got false")
 	}
 	if m.Format != "mlx" {
 		t.Errorf("expected format=mlx, got %q", m.Format)
 	}
 }
 
+func TestRegistryLookupVLLMMLX(t *testing.T) {
+	m, ok := LookupModel("gemma-4-e4b-it", "mlx", EngineVLLMMLX)
+	if !ok {
+		t.Fatal("expected to find gemma-4-e4b-it/mlx/vllm_mlx but got false")
+	}
+	if m.Engine != EngineVLLMMLX {
+		t.Errorf("expected engine=vllm_mlx, got %q", m.Engine)
+	}
+}
+
 func TestRegistryLookupE2B(t *testing.T) {
-	m, ok := LookupModel("gemma-4-e2b-it", "llamacpp")
+	m, ok := LookupModel("gemma-4-e2b-it", "llamacpp", "")
 	if !ok {
 		t.Fatal("expected to find gemma-4-e2b-it/llamacpp but got false")
 	}
 	// E2B should be strictly smaller than E4B but Q4_K_M of the 2B variant is
 	// still several GB — just assert the ordering invariant, not an absolute bound.
-	e4b, _ := LookupModel("gemma-4-e4b-it", "llamacpp")
+	e4b, _ := LookupModel("gemma-4-e4b-it", "llamacpp", "")
 	if m.SizeBytes <= 0 {
 		t.Errorf("expected SizeBytes > 0, got %d", m.SizeBytes)
 	}
@@ -53,7 +69,7 @@ func TestRegistryLookupE2B(t *testing.T) {
 }
 
 func TestRegistryLookupUnknown(t *testing.T) {
-	_, ok := LookupModel("nonexistent", "llamacpp")
+	_, ok := LookupModel("nonexistent", "llamacpp", "")
 	if ok {
 		t.Error("expected false for unknown model but got true")
 	}
@@ -93,7 +109,7 @@ func TestAllModels(t *testing.T) {
 
 // TestModelsForTierExcludesUnavailable asserts that ModelsForTier — which
 // drives the user-facing model picker — filters out entries marked
-// Available=false. Without this guard, users could select MLX models whose
+// Available=false. Without this guard, users could select models whose
 // download path is not yet wired up.
 func TestModelsForTierExcludesUnavailable(t *testing.T) {
 	models := ModelsForTier(TierPower)
@@ -105,47 +121,8 @@ func TestModelsForTierExcludesUnavailable(t *testing.T) {
 	}
 }
 
-// TestAllModelsIncludesUnavailable asserts that diagnostic tools still see
-// every entry, so that issues with unavailable backends stay discoverable.
-func TestAllModelsIncludesUnavailable(t *testing.T) {
-	var sawUnavailable bool
-	for _, m := range AllModels() {
-		if !m.Available {
-			sawUnavailable = true
-			break
-		}
-	}
-	if !sawUnavailable {
-		t.Error("AllModels is expected to expose at least one unavailable entry " +
-			"(MLX) while its download path is under redesign")
-	}
-}
-
-// TestMLXEntriesMarkedUnavailable is a regression guard: until the MLX download
-// redesign lands, every MLX entry must be Available=false and must carry the
-// documented sentinel hash so the release CI test recognises it as a tracked stub.
-func TestMLXEntriesMarkedUnavailable(t *testing.T) {
-	for _, m := range AllModels() {
-		if m.Backend != "mlx" {
-			continue
-		}
-		if m.Available {
-			t.Errorf("MLX entry %s/%s is marked Available=true but the MLX download "+
-				"pipeline is not yet implemented — re-enable only when shippable",
-				m.Name, m.Backend)
-		}
-		if m.SHA256 != UnreleasedMLXSentinel {
-			t.Errorf("MLX entry %s/%s has SHA256=%q, want sentinel %q",
-				m.Name, m.Backend, m.SHA256, UnreleasedMLXSentinel)
-		}
-	}
-}
-
 // TestNoPlaceholderHashes is the release-blocker CI gate from issue #113:
 // refuse to ship if any registry entry still carries a "PLACEHOLDER_" prefix.
-// MLX's UNRELEASED_ sentinel is explicitly distinct from PLACEHOLDER_ so that
-// tracked, Available=false stubs stay permissible while forgotten placeholder
-// literals never do.
 func TestNoPlaceholderHashes(t *testing.T) {
 	for _, m := range AllModels() {
 		if strings.HasPrefix(m.SHA256, "PLACEHOLDER_") {
@@ -164,16 +141,17 @@ func TestNoPlaceholderHashes(t *testing.T) {
 	}
 }
 
-// TestAvailableModelsHaveRealSHA256 asserts that every entry a user can
-// actually download carries a 64-character lowercase hex SHA256. Unavailable
-// entries may hold a documented sentinel value instead.
-func TestAvailableModelsHaveRealSHA256(t *testing.T) {
+// TestAvailableGGUFModelsHaveRealSHA256 asserts that every GGUF entry a user
+// can actually download carries a 64-character lowercase hex SHA256.
+// MLX manifests use per-file integrity (PerFile[].SHA256) instead of a
+// top-level SHA256, so they are excluded from this check.
+func TestAvailableGGUFModelsHaveRealSHA256(t *testing.T) {
 	for _, m := range AllModels() {
-		if !m.Available {
+		if !m.Available || m.Format != "gguf" {
 			continue
 		}
 		if !hexSHA256Pattern.MatchString(m.SHA256) {
-			t.Errorf("Available model %s/%s has SHA256 %q — want 64 lowercase hex chars",
+			t.Errorf("Available GGUF model %s/%s has SHA256 %q — want 64 lowercase hex chars",
 				m.Name, m.Backend, m.SHA256)
 		}
 	}
@@ -212,5 +190,80 @@ func TestLlamaServerSHA256(t *testing.T) {
 	} else if got != "" {
 		t.Errorf("LlamaServerSHA256 on unsupported %s/%s = %q, want empty",
 			runtime.GOOS, runtime.GOARCH, got)
+	}
+}
+
+// TestAllManifestsHaveRequiredFields checks every manifest has a non-empty name,
+// variant, format, and backend.
+func TestAllManifestsHaveRequiredFields(t *testing.T) {
+	for _, m := range AllModels() {
+		if m.Name == "" {
+			t.Errorf("manifest missing name: %+v", m)
+		}
+		if m.Variant == "" {
+			t.Errorf("manifest %s missing variant", m.Name)
+		}
+		if m.Format == "" {
+			t.Errorf("manifest %s/%s missing format", m.Name, m.Variant)
+		}
+		if m.Backend == "" {
+			t.Errorf("manifest %s/%s missing backend", m.Name, m.Variant)
+		}
+		if m.SizeBytes <= 0 {
+			t.Errorf("manifest %s/%s has SizeBytes=%d, want >0", m.Name, m.Variant, m.SizeBytes)
+		}
+		if m.RAMUsage <= 0 {
+			t.Errorf("manifest %s/%s has RAMUsage=%d, want >0", m.Name, m.Variant, m.RAMUsage)
+		}
+	}
+}
+
+// TestEveryManifestValid iterates builtinManifests and asserts per-manifest
+// integrity: MLX manifests must have a valid 40-hex commit_sha and at least one
+// per_file entry with valid hashes; llamacpp manifests must have a real SHA-256
+// and a non-empty download URL.
+func TestEveryManifestValid(t *testing.T) {
+	for _, m := range builtinManifests {
+		m := m
+		t.Run(m.Name+"."+m.Variant, func(t *testing.T) {
+			switch m.Backend {
+			case "mlx":
+				if !manifestCommitSHARE.MatchString(m.CommitSHA) {
+					t.Fatalf("bad commit_sha: %q", m.CommitSHA)
+				}
+				if len(m.PerFile) == 0 {
+					t.Fatal("empty per_file")
+				}
+				for _, fe := range m.PerFile {
+					if fe.Path == "" {
+						t.Fatal("per_file entry has empty path")
+					}
+					if fe.IsLFS && !hexSHA256Pattern.MatchString(fe.SHA256) {
+						t.Fatalf("file %q: bad SHA-256: %q", fe.Path, fe.SHA256)
+					}
+					if !fe.IsLFS && !manifestSHA1RE.MatchString(fe.SHA1) {
+						t.Fatalf("file %q: bad git SHA-1: %q", fe.Path, fe.SHA1)
+					}
+				}
+			case "llamacpp":
+				if !hexSHA256Pattern.MatchString(m.SHA256) {
+					t.Fatalf("bad sha256: %q", m.SHA256)
+				}
+				if m.URL == "" {
+					t.Fatal("empty url")
+				}
+			}
+		})
+	}
+}
+
+// TestNoSentinelHashes asserts that no manifest carries the old
+// UNRELEASED_MLX_PENDING_DOWNLOAD_REDESIGN sentinel hash which was used as a
+// placeholder before real digest data was computed.
+func TestNoSentinelHashes(t *testing.T) {
+	for _, m := range builtinManifests {
+		if m.SHA256 == "UNRELEASED_MLX_PENDING_DOWNLOAD_REDESIGN" {
+			t.Fatalf("manifest %s.%s carries unreleased sentinel", m.Name, m.Variant)
+		}
 	}
 }

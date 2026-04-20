@@ -90,23 +90,12 @@ type DownloadResult struct {
 	Duration  time.Duration
 }
 
-// shouldSkipHashVerification reports whether the given expectedSHA256 value is
-// a documented stub that callers have explicitly opted out of verifying.
-// Empty strings are treated as stubs for callers that pre-date the Available
-// flag; new callers must supply a real hash or fail loud. Sentinel values
-// ("PLACEHOLDER_*", "UNRELEASED_*") mark entries whose download pipeline is
-// not yet wired up and should never be reached in practice.
+// shouldSkipHashVerification reports whether hash verification should be skipped.
+// Only an empty expectedSHA256 opts out of verification; all real digests are
+// checked. Sentinel prefix handling is gone — manifests must carry a real hash
+// or leave SHA256 empty (MLX multi-file entries use PerFile instead).
 func shouldSkipHashVerification(expectedSHA256 string) bool {
-	if expectedSHA256 == "" {
-		return true
-	}
-	if strings.HasPrefix(expectedSHA256, "PLACEHOLDER_") {
-		return true
-	}
-	if strings.HasPrefix(expectedSHA256, "UNRELEASED_") {
-		return true
-	}
-	return false
+	return expectedSHA256 == ""
 }
 
 // DownloadFileResumable downloads url to destPath, resuming from a .partial file if present.
@@ -114,8 +103,8 @@ func shouldSkipHashVerification(expectedSHA256 string) bool {
 // SHA256 verification behavior:
 //   - Real hex digest: downloaded bytes and any already-present destPath are verified;
 //     mismatches trigger a re-download (existing file) or hard error (fresh download).
-//   - Empty / "PLACEHOLDER_*" / "UNRELEASED_*": verification is skipped. These are
-//     documented stubs — production callers must pass a real hash.
+//   - Empty string: verification is skipped. MLX multi-file manifests leave SHA256
+//     empty and use PerFile for per-file integrity instead.
 //
 // progressFn is called with (downloaded, total) after each chunk; total may be -1 if unknown.
 func DownloadFileResumable(
@@ -267,7 +256,7 @@ func DownloadFileResumable(
 		return nil, fmt.Errorf("vlm: close partial file: %w", err)
 	}
 
-	// SHA256 verification (skip only for documented stub values; see shouldSkipHashVerification).
+	// SHA256 verification (skip only when expectedSHA256 is empty; see shouldSkipHashVerification).
 	if !skipVerify {
 		if logger.Log != nil {
 			logger.Log.Debug("vlm: provisioner: verifying SHA256", "path", partialPath)

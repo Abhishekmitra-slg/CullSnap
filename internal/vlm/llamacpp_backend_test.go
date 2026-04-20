@@ -48,7 +48,7 @@ func newTestLlamaCppBackend(t *testing.T, srvURL string) *LlamaCppBackend {
 	if err != nil {
 		t.Fatalf("parse port: %v", err)
 	}
-	b := NewLlamaCppBackend("/not/used", "/not/used", ModelEntry{
+	b := NewLlamaCppBackend("/not/used", "/not/used", ModelManifest{
 		Name: "gemma-test", Variant: "Q4_K_M", Backend: "llamacpp",
 	})
 	b.mu.Lock()
@@ -73,7 +73,7 @@ func writeTempImage(t *testing.T) string {
 }
 
 func TestLlamaCppBackendName(t *testing.T) {
-	b := NewLlamaCppBackend("/some/llama-server", "/some/model.gguf", ModelEntry{
+	b := NewLlamaCppBackend("/some/llama-server", "/some/model.gguf", ModelManifest{
 		Name:    "gemma-4-e4b-it",
 		Variant: "Q4_K_M",
 		Backend: "llamacpp",
@@ -84,7 +84,7 @@ func TestLlamaCppBackendName(t *testing.T) {
 }
 
 func TestLlamaCppBackendModelInfo(t *testing.T) {
-	entry := ModelEntry{
+	entry := ModelManifest{
 		Name:      "gemma-4-e4b-it",
 		Variant:   "Q4_K_M",
 		Backend:   "llamacpp",
@@ -109,7 +109,7 @@ func TestLlamaCppBackendModelInfo(t *testing.T) {
 }
 
 func TestLlamaCppBackendStartMissingBinary(t *testing.T) {
-	b := NewLlamaCppBackend("/nonexistent/llama-server", "/some/model.gguf", ModelEntry{
+	b := NewLlamaCppBackend("/nonexistent/llama-server", "/some/model.gguf", ModelManifest{
 		Name:    "gemma-4-e4b-it",
 		Variant: "Q4_K_M",
 		Backend: "llamacpp",
@@ -152,7 +152,7 @@ func TestFindFreePort(t *testing.T) {
 
 // TestLlamaCppBackendHealthNotStarted verifies Health returns an error when port is 0.
 func TestLlamaCppBackendHealthNotStarted(t *testing.T) {
-	b := NewLlamaCppBackend("/bin/true", "/m", ModelEntry{Backend: "llamacpp"})
+	b := NewLlamaCppBackend("/bin/true", "/m", ModelManifest{Backend: "llamacpp"})
 	if err := b.Health(context.Background()); err == nil {
 		t.Fatal("Health() on un-started backend should error, got nil")
 	}
@@ -193,7 +193,7 @@ func TestLlamaCppBackendHealthNon200(t *testing.T) {
 
 // TestLlamaCppBackendScorePhotoNotStarted verifies ScorePhoto errors when client is nil.
 func TestLlamaCppBackendScorePhotoNotStarted(t *testing.T) {
-	b := NewLlamaCppBackend("/bin/true", "/m", ModelEntry{Backend: "llamacpp"})
+	b := NewLlamaCppBackend("/bin/true", "/m", ModelManifest{Backend: "llamacpp"})
 	_, err := b.ScorePhoto(context.Background(), ScoreRequest{PhotoPath: "x.jpg"})
 	if err == nil {
 		t.Fatal("ScorePhoto() on un-started backend should error, got nil")
@@ -273,7 +273,7 @@ func TestLlamaCppBackendScorePhotoOutOfRange(t *testing.T) {
 
 // TestLlamaCppBackendRankPhotosNotStarted verifies RankPhotos errors when client is nil.
 func TestLlamaCppBackendRankPhotosNotStarted(t *testing.T) {
-	b := NewLlamaCppBackend("/bin/true", "/m", ModelEntry{Backend: "llamacpp"})
+	b := NewLlamaCppBackend("/bin/true", "/m", ModelManifest{Backend: "llamacpp"})
 	_, err := b.RankPhotos(context.Background(), RankRequest{PhotoPaths: []string{"a.jpg"}})
 	if err == nil {
 		t.Fatal("RankPhotos() on un-started backend should error, got nil")
@@ -353,7 +353,7 @@ func TestLlamaCppBackendStartDetectsImmediateCrash(t *testing.T) {
 		t.Fatalf("write fake model: %v", err)
 	}
 
-	b := NewLlamaCppBackend(falseBin, tmpModel, ModelEntry{
+	b := NewLlamaCppBackend(falseBin, tmpModel, ModelManifest{
 		Name: "crash-test", Variant: "q", Backend: "llamacpp",
 	})
 
@@ -401,7 +401,7 @@ func TestLlamaCppBackendStartRetriesOnReadyFailure(t *testing.T) {
 		t.Fatalf("write fake model: %v", err)
 	}
 
-	b := NewLlamaCppBackend(falseBin, tmpModel, ModelEntry{
+	b := NewLlamaCppBackend(falseBin, tmpModel, ModelManifest{
 		Name: "retry-test", Variant: "q", Backend: "llamacpp",
 	})
 
@@ -424,7 +424,7 @@ func TestLlamaCppBackendStartRetriesOnReadyFailure(t *testing.T) {
 // for transient post-exec failures.
 func TestLlamaCppBackendStartNonRetriableErrorsSkipRetries(t *testing.T) {
 	// Missing binary: stat fails before the retry loop even begins.
-	b := NewLlamaCppBackend("/nonexistent/llama-server", "/nonexistent/model.gguf", ModelEntry{
+	b := NewLlamaCppBackend("/nonexistent/llama-server", "/nonexistent/model.gguf", ModelManifest{
 		Name: "missing-test", Variant: "q", Backend: "llamacpp",
 	})
 	err := b.Start(context.Background())
@@ -441,7 +441,7 @@ func TestLlamaCppBackendStartNonRetriableErrorsSkipRetries(t *testing.T) {
 
 // TestLlamaCppBackendStopNoProcess verifies Stop is a no-op when no process is running.
 func TestLlamaCppBackendStopNoProcess(t *testing.T) {
-	b := NewLlamaCppBackend("/bin/true", "/m", ModelEntry{Backend: "llamacpp"})
+	b := NewLlamaCppBackend("/bin/true", "/m", ModelManifest{Backend: "llamacpp"})
 	if err := b.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() with no process should be nil, got %v", err)
 	}
